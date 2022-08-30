@@ -2,7 +2,8 @@
 
 Track your working time with Trackrs a simple Time Tracking CLI.
 
-[![Rust](https://github.com/ser-drephs/trackrs/actions/workflows/rust.yml/badge.svg)](https://github.com/ser-drephs/trackrs/actions/workflows/rust.yml)
+[![CI](https://github.com/ser-drephs/trackrs/actions/workflows/ci.yml/badge.svg)](https://github.com/ser-drephs/trackrs/actions/workflows/ci.yml)
+[![CD](https://github.com/ser-drephs/trackrs/actions/workflows/cd.yml/badge.svg)](https://github.com/ser-drephs/trackrs/actions/workflows/cd.yml)
 
 - [Usage](#usage)
     - [Start tracking](#start-tracking)
