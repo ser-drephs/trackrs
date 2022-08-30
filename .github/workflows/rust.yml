@@ -1,0 +1,95 @@
+name: Rust
+
+on:
+  push:
+    branches: [ dev ]
+  pull_request:
+    branches: [ main, test ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+
+    - name: restore cargo cache
+      uses: actions/cache@v2
+      env:
+        cache-name: ci
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.cargo/bin
+          target
+        key: ubuntu-latest-${{ env.cache-name }}-nightly-${{ hashFiles('Cargo.lock') }}
+
+    - name: install mingw
+      run: sudo apt-get update && sudo apt-get -y install --no-install-recommends mingw-w64
+
+    - name: add windows target
+      run: rustup target add x86_64-pc-windows-gnu
+
+    - name: install rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        profile: minimal
+        components: rustfmt, clippy
+
+    - name: targets list
+      run: rustup target list | grep installed
+
+    - name: prepare scripts
+      if: success()
+      run: chmod +x ${{ github.workspace }}/eng/set-version.sh && chmod +x ${{ github.workspace }}/eng/build-release.sh
+
+    - name: build
+      id: build
+      if: success()
+      run: make build
+
+    - name: run tests
+      id: test
+      if: success()
+      run: make test
+
+    - name: build release linux
+      id: build-linux-release
+      if: success()
+      run: make build-release-linux-musl
+
+    - name: build release windows
+      id: build-windows-release
+      if: success()
+      run: make build-release-win
+
+    # # - name: build release mac
+    # #   id: build-mac-release
+    # #   if: ${{ steps.semantic-version.outputs.new_release_published == 'true' }}
+    # #   run: make build-release-mac
+
+    - name: publish release
+      uses: cycjimmy/semantic-release-action@v2
+      if: success()
+      with:
+        semantic_version: 18
+        dry_run: false
+        extra_plugins: |
+          @semantic-release/changelog@6
+          @semantic-release/git@10
+          @semantic-release/github@8
+          @semantic-release/commit-analyzer@9
+          @semantic-release/exec@6
+          conventional-changelog-conventionalcommits@4
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: ls
+      run: ls -lah
