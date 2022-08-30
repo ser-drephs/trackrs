@@ -1,3 +1,10 @@
+## 1.0.0 (2022-08-30)
+
+
+### Features
+
+* add initial cli ([b9ef7ce](https://github.com/ser-drephs/trackrs/commit/b9ef7cee842dc62d27195994e545604cb059ce45))
+
 ## [1.0.0-dev.5](https://github.com/ser-drephs/tracker/compare/v1.0.0-dev.4...v1.0.0-dev.5) (2022-08-24)
 
 
