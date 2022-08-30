@@ -50,16 +50,6 @@ jobs:
       if: success()
       run: chmod +x ${{ github.workspace }}/eng/set-version.sh && chmod +x ${{ github.workspace }}/eng/build-release.sh
 
-    - name: build
-      id: build
-      if: success()
-      run: make build
-
-    - name: run tests
-      id: test
-      if: success()
-      run: make test
-
     - name: build release linux
       id: build-linux-release
       if: success()
@@ -90,6 +80,3 @@ jobs:
           conventional-changelog-conventionalcommits@4
       env:
         GITHUB_TOKEN: ${{ secrets.SEMREL }}
-
-    - name: ls
-      run: ls -lah
