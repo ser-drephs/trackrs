@@ -1,0 +1,35 @@
+[package]
+name = "trackrs"
+description = "Time Tracker CLI"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "trackrs"
+
+[[bin]]
+name = "trackrs"
+path = "src/bin/cli_executable.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = { version = "0.4.20", features = ["serde", "clock"] }
+thiserror = "1.0.32"
+log = "0.4.17"
+env_logger = "0.9.0"
+clap = { version = "3.2.15", features = ["derive"] }
+clap-verbosity-flag = "1.0.1"
+serde = { version = "1.0.144", features = ["derive"] }
+serde_json = "1.0.82"
+serde_derive = "1.0.142"
+config = "0.13.2"
+dirs = "4.0.0"
+indoc = "1.0.7"
+colored = "2.0.0"
+open = "3.0.2"
+
+[dev-dependencies]
+tempfile = "3.3.0"
+serial_test = "0.9.0"
+test-context = "0.1.4"

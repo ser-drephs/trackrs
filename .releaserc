@@ -1,0 +1,79 @@
+{
+  "branches": [
+    "main",
+    "master",
+    {
+      "name": "test",
+      "prerelease": true
+    }
+  ],
+  "plugins": [
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "CHANGELOG.md"
+        ]
+      }
+    ],
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits",
+        "config": "conventional-changelog-conventionalcommits",
+        "releaseRules": [
+          {
+            "type": "docs",
+            "scope": "README",
+            "release": "patch"
+          }
+        ],
+        "parserOpts": {
+          "noteKeywords": [
+            "BREAKING CHANGE",
+            "BREAKING CHANGES"
+          ]
+        }
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "verifyReleaseCmd": "eng/set-version.sh --version=${nextRelease.version}",
+        "prepareCmd": "eng/build-release.sh"
+      }
+    ],
+    [
+      "@semantic-release/npm",
+      {
+        "npmPublish": false
+      }
+    ],
+    ["@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "release/win/trackrs.exe",
+            "label": "trackrs-win.exe"
+          },
+          {
+            "path": "release/linux-gnu/trackrs",
+            "label": "trackrs-linux"
+          }
+        ]
+      }
+    ],
+    ["@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits",
+        "config": "conventional-changelog-conventionalcommits"
+      }
+    ]
+  ]
+}
