@@ -14,6 +14,7 @@ jobs:
     steps:
     - name: checkout
       uses: actions/checkout@v3
+      persist-credentials: false
 
     - name: restore cargo cache
       uses: actions/cache@v2
@@ -87,7 +88,7 @@ jobs:
           @semantic-release/exec@6
           conventional-changelog-conventionalcommits@4
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.SEMREL }}
 
     - name: ls
       run: ls -lah
