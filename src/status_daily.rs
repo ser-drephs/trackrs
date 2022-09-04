@@ -369,7 +369,7 @@ mod tests {
 
     use std::ops::Add;
 
-    use chrono::{Duration, Local, TimeZone, DateTime};
+    use chrono::{DateTime, Duration, Local, TimeZone};
 
     use crate::{
         BreakLimit, Entry, Settings, Status, StatusDaily, StatusTime, TimeData, WorkPerDay,
@@ -615,7 +615,7 @@ mod tests {
         #[test]
         fn status_daily_temp_end() {
             logger();
-            let local = Local.ymd(2022,2,2).and_hms(8, 0, 0);
+            let local = Local.ymd(2022, 2, 2).and_hms(8, 0, 0);
             let est_end =
                 StatusTime::from(local.add(Duration::hours(8).add(Duration::minutes(30))));
             let data = TimeData {
