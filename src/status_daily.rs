@@ -141,7 +141,10 @@ impl StatusDaily {
 
             // get whatever time is heigher, either expected working time for the day or the online time.
             let (tft, t) = if o >= &StatusTime::from(w) {
-                (o.to_owned().duration, Duration::minutes(s.threshold_limits.to_owned().into()))
+                (
+                    o.to_owned().duration,
+                    Duration::minutes(s.threshold_limits.to_owned().into()),
+                )
             } else {
                 (w, Duration::seconds(0))
             };
@@ -224,8 +227,7 @@ impl StatusDaily {
     }
 
     fn set_overtime(&mut self) -> &mut Self {
-        self.overtime = self.worktime.to_owned()
-            - self.exp_worktime.as_ref().unwrap().to_owned();
+        self.overtime = self.worktime.to_owned() - self.exp_worktime.as_ref().unwrap().to_owned();
         // (self.start.as_ref().unwrap().to_owned()
         //     + self.online.as_ref().unwrap().to_owned()
         //     - self.calc_break.as_ref().unwrap().to_owned())
@@ -310,20 +312,23 @@ impl std::fmt::Display for StatusDaily {
         let mut fmt_break_report = "".to_owned();
 
         let end_fmt = if end.is_some() {
-            let f_break = StatusTime::from(self.f_break.unwrap());
-            let e_break = StatusTime::from(
-                self.f_break
-                    .unwrap()
-                    .add(self.r#break.to_owned().unwrap().duration),
-            );
+            let f_break = self.f_break.map(StatusTime::from);
 
-            fmt_break_report = format!(
-                "\n{:width$}{} - {}",
-                "Break taken:",
-                f_break,
-                e_break,
-                width = 13
-            );
+            if f_break.is_some() {
+                let e_break = StatusTime::from(
+                    self.f_break
+                        .unwrap()
+                        .add(self.r#break.to_owned().unwrap().duration),
+                );
+                fmt_break_report = format!(
+                    "\n{:width$}{} - {}",
+                    "Break taken:",
+                    f_break.unwrap(),
+                    e_break,
+                    width = 13
+                )
+            };
+
             format!("{}", end.unwrap()).bright_green()
         } else if temp_end.is_some() && temp_end.as_ref().unwrap() >= &self.est_end {
             format!("{}", temp_end.unwrap()).bright_green()
@@ -628,7 +633,7 @@ mod tests {
                     minutes: 30,
                 }]
                 .to_vec(),
-                workperday: WorkPerDay{
+                workperday: WorkPerDay {
                     saturday: 8,
                     sunday: 8,
                     ..Default::default()
@@ -663,6 +668,74 @@ mod tests {
                 );
             }
             assert!(!format!("{}", status).contains("Break taken"));
+        }
+
+        #[test]
+        fn status_daily_short_day_without_break() {
+            logger();
+            let data = TimeData {
+                entries: [
+                    Entry {
+                        id: 1,
+                        status: Status::Connect,
+                        time: Local.ymd(2022, 2, 2).and_hms(8, 22, 0),
+                    },
+                    Entry {
+                        id: 3,
+                        status: Status::End,
+                        time: Local.ymd(2022, 2, 2).and_hms(12, 16, 0),
+                    },
+                ]
+                .to_vec(),
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [BreakLimit {
+                    start: 8,
+                    minutes: 45,
+                }]
+                .to_vec(),
+                workperday: WorkPerDay {
+                    wednesday: 6,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let status = StatusDaily::builder()
+                .data(data)
+                .settings(settings)
+                .build()
+                .unwrap();
+
+            log::debug!("{}", status);
+
+            if ShouldColorize::from_env().should_colorize() {
+                assert_eq!(
+                    indoc!(
+                        "Work time:   03:54 (\u{1b}[91m-02:06\u{1b}[0m)
+                        Online time: 03:54
+                        Break:       00:00 (+00:00)
+
+                        Started:     08:22
+                        End:         \u{1b}[92m12:16\u{1b}[0m"
+                    ),
+                    format!("{}", status)
+                );
+            } else {
+                assert_eq!(
+                    indoc!(
+                        "Work time:   03:54 (-02:06)
+                    Online time: 03:54
+                    Break:       00:00 (+00:00)
+
+                    Started:     08:22
+                    End:         12:16"
+                    ),
+                    format!("{}", status)
+                );
+            }
         }
     }
 
@@ -1221,7 +1294,11 @@ mod tests {
                 .build()
                 .unwrap();
             let expected_end = Duration::hours(6);
-            assert_eq!(expected_end, status.est_end.duration, "expected end at 6:00 but got {}", status.est_end);
+            assert_eq!(
+                expected_end, status.est_end.duration,
+                "expected end at 6:00 but got {}",
+                status.est_end
+            );
         }
 
         #[test]
@@ -1283,6 +1360,57 @@ mod tests {
                 .unwrap();
             let expected_end = Duration::hours(7).add(Duration::minutes(30));
             assert_eq!(expected_end, status.est_end.duration);
+        }
+
+        #[test]
+        fn should_calculate_no_break_on_short_day() {
+            let data = TimeData {
+                entries: [
+                    Entry {
+                        id: 1,
+                        status: Status::Connect,
+                        time: Local.ymd(2022, 2, 2).and_hms(8, 22, 0),
+                    },
+                    Entry {
+                        id: 3,
+                        status: Status::End,
+                        time: Local.ymd(2022, 2, 2).and_hms(12, 16, 0),
+                    },
+                ]
+                .to_vec(),
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [BreakLimit {
+                    start: 8,
+                    minutes: 45,
+                }]
+                .to_vec(),
+                workperday: WorkPerDay {
+                    wednesday: 6,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let status = StatusDaily::builder()
+                .data(data)
+                .settings(settings)
+                .build()
+                .unwrap();
+            let expected_end = Duration::hours(14).add(Duration::minutes(22));
+            assert_eq!(
+                expected_end, status.est_end.duration,
+                "expected to end at 14:22 but got {}",
+                status.est_end
+            );
+            assert_eq!(
+                Duration::minutes(0),
+                status.exp_break.to_owned().unwrap().duration,
+                "expected break to be 00:00 but got {}",
+                status.exp_break.unwrap()
+            );
         }
     }
 
@@ -1575,7 +1703,7 @@ mod tests {
                     Entry {
                         id: 2,
                         status: Status::End,
-                        time: Local.ymd(2022, 2,4).and_hms(14, 0, 0),
+                        time: Local.ymd(2022, 2, 4).and_hms(14, 0, 0),
                     },
                 ]
                 .to_vec(),
