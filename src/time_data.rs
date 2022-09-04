@@ -50,23 +50,33 @@ impl TimeData {
             // calculate time for break assertion start
             let diff_b = (e_break - a_break) + Duration::minutes(1);
             let time_b = now - diff_b;
-            let entry_b = Entry::builder()
-                .id(last_id)
-                .status(Status::Break)
-                .time(time_b)
-                .build();
+
+            // overwrite end entry
+            let last_index = last_id - 1;
+            self.entries[last_index as usize].status = Status::Break;
+            self.entries[last_index as usize].time = time_b;
 
             // calculate time for connect entry afterwards
             let local_c = Duration::minutes(1);
             let time_c = now - local_c;
             let entry_c = Entry::builder()
-                .id(last_id + 1)
+                .id(last_id)
                 .status(Status::Connect)
                 .time(time_c)
                 .build();
-            log::debug!("fill break with {:?} and {:?}", entry_b, entry_c);
 
-            self.entries.append(&mut [entry_b, entry_c].to_vec());
+            let entry_e = Entry::builder()
+                .id(last_id + 1)
+                .status(Status::End)
+                .time(now)
+                .build();
+            log::debug!(
+                "fill break with {:?} and {:?}",
+                self.entries[last_id as usize],
+                entry_c
+            );
+
+            self.entries.append(&mut [entry_c, entry_e].to_vec());
         }
         Ok(self)
     }
@@ -201,7 +211,7 @@ mod tests {
     use std::{
         fs::{self, File},
         io::Write,
-        ops::Add
+        ops::Add,
     };
 
     use chrono::{Duration, Local, TimeZone, Timelike};
@@ -348,6 +358,80 @@ mod tests {
         }
 
         #[test]
+        fn should_assert_break_with_order() -> Result<(), TrackerError> {
+            logger();
+            let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}]";
+            let temp_dir = tempfile::tempdir()?;
+            let time_file = temp_dir.path().join("20220202.json");
+            let mut file = File::create(&time_file)?;
+            file.write_all(file_content.as_bytes())?;
+
+            let mut time_data = TimeData::builder()
+                .folder(temp_dir.into_path().into())
+                .date(Local.ymd(2022, 2, 2))
+                .build()?;
+
+            time_data
+                .read_from_file()?
+                .assert_break(Duration::minutes(45), Duration::minutes(15))?
+                .write_to_file()?;
+            assert_eq!(4, time_data.entries.len());
+            assert_eq!(4, time_data.entries.last().unwrap().id);
+
+            // assert order of elements
+            let fill_connect = time_data.entries[1].to_owned();
+            let fill_break = time_data.entries[2].to_owned();
+            let end = time_data.entries[3].to_owned();
+            assert_eq!(
+                (2, Status::Break),
+                (fill_connect.id, fill_connect.status.to_owned()),
+                "expected filler connect entry to be 2 and status Break but got {} {:?}",
+                fill_connect.id,
+                fill_connect.status
+            );
+            assert_eq!(
+                (3, Status::Connect),
+                (fill_break.id, fill_break.status.to_owned()),
+                "expected filler break entry to be 3 and status Connect but got {} {:?}",
+                fill_break.id,
+                fill_break.status
+            );
+            assert_eq!(
+                (4, Status::End),
+                (end.id, end.status.to_owned()),
+                "expected end entry to be 4 and status End but got {} {:?}",
+                end.id,
+                end.status
+            );
+
+            // assert file content
+            let exp_break = "{\"id\":2,\"status\":\"Break\",\"time\":\"2022-08-04T07:29";
+
+            let exp_connect = "{\"id\":3,\"status\":\"Connect\",\"time\":\"2022-08-04T07:59";
+
+            let exp_end = "{\"id\":4,\"status\":\"End\",\"time\":\"2022-08-04T08:00";
+
+            let act_content = fs::read_to_string(time_file)?;
+
+            assert!(
+                act_content.contains(exp_break),
+                "expected content to contain Break with ID 2 and time 07:29, but got {}",
+                act_content
+            );
+            assert!(
+                act_content.contains(exp_connect),
+                "expected content to contain Connect with ID 3 and time 07:59, but got {}",
+                act_content
+            );
+            assert!(
+                act_content.contains(exp_end),
+                "expected content to contain End with ID 4 and time 08:00, but got {}",
+                act_content
+            );
+            Ok(())
+        }
+
+        #[test]
         fn should_assert_long_break_do_nothing() -> Result<(), TrackerError> {
             logger();
             let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"Break\",\"time\":\"2022-08-04T00:30:53.523319900Z\"},{\"id\":3,\"status\":\"Connect\",\"time\":\"2022-08-04T02:15:53.523319900Z\"},{\"id\":4,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}]";
@@ -361,9 +445,10 @@ mod tests {
                 .date(Local.ymd(2022, 2, 2))
                 .build()?;
 
-            time_data
-                .read_from_file()?
-                .assert_break(Duration::minutes(45), Duration::hours(1).add(Duration::minutes(15)))?;
+            time_data.read_from_file()?.assert_break(
+                Duration::minutes(45),
+                Duration::hours(1).add(Duration::minutes(15)),
+            )?;
             assert_eq!(4, time_data.entries.len());
             assert_eq!(4, time_data.entries.last().unwrap().id);
 
@@ -385,7 +470,11 @@ mod tests {
 
             let duration_b = r#break.unwrap().time.num_seconds_from_midnight();
             let duration_c = connect.unwrap().time.num_seconds_from_midnight();
-            assert_eq!(6300, duration_c - duration_b, "total break duration should be 30 minutes");
+            assert_eq!(
+                6300,
+                duration_c - duration_b,
+                "total break duration should be 30 minutes"
+            );
             Ok(())
         }
 
