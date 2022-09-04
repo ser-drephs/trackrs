@@ -619,8 +619,8 @@ mod tests {
             assert!(&time_file.exists());
 
             // assert file content
-            let exp_takeover = "{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T02:00";
-            let exp_connect = "{\"id\":2,\"status\":\"Connect\",\"time\":\"2022-02-02T02:15";
+            let exp_takeover = "{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02";
+            let exp_connect = "{\"id\":2,\"status\":\"Connect\",\"time\":\"2022-02-02";
 
             let act_content = fs::read_to_string(time_file)?;
 
