@@ -1,3 +1,10 @@
+## [1.1.0](https://github.com/ser-drephs/trackrs/compare/v1.0.1...v1.1.0) (2022-09-04)
+
+
+### Features
+
+* takeover time to next day ([2e1e6b9](https://github.com/ser-drephs/trackrs/commit/2e1e6b9286cf635a39a2a8a13d367a9cfc0dbaa4))
+
 ### [1.0.1](https://github.com/ser-drephs/trackrs/compare/v1.0.0...v1.0.1) (2022-09-04)
 
 
