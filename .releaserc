@@ -18,7 +18,8 @@
       "@semantic-release/git",
       {
         "assets": [
-          "CHANGELOG.md"
+          "CHANGELOG.md",
+          "Cargo.toml"
         ]
       }
     ],
@@ -45,28 +46,13 @@
     [
       "@semantic-release/exec",
       {
-        "verifyReleaseCmd": "eng/set-version.sh --version=${nextRelease.version}",
-        "prepareCmd": "eng/build-release.sh"
+        "verifyReleaseCmd": "eng/set-version.sh --version=${nextRelease.version}"
       }
     ],
     [
       "@semantic-release/npm",
       {
         "npmPublish": false
-      }
-    ],
-    ["@semantic-release/github",
-      {
-        "assets": [
-          {
-            "path": "release/win/trackrs.exe",
-            "label": "trackrs-win.exe"
-          },
-          {
-            "path": "release/linux-gnu/trackrs",
-            "label": "trackrs-linux"
-          }
-        ]
       }
     ],
     ["@semantic-release/release-notes-generator",

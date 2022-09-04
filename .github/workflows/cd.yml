@@ -2,13 +2,14 @@ name: CD
 
 on:
   push:
-    branches: [  main, test ]
+    tags:
+      - '*'
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
 
     steps:
@@ -46,10 +47,6 @@ jobs:
     - name: targets list
       run: rustup target list | grep installed
 
-    - name: prepare scripts
-      if: success()
-      run: chmod +x ${{ github.workspace }}/eng/set-version.sh && chmod +x ${{ github.workspace }}/eng/build-release.sh
-
     - name: build release linux
       id: build-linux-release
       if: success()
@@ -60,23 +57,10 @@ jobs:
       if: success()
       run: make build-release-win
 
-    # # - name: build release mac
-    # #   id: build-mac-release
-    # #   if: ${{ steps.semantic-version.outputs.new_release_published == 'true' }}
-    # #   run: make build-release-mac
-
-    - name: publish release
-      uses: cycjimmy/semantic-release-action@v2
-      if: success()
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
       with:
-        semantic_version: 18
-        dry_run: false
-        extra_plugins: |
-          @semantic-release/changelog@6
-          @semantic-release/git@10
-          @semantic-release/github@8
-          @semantic-release/commit-analyzer@9
-          @semantic-release/exec@6
-          conventional-changelog-conventionalcommits@4
-      env:
-        GITHUB_TOKEN: ${{ secrets.SEMREL }}
+        files: |
+          ./release/win/trackrs.exe
+          ./release/linux-gnu/trackrs

@@ -665,11 +665,12 @@ mod tests {
             let first_connect = time_data.entries[1].to_owned();
             let diff = first_connect.time - takeover_time.time;
 
+            let exp = Duration::hours(1).add(Duration::minutes(35));
             assert_eq!(
-                Duration::minutes(95).num_seconds(),
-                diff.num_seconds(),
-                "expected 1:35 minutes diff, but got {}",
-                diff
+                (exp.num_hours(), exp.num_minutes()),
+                (diff.num_hours(), diff.num_minutes()),
+                "expected 1:35 minutes diff, but got {}:{}",
+                diff.num_hours(), diff.num_minutes()
             );
             Ok(())
         }
