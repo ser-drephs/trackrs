@@ -7,6 +7,7 @@ mod settings;
 mod status_daily;
 mod status_time;
 mod status_weekly;
+mod takeover;
 
 pub use cli::*;
 pub use entry::*;
@@ -17,3 +18,4 @@ pub use settings::*;
 pub use status_daily::*;
 pub use status_time::*;
 pub use status_weekly::*;
+pub use takeover::*;

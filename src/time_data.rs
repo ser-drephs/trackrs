@@ -1,12 +1,14 @@
 use std::{
     fs::{self, File, OpenOptions},
+    mem::take,
+    ops::Sub,
     path::PathBuf,
     str::FromStr,
 };
 
 use chrono::{Date, Duration, Local};
 
-use crate::{Entry, Status, TrackerError};
+use crate::{Entry, Status, Takeover, TrackerError};
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
@@ -23,6 +25,7 @@ pub struct TimeData {
     pub(super) file: PathBuf,
     pub(super) build: bool,
     pub date: Option<Date<Local>>,
+    pub takeover: Option<Takeover>,
 }
 
 impl TimeData {
@@ -85,7 +88,21 @@ impl TimeData {
         self.assert_build()?;
         let last_id = match self.entries.last() {
             Some(last) => last.id,
-            None => 0,
+            None => {
+                if self.takeover.is_some() {
+                    let m = self.takeover.as_ref().unwrap();
+                    let time = Local::now().sub(Duration::minutes(m.minutes.unwrap().try_into()?));
+                    let t_entry = Entry::builder()
+                        .id(0)
+                        .status(Status::Connect)
+                        .time(time)
+                        .build();
+                    self.entries.append(&mut [t_entry].to_vec());
+                    1
+                } else {
+                    0
+                }
+            }
         };
 
         let entry = Entry::builder().id(last_id).status(status).build();
@@ -103,6 +120,12 @@ impl TimeData {
                 .sort_by(|a, b| a.id.partial_cmp(&b.id).unwrap());
         } else {
             log::info!("file not yet created: {:?}", &self.file);
+            // invoke takeover
+            let mut b = Takeover::builder();
+            let t = b.file().get()?;
+            if t.minutes.is_some() {
+                self.takeover = Some(t);
+            }
         }
 
         Ok(self)
@@ -209,6 +232,7 @@ impl TimeDataBuilder {
 #[cfg(test)]
 mod tests {
     use std::{
+        env::{self, set_current_dir},
         fs::{self, File},
         io::Write,
         ops::Add,
@@ -519,6 +543,110 @@ mod tests {
                 .assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.len());
             assert_eq!(2, time_data.entries.last().unwrap().id);
+            Ok(())
+        }
+
+        #[test]
+        fn should_takeover_time() -> Result<(), TrackerError> {
+            logger();
+            env::set_var("RUST_TEST", "true");
+            let file_content = "{\"minutes\":15}";
+            let temp_dir = tempfile::tempdir()?;
+            set_current_dir(temp_dir.as_ref())?;
+            let takeover_file = temp_dir.path().join(".trackrs-takeover");
+            let time_file = temp_dir.path().join("20220202.json");
+            let mut file = File::create(&takeover_file)?;
+            file.write_all(file_content.as_bytes())?;
+
+            let mut time_data = TimeData::builder()
+                .folder(temp_dir.into_path().into())
+                .date(Local.ymd(2022, 2, 2))
+                .build()?;
+            time_data
+                .read_from_file()?
+                .append(Status::Connect)?
+                .append(Status::End)?
+                .write_to_file()?;
+            assert!(&time_file.exists());
+
+            let takeover_time = time_data.entries[0].to_owned();
+            let first_connect = time_data.entries[1].to_owned();
+            let diff = first_connect.time - takeover_time.time;
+
+            assert_eq!(Duration::minutes(15).num_seconds(), diff.num_seconds(), "expected 15 minutes diff, but got {}", diff );
+            Ok(())
+        }
+
+        #[test]
+        fn should_takeover_time_check_file() -> Result<(), TrackerError> {
+            logger();
+            env::set_var("RUST_TEST", "true");
+            let file_content = "{\"minutes\":15}";
+            let temp_dir = tempfile::tempdir()?;
+            set_current_dir(temp_dir.as_ref())?;
+            let takeover_file = temp_dir.path().join(".trackrs-takeover");
+            let time_file = temp_dir.path().join("20220202.json");
+            let mut file = File::create(&takeover_file)?;
+            file.write_all(file_content.as_bytes())?;
+
+            let mut time_data = TimeData::builder()
+                .folder(temp_dir.into_path().into())
+                .date(Local.ymd(2022, 2, 2))
+                .build()?;
+            time_data
+                .read_from_file()?
+                .append(Status::Connect)?
+                .append(Status::End)?
+                .write_to_file()?;
+            assert!(&time_file.exists());
+
+            // assert file content
+            let exp_takeover = "{\"id\":1,\"status\":\"Connect\"";
+            let exp_connect = "{\"id\":2,\"status\":\"Connect\"";
+
+            let act_content = fs::read_to_string(time_file)?;
+
+            assert!(
+                act_content.contains(exp_takeover),
+                "expected content to contain Takeover Connect with ID 1, but got {}",
+                act_content
+            );
+            assert!(
+                act_content.contains(exp_connect),
+                "expected content to contain Connect with ID 2, but got {}",
+                act_content
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn should_takeover_time_over_an_hour() -> Result<(), TrackerError> {
+            logger();
+            env::set_var("RUST_TEST", "true");
+            let file_content = "{\"minutes\":95}";
+            let temp_dir = tempfile::tempdir()?;
+            set_current_dir(temp_dir.as_ref())?;
+            let takeover_file = temp_dir.path().join(".trackrs-takeover");
+            let time_file = temp_dir.path().join("20220202.json");
+            let mut file = File::create(&takeover_file)?;
+            file.write_all(file_content.as_bytes())?;
+
+            let mut time_data = TimeData::builder()
+                .folder(temp_dir.into_path().into())
+                .date(Local.ymd(2022, 2, 2))
+                .build()?;
+            time_data
+                .read_from_file()?
+                .append(Status::Connect)?
+                .append(Status::End)?
+                .write_to_file()?;
+            assert!(&time_file.exists());
+
+            let takeover_time = time_data.entries[0].to_owned();
+            let first_connect = time_data.entries[1].to_owned();
+            let diff = first_connect.time - takeover_time.time;
+
+            assert_eq!(Duration::minutes(95).num_seconds(), diff.num_seconds(), "expected 1:35 minutes diff, but got {}", diff );
             Ok(())
         }
     }
