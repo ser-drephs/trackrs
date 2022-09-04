@@ -140,17 +140,17 @@ impl StatusDaily {
             let o = self.online.as_ref().unwrap();
 
             // get whatever time is heigher, either expected working time for the day or the online time.
-            let tft = if o >= &StatusTime::from(w) {
-                o.to_owned().duration
+            let (tft, t) = if o >= &StatusTime::from(w) {
+                (o.to_owned().duration, Duration::minutes(s.threshold_limits.to_owned().into()))
             } else {
-                w
+                (w, Duration::seconds(0))
             };
 
             let mut bl = s.limits.to_owned();
             bl.sort_by(|x, y| y.start.partial_cmp(&x.start).unwrap());
 
             // get threshold for breaks
-            let t = Duration::minutes(s.threshold_limits.to_owned().into());
+            // let t = Duration::minutes(s.threshold_limits.to_owned().into());
 
             self.exp_break = match bl
                 .iter_mut()
@@ -628,6 +628,11 @@ mod tests {
                     minutes: 30,
                 }]
                 .to_vec(),
+                workperday: WorkPerDay{
+                    saturday: 8,
+                    sunday: 8,
+                    ..Default::default()
+                },
                 ..Default::default()
             };
 
@@ -647,14 +652,14 @@ mod tests {
                     )),
                     "Expected 'estimated end' to be: {}, but found: {}",
                     est_end,
-                    status
+                    status.est_end
                 );
             } else {
                 assert!(
                     format!("{}", status).contains(&format!("End:         {}", est_end)),
                     "Expected 'estimated end' to be: {}', but found: {}",
                     est_end,
-                    status
+                    status.est_end
                 );
             }
             assert!(!format!("{}", status).contains("Break taken"));
@@ -1030,7 +1035,7 @@ mod tests {
                 .build()
                 .unwrap();
 
-            let expected_end = Duration::hours(8).add(Duration::minutes(30));
+            let expected_end = Duration::hours(8).add(Duration::minutes(45));
             assert_eq!(expected_end, status.est_end.duration);
         }
 
@@ -1157,7 +1162,7 @@ mod tests {
                 .settings(settings)
                 .build()
                 .unwrap();
-            let expected_end = Duration::hours(8).add(Duration::minutes(30));
+            let expected_end = Duration::hours(8).add(Duration::minutes(45));
             assert_eq!(expected_end, status.est_end.duration);
         }
 
@@ -1193,10 +1198,6 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
-                        minutes: 30,
-                    },
-                    BreakLimit {
                         start: 8,
                         minutes: 45,
                     },
@@ -1220,7 +1221,7 @@ mod tests {
                 .build()
                 .unwrap();
             let expected_end = Duration::hours(6);
-            assert_eq!(expected_end, status.est_end.duration);
+            assert_eq!(expected_end, status.est_end.duration, "expected end at 6:00 but got {}", status.est_end);
         }
 
         #[test]
@@ -1623,6 +1624,64 @@ mod tests {
                 "expected 6:00 working time but was {}",
                 status.worktime
             )
+        }
+
+        #[test]
+        fn expected_break_not_displayed_correctly_in_status() {
+            logger();
+            let data = TimeData {
+                entries: [
+                    Entry {
+                        id: 1,
+                        status: Status::Connect,
+                        time: Local.ymd(2022, 2, 2).and_hms(8, 0, 0),
+                    },
+                    Entry {
+                        id: 2,
+                        status: Status::End,
+                        time: Local.ymd(2022, 2, 2).and_hms(14, 0, 0),
+                    },
+                ]
+                .to_vec(),
+                ..Default::default()
+            };
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10,
+                        minutes: 60,
+                    },
+                ]
+                .to_vec(),
+                workperday: WorkPerDay {
+                    friday: 6,
+                    ..Default::default()
+                },
+                threshold_limits: 5,
+                ..Default::default()
+            };
+
+            let status = StatusDaily::builder()
+                .data(data)
+                .settings(settings)
+                .build()
+                .unwrap();
+
+            log::debug!("{}", status);
+            assert_eq!(
+                Duration::minutes(45),
+                status.exp_break.as_ref().unwrap().duration,
+                "expected 0:45 hour break but was {}",
+                status.exp_break.as_ref().unwrap()
+            );
         }
     }
 }

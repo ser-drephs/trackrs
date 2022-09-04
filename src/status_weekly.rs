@@ -386,9 +386,9 @@ mod tests {
             log::debug!("{}", s);
 
             let week = 10;
-            let total = StatusTime::from(Duration::hours(36).add(Duration::minutes(47)));
-            let overtime = StatusTime::from(Duration::minutes(-193));
-            let decimal = 36.78333333333333;
+            let total = StatusTime::from(Duration::hours(36).add(Duration::minutes(32)));
+            let overtime = StatusTime::from(Duration::hours(-3).add(Duration::minutes(-28)));
+            let decimal = 36.53333333333333;
 
             assert_eq!(week, s.week, "number of week");
             assert_eq!(total, s.total, "total calculation");
