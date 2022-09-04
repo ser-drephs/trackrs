@@ -1,3 +1,10 @@
+### [1.1.1-test.2](https://github.com/ser-drephs/trackrs/compare/v1.1.1-test.1...v1.1.1-test.2) (2022-09-04)
+
+
+### Bug Fixes
+
+* another test ([8a79567](https://github.com/ser-drephs/trackrs/commit/8a79567db695ee696e6c7b6e0302fd9d697e45d1))
+
 ### [1.1.1-test.1](https://github.com/ser-drephs/trackrs/compare/v1.1.0...v1.1.1-test.1) (2022-09-04)
 
 
