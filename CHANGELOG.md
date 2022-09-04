@@ -1,3 +1,10 @@
+### [1.1.1-test.1](https://github.com/ser-drephs/trackrs/compare/v1.1.0...v1.1.1-test.1) (2022-09-04)
+
+
+### Bug Fixes
+
+* try release after semver calculation ([25c4beb](https://github.com/ser-drephs/trackrs/commit/25c4beb4e23a9313d03b4d83f65fa5b960693ba4))
+
 ## [1.1.0](https://github.com/ser-drephs/trackrs/compare/v1.0.1...v1.1.0) (2022-09-04)
 
 
