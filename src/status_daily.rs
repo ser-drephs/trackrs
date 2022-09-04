@@ -1569,12 +1569,12 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 4, 2).and_hms(8, 0, 0),
+                        time: Local.ymd(2022, 2, 4).and_hms(8, 0, 0),
                     },
                     Entry {
                         id: 2,
                         status: Status::End,
-                        time: Local.ymd(2022, 4, 2).and_hms(14, 0, 0),
+                        time: Local.ymd(2022, 2,4).and_hms(14, 0, 0),
                     },
                 ]
                 .to_vec(),
