@@ -23,7 +23,7 @@ pub struct Settings {
     pub workperday: WorkPerDay,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[allow(unused)]
 pub struct BreakLimit {
     pub start: u8,
