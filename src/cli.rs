@@ -1,4 +1,4 @@
-use chrono::{Datelike, Local};
+use chrono::{Datelike, Local, IsoWeek};
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
@@ -132,9 +132,10 @@ impl Cli {
             .folder(settings.folder.into())
             .today()
             .build()?;
+        let now = Local::now();
         time_data
             .read_from_file()?
-            .append(Status::Connect)?
+            .append(Status::Connect, now)?
             .write_to_file()
     }
 
@@ -145,9 +146,10 @@ impl Cli {
             .folder(settings.folder.into())
             .today()
             .build()?;
+        let now = Local::now();
         time_data
             .read_from_file()?
-            .append(Status::Break)?
+            .append(Status::Break, now)?
             .write_to_file()
     }
 
@@ -161,8 +163,9 @@ impl Cli {
             .data(time_data.clone())
             .settings(settings)
             .build()?;
+        let now = Local::now();
         time_data
-            .append(Status::End)?
+            .append(Status::End, now)?
             .assert_break(
                 status.exp_break.unwrap().duration,
                 status.r#break.unwrap().duration,
@@ -178,9 +181,10 @@ impl Cli {
             .folder(settings.folder.into())
             .today()
             .build()?;
+        let now = Local::now();
         time_data
             .read_from_file()?
-            .append(Status::Disconnect)?
+            .append(Status::Disconnect, now)?
             .write_to_file()
     }
 
@@ -191,10 +195,11 @@ impl Cli {
         match week {
             Some(w) => {
                 let year = Local::now().year();
+                let cur_week: IsoWeek = Local::now().iso_week();
                 let time_data = TimeDataWeekly::builder()
                     .folder(settings.folder.to_owned().into())
                     .year(year.try_into()?)
-                    .week(w, None)
+                    .week(w, cur_week)
                     .build()?;
 
                 let status = StatusWeekly::builder()

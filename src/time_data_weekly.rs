@@ -1,4 +1,4 @@
-use chrono::{Date, Datelike, IsoWeek, Local, TimeZone, Weekday};
+use chrono::{Date, IsoWeek, Local, TimeZone, Weekday};
 
 use crate::{Folder, TimeData, TrackerError};
 
@@ -36,15 +36,12 @@ impl TimeDataWeeklyBuilder {
         self
     }
 
-    pub fn week(&mut self, week: &i8, current_week: Option<IsoWeek>) -> &mut Self {
+    pub fn week(&mut self, week: &i8, current_week: IsoWeek) -> &mut Self {
         log::debug!("set week to: {:?}", week);
         self.week = match week > &0 {
             true => Some(week.to_owned()),
             false => {
-                let cw: i8 = match current_week {
-                    Some(w) => w.week().try_into().unwrap(),
-                    None => Local::now().iso_week().week().try_into().unwrap(),
-                };
+                let cw: i8 = current_week.week().try_into().unwrap();
                 Some(cw + week)
             }
         };
@@ -153,8 +150,9 @@ mod tests {
 
         #[test]
         fn should_set() {
+            let d = Local.ymd(2022, 2, 2);
             let mut builder = TimeDataWeekly::builder();
-            builder.year(2022).week(&2, None);
+            builder.year(2022).week(&2, d.iso_week());
 
             assert!(builder.week.is_some());
             assert_eq!(2, builder.week.unwrap());
@@ -164,7 +162,7 @@ mod tests {
         fn should_set_week_by_sub() {
             let d = Local.ymd(2022, 2, 2);
             let mut builder = TimeDataWeekly::builder();
-            builder.year(2022).week(&-2, Some(d.iso_week()));
+            builder.year(2022).week(&-2, d.iso_week());
 
             assert!(builder.week.is_some());
             assert_eq!(3, builder.week.unwrap());
@@ -174,7 +172,7 @@ mod tests {
         fn should_set_negative_week_by_sub() {
             let d = Local.ymd(2022, 2, 2);
             let mut builder = TimeDataWeekly::builder();
-            builder.year(2022).week(&-10, Some(d.iso_week()));
+            builder.year(2022).week(&-10, d.iso_week());
 
             assert!(builder.week.is_some());
             assert_eq!(-5, builder.week.unwrap());
@@ -182,11 +180,11 @@ mod tests {
 
         #[test]
         fn should_set_current_week() {
-            let d = Local::now();
+            let d = Local::now(); // required for test
             let w: i8 = d.iso_week().week().try_into().unwrap();
 
             let mut builder = TimeDataWeekly::builder();
-            builder.year(d.year().try_into().unwrap()).week(&0, None);
+            builder.year(d.year().try_into().unwrap()).week(&0, d.iso_week());
 
             assert!(builder.week.is_some());
             assert_eq!(w, builder.week.unwrap());
@@ -209,8 +207,9 @@ mod tests {
         #[test]
         #[should_panic(expected = "crosses year")]
         fn negative_week() {
+            let d = Local.ymd(2022, 2, 2);
             let mut builder = TimeDataWeekly::builder();
-            builder.year(2022).week(&-60, None).set_dates().unwrap();
+            builder.year(2022).week(&-60, d.iso_week()).set_dates().unwrap();
         }
 
         #[test]
@@ -220,7 +219,7 @@ mod tests {
             let mut builder = TimeDataWeekly::builder();
             builder
                 .year(2022)
-                .week(&-2, Some(d.iso_week()))
+                .week(&-2, d.iso_week())
                 .set_dates()?;
             assert!(builder.dates.is_some());
 
@@ -253,7 +252,7 @@ mod tests {
             builder
                 .folder(Folder::default())
                 .year(2022)
-                .week(&-2, Some(d.iso_week()))
+                .week(&-2, d.iso_week())
                 .set_dates()?
                 .set_files()?;
             assert_eq!(7, builder.inner.entries.len());
@@ -275,7 +274,7 @@ mod tests {
             let t = builder
                 .folder(Folder::default())
                 .year(2022)
-                .week(&-2, Some(d.iso_week()))
+                .week(&-2, d.iso_week())
                 .build()?;
             assert_eq!(7, t.entries.len());
 

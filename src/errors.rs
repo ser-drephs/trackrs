@@ -17,6 +17,8 @@ pub enum TrackerError {
     TrackerIntError(#[from] std::num::TryFromIntError),
     #[error("takeover not parsable")]
     TrackerTakeoverParseError(#[from] std::num::ParseIntError),
+    #[error("entry data not set: {message}")]
+    EntryError { message: String },
     #[error("time data error: {message}")]
     TimeDataError { message: String },
     #[error("week crosses year: {message}")]

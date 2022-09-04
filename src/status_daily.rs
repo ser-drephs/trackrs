@@ -369,7 +369,7 @@ mod tests {
 
     use std::ops::Add;
 
-    use chrono::{Duration, Local, TimeZone};
+    use chrono::{Duration, Local, TimeZone, DateTime};
 
     use crate::{
         BreakLimit, Entry, Settings, Status, StatusDaily, StatusTime, TimeData, WorkPerDay,
@@ -380,7 +380,7 @@ mod tests {
     use colored::control::ShouldColorize;
 
     fn logger() {
-        // std::env::set_var("RUST_LOG", "debug");
+        std::env::set_var("RUST_LOG", "debug");
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
@@ -615,14 +615,14 @@ mod tests {
         #[test]
         fn status_daily_temp_end() {
             logger();
-            let local = Local::now();
+            let local = Local.ymd(2022,2,2).and_hms(8, 0, 0);
             let est_end =
                 StatusTime::from(local.add(Duration::hours(8).add(Duration::minutes(30))));
             let data = TimeData {
                 entries: [Entry {
                     id: 1,
                     status: Status::Connect,
-                    time: Local::now(),
+                    time: local,
                 }]
                 .to_vec(),
                 ..Default::default()
@@ -828,7 +828,7 @@ mod tests {
                 entries: [Entry {
                     id: 2,
                     status: Status::Connect,
-                    time: Local::now(),
+                    time: DateTime::default(),
                 }]
                 .to_vec(),
                 ..Default::default()

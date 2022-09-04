@@ -1,12 +1,11 @@
 use std::{
     fs::{self, File, OpenOptions},
-    mem::take,
     ops::Sub,
     path::PathBuf,
     str::FromStr,
 };
 
-use chrono::{Date, Duration, Local};
+use chrono::{Date, Duration, Local, DateTime};
 
 use crate::{Entry, Status, Takeover, TrackerError};
 
@@ -66,16 +65,16 @@ impl TimeData {
                 .id(last_id)
                 .status(Status::Connect)
                 .time(time_c)
-                .build();
+                .build()?;
 
             let entry_e = Entry::builder()
                 .id(last_id + 1)
                 .status(Status::End)
                 .time(now)
-                .build();
+                .build()?;
             log::debug!(
                 "fill break with {:?} and {:?}",
-                self.entries[last_id as usize],
+                self.entries[last_index as usize],
                 entry_c
             );
 
@@ -84,19 +83,19 @@ impl TimeData {
         Ok(self)
     }
 
-    pub fn append(&mut self, status: Status) -> Result<&mut Self, TrackerError> {
+    pub fn append(&mut self, status: Status, time: DateTime<Local>) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         let last_id = match self.entries.last() {
             Some(last) => last.id,
             None => {
                 if self.takeover.is_some() {
                     let m = self.takeover.as_ref().unwrap();
-                    let time = Local::now().sub(Duration::minutes(m.minutes.unwrap().try_into()?));
+                    let time = time.sub(Duration::minutes(m.minutes.unwrap().try_into()?));
                     let t_entry = Entry::builder()
                         .id(0)
                         .status(Status::Connect)
                         .time(time)
-                        .build();
+                        .build()?;
                     self.entries.append(&mut [t_entry].to_vec());
                     1
                 } else {
@@ -105,7 +104,7 @@ impl TimeData {
             }
         };
 
-        let entry = Entry::builder().id(last_id).status(status).build();
+        let entry = Entry::builder().id(last_id).status(status).time(time).build()?;
         log::debug!("append time data: {:?}", entry);
         self.entries.append(&mut [entry].to_vec());
         Ok(self)
@@ -275,14 +274,15 @@ mod tests {
             logger();
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
+            let day = Local.ymd(2022, 2, 2);
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
-                .date(Local.ymd(2022, 2, 2))
+                .date(day)
                 .build()?;
             time_data
                 .read_from_file()?
-                .append(Status::Connect)?
-                .append(Status::End)?
+                .append(Status::Connect, day.and_hms(2, 1,0))?
+                .append(Status::End, day.and_hms(4, 1,0))?
                 .write_to_file()?;
             assert!(&time_file.exists());
             assert!(fs::metadata(&time_file)?.len() > 0);
@@ -294,13 +294,13 @@ mod tests {
             logger();
             let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]";
             let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
+            let time_file = temp_dir.path().join("20220804.json");
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
-                .date(Local.ymd(2022, 2, 2))
+                .date(Local.ymd(2022, 8, 4))
                 .build()?;
 
             time_data.read_from_file()?;
@@ -314,21 +314,22 @@ mod tests {
             logger();
             let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]";
             let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
+            let time_file = temp_dir.path().join("20220804.json");
+            let day = Local.ymd(2022, 8, 4);
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
             let initial_size = fs::metadata(&time_file)?.len();
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
-                .date(Local.ymd(2022, 2, 2))
+                .date(day)
                 .build()?;
 
             time_data.read_from_file()?;
             assert_eq!(2, time_data.entries.len());
             assert_eq!(2, time_data.entries.last().unwrap().id);
 
-            time_data.append(Status::End)?;
+            time_data.append(Status::End, day.and_hms(23, 3,0))?;
             assert_eq!(3, time_data.entries.len());
             assert_eq!(3, time_data.entries.last().unwrap().id);
 
@@ -340,7 +341,7 @@ mod tests {
         #[test]
         fn should_assert_break() -> Result<(), TrackerError> {
             logger();
-            let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}]";
+            let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-02-02T08:00:53.523332900Z\"}]";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
@@ -555,17 +556,19 @@ mod tests {
             set_current_dir(temp_dir.as_ref())?;
             let takeover_file = temp_dir.path().join(".trackrs-takeover");
             let time_file = temp_dir.path().join("20220202.json");
+            let day = Local.ymd(2022, 2, 2);
             let mut file = File::create(&takeover_file)?;
+
             file.write_all(file_content.as_bytes())?;
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
-                .date(Local.ymd(2022, 2, 2))
+                .date(day)
                 .build()?;
             time_data
                 .read_from_file()?
-                .append(Status::Connect)?
-                .append(Status::End)?
+                .append(Status::Connect, day.and_hms(2, 16,0))?
+                .append(Status::End, day.and_hms(5, 0, 0))?
                 .write_to_file()?;
             assert!(&time_file.exists());
 
@@ -574,6 +577,7 @@ mod tests {
             let diff = first_connect.time - takeover_time.time;
 
             assert_eq!(Duration::minutes(15).num_seconds(), diff.num_seconds(), "expected 15 minutes diff, but got {}", diff );
+            assert_eq!(day.and_hms(2, 1, 0), takeover_time.time);
             Ok(())
         }
 
@@ -586,23 +590,24 @@ mod tests {
             set_current_dir(temp_dir.as_ref())?;
             let takeover_file = temp_dir.path().join(".trackrs-takeover");
             let time_file = temp_dir.path().join("20220202.json");
+            let day = Local.ymd(2022, 2, 2);
             let mut file = File::create(&takeover_file)?;
             file.write_all(file_content.as_bytes())?;
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
-                .date(Local.ymd(2022, 2, 2))
+                .date(day)
                 .build()?;
             time_data
                 .read_from_file()?
-                .append(Status::Connect)?
-                .append(Status::End)?
+                .append(Status::Connect, day.and_hms(2, 15, 0))?
+                .append(Status::End, day.and_hms(2, 45, 0))?
                 .write_to_file()?;
             assert!(&time_file.exists());
 
             // assert file content
-            let exp_takeover = "{\"id\":1,\"status\":\"Connect\"";
-            let exp_connect = "{\"id\":2,\"status\":\"Connect\"";
+            let exp_takeover = "{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T02:00";
+            let exp_connect = "{\"id\":2,\"status\":\"Connect\",\"time\":\"2022-02-02T02:15";
 
             let act_content = fs::read_to_string(time_file)?;
 
@@ -628,17 +633,18 @@ mod tests {
             set_current_dir(temp_dir.as_ref())?;
             let takeover_file = temp_dir.path().join(".trackrs-takeover");
             let time_file = temp_dir.path().join("20220202.json");
+            let day = Local.ymd(2022, 2, 2);
             let mut file = File::create(&takeover_file)?;
             file.write_all(file_content.as_bytes())?;
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
-                .date(Local.ymd(2022, 2, 2))
+                .date(day)
                 .build()?;
             time_data
                 .read_from_file()?
-                .append(Status::Connect)?
-                .append(Status::End)?
+                .append(Status::Connect, day.and_hms(2, 15, 0))?
+                .append(Status::End, day.and_hms(4, 14, 0))?
                 .write_to_file()?;
             assert!(&time_file.exists());
 

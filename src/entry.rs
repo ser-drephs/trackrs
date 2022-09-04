@@ -19,7 +19,7 @@ impl Default for Entry {
         Self {
             id: 0,
             status: Status::Connect,
-            time: Local::now(),
+            time: DateTime::default(),
         }
     }
 }
@@ -36,7 +36,7 @@ impl Entry {
     pub fn builder() -> EntryBuilder {
         EntryBuilder {
             inner: Default::default(),
-            time_set: false
+            time_set: false,
         }
     }
 }
@@ -76,12 +76,13 @@ impl EntryBuilder {
     }
 
     /// Build the entry.
-    pub fn build(&mut self) -> Entry {
+    pub fn build(&mut self) -> Result<Entry, TrackerError> {
         if !self.time_set {
-            self.inner.time = Local::now();
+            Err(TrackerError::EntryError { message: "time not set".to_owned() })
+        } else {
+            log::trace!("Build entry: {:?}", self.inner);
+            Ok(self.inner.clone())
         }
-        log::trace!("Build entry: {:?}", self.inner);
-        self.inner.clone()
     }
 
     pub fn time(&mut self, time: DateTime<Local>) -> &mut Self {
@@ -101,18 +102,20 @@ mod tests {
 
     mod builder {
 
+        use chrono::DateTime;
+
         use super::*;
 
         #[test]
         fn should_build() {
-            let entry = Entry::builder().build();
+            let entry = Entry::builder().time(DateTime::default()).build().unwrap();
 
             assert_eq!(Status::Connect, entry.status);
         }
 
         #[test]
         fn should_build_entry_with_status() {
-            let entry = Entry::builder().status(Status::Disconnect).build();
+            let entry = Entry::builder().time(DateTime::default()).status(Status::Disconnect).build().unwrap();
 
             assert_eq!(Status::Disconnect, entry.status);
         }
@@ -124,11 +127,11 @@ mod tests {
 
         #[test]
         fn should_serialize() {
-            let timestamp = chrono::Local::now();
+            let timestamp = chrono::DateTime::default();
             let expected_id = "\"id\":0";
             let expected_status = "\"status\":\"Connect\"";
             let expected_time = format!("\"time\":\"{}", timestamp.format("%Y"));
-            let entry_str = Entry::builder().build().to_string();
+            let entry_str = Entry::builder().time(timestamp).build().unwrap().to_string();
 
             assert!(entry_str.contains(expected_id));
             assert!(entry_str.contains(expected_status));

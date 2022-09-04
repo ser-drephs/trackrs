@@ -15,7 +15,7 @@ pub struct StatusTime {
 
 impl StatusTime {
     pub fn now() -> StatusTime {
-        StatusTime::from(Local::now())
+        StatusTime::from(DateTime::default())
     }
 }
 
@@ -213,7 +213,7 @@ mod tests {
 
         #[test]
         fn should_create_from_datetime() {
-            let l = Local::now();
+            let l = DateTime::default();
             let d = Duration::seconds(l.num_seconds_from_midnight().into());
             let status = StatusTime::from(l);
             assert!(status.duration.ge(&d));
