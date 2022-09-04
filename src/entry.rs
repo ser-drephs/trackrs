@@ -24,7 +24,7 @@ impl Default for Entry {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Status {
     Connect,
     Disconnect,
