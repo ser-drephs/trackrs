@@ -5,7 +5,7 @@ use crate::{Folder, TimeData, TrackerError};
 #[derive(Default, Clone)]
 pub struct TimeDataWeekly {
     pub entries: Vec<TimeData>,
-    pub week: i8
+    pub week: i8,
 }
 
 impl TimeDataWeekly {
@@ -146,6 +146,8 @@ mod tests {
 
     mod builder {
 
+        use chrono::Datelike;
+
         use super::*;
 
         #[test]
@@ -184,7 +186,9 @@ mod tests {
             let w: i8 = d.iso_week().week().try_into().unwrap();
 
             let mut builder = TimeDataWeekly::builder();
-            builder.year(d.year().try_into().unwrap()).week(&0, d.iso_week());
+            builder
+                .year(d.year().try_into().unwrap())
+                .week(&0, d.iso_week());
 
             assert!(builder.week.is_some());
             assert_eq!(w, builder.week.unwrap());
@@ -209,7 +213,11 @@ mod tests {
         fn negative_week() {
             let d = Local.ymd(2022, 2, 2);
             let mut builder = TimeDataWeekly::builder();
-            builder.year(2022).week(&-60, d.iso_week()).set_dates().unwrap();
+            builder
+                .year(2022)
+                .week(&-60, d.iso_week())
+                .set_dates()
+                .unwrap();
         }
 
         #[test]
@@ -217,10 +225,7 @@ mod tests {
             logger();
             let d = Local.ymd(2022, 2, 2);
             let mut builder = TimeDataWeekly::builder();
-            builder
-                .year(2022)
-                .week(&-2, d.iso_week())
-                .set_dates()?;
+            builder.year(2022).week(&-2, d.iso_week()).set_dates()?;
             assert!(builder.dates.is_some());
 
             let dates = builder.dates.unwrap();
@@ -257,7 +262,6 @@ mod tests {
                 .set_files()?;
             assert_eq!(7, builder.inner.entries.len());
 
-
             let first = builder.inner.entries.first().unwrap();
             let last = builder.inner.entries.last().unwrap();
 
@@ -277,7 +281,6 @@ mod tests {
                 .week(&-2, d.iso_week())
                 .build()?;
             assert_eq!(7, t.entries.len());
-
 
             let first = t.entries.first().unwrap();
             let last = t.entries.last().unwrap();

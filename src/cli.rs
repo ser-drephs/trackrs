@@ -1,4 +1,4 @@
-use chrono::{Datelike, Local, IsoWeek};
+use chrono::{Datelike, IsoWeek, Local};
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
 

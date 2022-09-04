@@ -5,7 +5,7 @@ use std::{
     str::FromStr,
 };
 
-use chrono::{Date, Duration, Local, DateTime};
+use chrono::{Date, DateTime, Duration, Local};
 
 use crate::{Entry, Status, Takeover, TrackerError};
 
@@ -83,7 +83,11 @@ impl TimeData {
         Ok(self)
     }
 
-    pub fn append(&mut self, status: Status, time: DateTime<Local>) -> Result<&mut Self, TrackerError> {
+    pub fn append(
+        &mut self,
+        status: Status,
+        time: DateTime<Local>,
+    ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         let last_id = match self.entries.last() {
             Some(last) => last.id,
@@ -104,7 +108,11 @@ impl TimeData {
             }
         };
 
-        let entry = Entry::builder().id(last_id).status(status).time(time).build()?;
+        let entry = Entry::builder()
+            .id(last_id)
+            .status(status)
+            .time(time)
+            .build()?;
         log::debug!("append time data: {:?}", entry);
         self.entries.append(&mut [entry].to_vec());
         Ok(self)
@@ -281,8 +289,8 @@ mod tests {
                 .build()?;
             time_data
                 .read_from_file()?
-                .append(Status::Connect, day.and_hms(2, 1,0))?
-                .append(Status::End, day.and_hms(4, 1,0))?
+                .append(Status::Connect, day.and_hms(2, 1, 0))?
+                .append(Status::End, day.and_hms(4, 1, 0))?
                 .write_to_file()?;
             assert!(&time_file.exists());
             assert!(fs::metadata(&time_file)?.len() > 0);
@@ -329,7 +337,7 @@ mod tests {
             assert_eq!(2, time_data.entries.len());
             assert_eq!(2, time_data.entries.last().unwrap().id);
 
-            time_data.append(Status::End, day.and_hms(23, 3,0))?;
+            time_data.append(Status::End, day.and_hms(23, 3, 0))?;
             assert_eq!(3, time_data.entries.len());
             assert_eq!(3, time_data.entries.last().unwrap().id);
 
@@ -567,7 +575,7 @@ mod tests {
                 .build()?;
             time_data
                 .read_from_file()?
-                .append(Status::Connect, day.and_hms(2, 16,0))?
+                .append(Status::Connect, day.and_hms(2, 16, 0))?
                 .append(Status::End, day.and_hms(5, 0, 0))?
                 .write_to_file()?;
             assert!(&time_file.exists());
@@ -576,7 +584,12 @@ mod tests {
             let first_connect = time_data.entries[1].to_owned();
             let diff = first_connect.time - takeover_time.time;
 
-            assert_eq!(Duration::minutes(15).num_seconds(), diff.num_seconds(), "expected 15 minutes diff, but got {}", diff );
+            assert_eq!(
+                Duration::minutes(15).num_seconds(),
+                diff.num_seconds(),
+                "expected 15 minutes diff, but got {}",
+                diff
+            );
             assert_eq!(day.and_hms(2, 1, 0), takeover_time.time);
             Ok(())
         }
@@ -652,7 +665,12 @@ mod tests {
             let first_connect = time_data.entries[1].to_owned();
             let diff = first_connect.time - takeover_time.time;
 
-            assert_eq!(Duration::minutes(95).num_seconds(), diff.num_seconds(), "expected 1:35 minutes diff, but got {}", diff );
+            assert_eq!(
+                Duration::minutes(95).num_seconds(),
+                diff.num_seconds(),
+                "expected 1:35 minutes diff, but got {}",
+                diff
+            );
             Ok(())
         }
     }

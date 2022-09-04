@@ -78,7 +78,9 @@ impl EntryBuilder {
     /// Build the entry.
     pub fn build(&mut self) -> Result<Entry, TrackerError> {
         if !self.time_set {
-            Err(TrackerError::EntryError { message: "time not set".to_owned() })
+            Err(TrackerError::EntryError {
+                message: "time not set".to_owned(),
+            })
         } else {
             log::trace!("Build entry: {:?}", self.inner);
             Ok(self.inner.clone())
@@ -115,7 +117,11 @@ mod tests {
 
         #[test]
         fn should_build_entry_with_status() {
-            let entry = Entry::builder().time(DateTime::default()).status(Status::Disconnect).build().unwrap();
+            let entry = Entry::builder()
+                .time(DateTime::default())
+                .status(Status::Disconnect)
+                .build()
+                .unwrap();
 
             assert_eq!(Status::Disconnect, entry.status);
         }
@@ -131,7 +137,11 @@ mod tests {
             let expected_id = "\"id\":0";
             let expected_status = "\"status\":\"Connect\"";
             let expected_time = format!("\"time\":\"{}", timestamp.format("%Y"));
-            let entry_str = Entry::builder().time(timestamp).build().unwrap().to_string();
+            let entry_str = Entry::builder()
+                .time(timestamp)
+                .build()
+                .unwrap()
+                .to_string();
 
             assert!(entry_str.contains(expected_id));
             assert!(entry_str.contains(expected_status));

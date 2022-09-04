@@ -54,7 +54,8 @@ fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
     let f = fs::read_dir(&folder).unwrap();
     let files = f
         .map(|res| res.map(|e| e.path()))
-        .collect::<Result<Vec<_>, io::Error>>().unwrap();
+        .collect::<Result<Vec<_>, io::Error>>()
+        .unwrap();
     assert_eq!(&1, &files.len());
 
     let b = Cli::from_iter(["trackrs", "break"].iter());
@@ -92,7 +93,8 @@ fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
     let f = fs::read_dir(&folder).unwrap();
     let files = f
         .map(|res| res.map(|e| e.path()))
-        .collect::<Result<Vec<_>, io::Error>>().unwrap();
+        .collect::<Result<Vec<_>, io::Error>>()
+        .unwrap();
     assert_eq!(&1, &files.len());
 
     let b = Cli::from_iter(["trackrs", "break"].iter());
