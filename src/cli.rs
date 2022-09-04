@@ -33,7 +33,7 @@ pub enum Commands {
         ///
         /// Either enter the correct week of the year or a relative value eg. -1
         #[clap(short, value_parser, allow_hyphen_values = true)]
-        week: Option<i8>
+        week: Option<i8>,
     },
     /// Start tracking work
     ///
@@ -60,16 +60,25 @@ pub enum Commands {
     /// Continue tracking work for today.
     #[clap(display_order = 6)]
     Continue,
+    /// Take over time to next day
+    ///
+    /// Takes over defined minutes to next day, whenever next connect is executed.
+    #[clap(display_order = 7)]
+    Takeover {
+        /// Minutes to take over to next day.
+        #[clap()]
+        minutes: u16,
+    },
     /// Configuration
     ///
     /// List or edit configuration
-    #[clap(display_order = 7)]
+    #[clap(display_order = 8)]
     Config {
         /// List configuration
-        #[clap(short, long, conflicts_with="edit")]
+        #[clap(short, long, conflicts_with = "edit")]
         list: bool,
         /// Open configuration in default editor
-        #[clap(short, long, conflicts_with="list")]
+        #[clap(short, long, conflicts_with = "list")]
         edit: bool,
     },
 }
@@ -87,6 +96,7 @@ impl CliExecute for Cli {
             Commands::Disconnect => self.invoke_disconnect(),
             Commands::Status { week } => self.invoke_status(week),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
+            Commands::Takeover { minutes } => self.invoke_takeover(minutes),
             _ => self.invoke_start(), // default and Command::Start.
         }
     }
@@ -155,7 +165,7 @@ impl Cli {
             .append(Status::End)?
             .assert_break(
                 status.exp_break.unwrap().duration,
-                status.r#break.unwrap().duration
+                status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
         self.invoke_status(&None)
@@ -216,9 +226,15 @@ impl Cli {
         if *edit {
             log::debug!("invoke default editor with config");
             open::that(settings.file)?
-        } else{
+        } else {
             println!("{:#?}", settings);
         }
+        Ok(())
+    }
+
+    fn invoke_takeover(&self, minutes: &u16) -> TrackerResult {
+        log::info!("takeover {} minutes", minutes);
+
         Ok(())
     }
 }
