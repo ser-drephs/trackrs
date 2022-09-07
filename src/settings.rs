@@ -20,7 +20,7 @@ pub struct Settings {
     pub folder: String,
     pub threshold_limits: u8,
     pub limits: Vec<BreakLimit>,
-    pub workperday: WorkPerDay,
+    pub workperday: WorkPerDayInMinutes,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
@@ -50,18 +50,18 @@ impl From<BreakLimit> for config::Value {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(unused)]
-pub struct WorkPerDay {
-    pub monday: u8,
-    pub tuesday: u8,
-    pub wednesday: u8,
-    pub thursday: u8,
-    pub friday: u8,
-    pub saturday: u8,
-    pub sunday: u8,
+pub struct WorkPerDayInMinutes {
+    pub monday: u16,
+    pub tuesday: u16,
+    pub wednesday: u16,
+    pub thursday: u16,
+    pub friday: u16,
+    pub saturday: u16,
+    pub sunday: u16,
 }
 
-impl From<WorkPerDay> for config::Value {
-    fn from(w: WorkPerDay) -> Self {
+impl From<WorkPerDayInMinutes> for config::Value {
+    fn from(w: WorkPerDayInMinutes) -> Self {
         let mut m = Map::new();
         m.insert(
             "monday".to_owned(),
@@ -103,7 +103,7 @@ impl From<WorkPerDay> for config::Value {
             "sunday".to_owned(),
             Value::new(Some(&"sunday".to_owned()), ValueKind::U64(w.sunday.into())),
         );
-        Value::new(Some(&"WorkPerDay".to_string()), ValueKind::Table(m))
+        Value::new(Some(&"workperday".to_string()), ValueKind::Table(m))
     }
 }
 
@@ -119,14 +119,14 @@ impl Default for Settings {
     }
 }
 
-impl Default for WorkPerDay {
+impl Default for WorkPerDayInMinutes {
     fn default() -> Self {
         Self {
-            monday: 8,
-            tuesday: 8,
-            wednesday: 8,
-            thursday: 8,
-            friday: 8,
+            monday: 8 * 60,
+            tuesday: 8 * 60,
+            wednesday: 8 * 60,
+            thursday: 8 * 60,
+            friday: 8 * 60,
             saturday: 0,
             sunday: 0,
         }
@@ -178,8 +178,8 @@ impl Settings {
     }
 }
 
-impl WorkPerDay {
-    pub fn from(&self, date: DateTime<Local>) -> &u8 {
+impl WorkPerDayInMinutes {
+    pub fn from(&self, date: DateTime<Local>) -> &u16 {
         match date.weekday() {
             chrono::Weekday::Mon => &self.monday,
             chrono::Weekday::Tue => &self.tuesday,
@@ -191,7 +191,7 @@ impl WorkPerDay {
         }
     }
 
-    pub fn from_date(&self, date: Date<Local>) -> &u8 {
+    pub fn from_date(&self, date: Date<Local>) -> &u16 {
         match date.weekday() {
             chrono::Weekday::Mon => &self.monday,
             chrono::Weekday::Tue => &self.tuesday,
@@ -208,7 +208,7 @@ impl WorkPerDay {
 mod tests {
     use std::fs::OpenOptions;
 
-    use crate::{BreakLimit, Settings, TrackerError, WorkPerDay};
+    use crate::{BreakLimit, Settings, TrackerError, WorkPerDayInMinutes};
 
     mod settings {
 
@@ -223,7 +223,7 @@ mod tests {
             assert_eq!(dirs::home_dir().unwrap().to_str().unwrap(), settings.folder);
             assert_eq!(1, settings.threshold_limits);
             assert_eq!(0, settings.limits.len());
-            assert_eq!(8, settings.workperday.wednesday);
+            assert_eq!(8 * 60, settings.workperday.wednesday);
             assert_eq!(0, settings.workperday.saturday);
             Ok(())
         }
@@ -245,12 +245,12 @@ mod tests {
                     },
                 ]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    monday: 6,
-                    tuesday: 7,
-                    wednesday: 8,
-                    thursday: 6,
-                    friday: 4,
+                workperday: WorkPerDayInMinutes {
+                    monday: 6 * 60,
+                    tuesday: 7 * 60,
+                    wednesday: 8 * 60,
+                    thursday: 6 * 60,
+                    friday: 4 * 60,
                     saturday: 0,
                     sunday: 0,
                 },

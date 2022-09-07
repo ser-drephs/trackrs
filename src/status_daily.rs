@@ -133,7 +133,12 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::hours(s.workperday.from(d.entries[0].time).to_owned().into());
+            let w = Duration::minutes(
+                s.workperday
+                    .from(d.entries[0].time)
+                    .to_owned()
+                    .into(),
+            );
 
             self.exp_worktime = Some(StatusTime::from(w));
 
@@ -208,7 +213,12 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::hours(s.workperday.from(d.entries[0].time).to_owned().into());
+            let w = Duration::minutes(
+                s.workperday
+                    .from(d.entries[0].time)
+                    .to_owned()
+                    .into(),
+            );
 
             let e = if self.r#break.to_owned().unwrap() > self.exp_break.to_owned().unwrap() {
                 w.add(self.r#break.to_owned().unwrap().into())
@@ -372,7 +382,7 @@ mod tests {
     use chrono::{DateTime, Duration, Local, TimeZone};
 
     use crate::{
-        BreakLimit, Entry, Settings, Status, StatusDaily, StatusTime, TimeData, WorkPerDay,
+        BreakLimit, Entry, Settings, Status, StatusDaily, StatusTime, TimeData, WorkPerDayInMinutes,
     };
 
     use indoc::indoc;
@@ -635,9 +645,9 @@ mod tests {
                     minutes: 30,
                 }]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    saturday: 8,
-                    sunday: 8,
+                workperday: WorkPerDayInMinutes {
+                    saturday: 8 * 60,
+                    sunday: 8 * 60,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -715,8 +725,8 @@ mod tests {
                     minutes: 45,
                 }]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    wednesday: 6,
+                workperday: WorkPerDayInMinutes {
+                    wednesday: 6 * 60,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1049,8 +1059,8 @@ mod tests {
                     },
                 ]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    wednesday: 8,
+                workperday: WorkPerDayInMinutes {
+                    wednesday: 8 * 60,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1114,8 +1124,8 @@ mod tests {
                     },
                 ]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    wednesday: 8,
+                workperday: WorkPerDayInMinutes {
+                    wednesday: 8 * 60,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1181,8 +1191,8 @@ mod tests {
                     },
                 ]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    wednesday: 8,
+                workperday: WorkPerDayInMinutes {
+                    wednesday: 8 * 60,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1242,8 +1252,8 @@ mod tests {
                     },
                 ]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    wednesday: 8,
+                workperday: WorkPerDayInMinutes {
+                    wednesday: 8 * 60,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1299,8 +1309,8 @@ mod tests {
                     },
                 ]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    wednesday: 6,
+                workperday: WorkPerDayInMinutes {
+                    wednesday: 6 * 60,
                     ..Default::default()
                 },
                 threshold_limits: 5,
@@ -1365,8 +1375,8 @@ mod tests {
                     },
                 ]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    wednesday: 7,
+                workperday: WorkPerDayInMinutes {
+                    wednesday: 7 * 60,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1406,8 +1416,8 @@ mod tests {
                     minutes: 45,
                 }]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    wednesday: 6,
+                workperday: WorkPerDayInMinutes {
+                    wednesday: 6 * 60,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1445,43 +1455,62 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 0, 0),
+                        time: Local.ymd(2022, 2, 7).and_hms(8, 55, 46),
                     },
                     Entry {
                         id: 2,
-                        status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 0, 0),
+                        status: Status::Connect,
+                        time: Local.ymd(2022, 2, 7).and_hms(8, 56, 15),
                     },
                     Entry {
                         id: 3,
+                        status: Status::Break,
+                        time: Local.ymd(2022, 2, 7).and_hms(12, 25, 57),
+                    },
+                    Entry {
+                        id: 4,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 30, 0),
+                        time: Local.ymd(2022, 2, 7).and_hms(12, 26, 46),
+                    },
+                    Entry {
+                        id: 5,
+                        status: Status::Break,
+                        time: Local.ymd(2022, 2, 7).and_hms(12, 28, 7),
+                    },
+                    Entry {
+                        id: 6,
+                        status: Status::Connect,
+                        time: Local.ymd(2022, 2, 7).and_hms(12, 58, 7),
+                    },
+                    Entry {
+                        id: 7,
+                        status: Status::Break,
+                        time: Local.ymd(2022, 2, 7).and_hms(17, 0, 7),
+                    },
+                    Entry {
+                        id: 8,
+                        status: Status::Connect,
+                        time: Local.ymd(2022, 2, 7).and_hms(17, 15, 7),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(18, 0, 0),
+                        time: Local.ymd(2022, 2, 7).and_hms(18, 27, 40),
                     },
                 ]
                 .to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
-                limits: [
-                    BreakLimit {
-                        start: 6,
-                        minutes: 30,
-                    },
-                    BreakLimit {
-                        start: 8,
-                        minutes: 45,
-                    },
-                    BreakLimit {
-                        start: 10,
-                        minutes: 60,
-                    },
-                ]
+                limits: [BreakLimit {
+                    start: 8,
+                    minutes: 30,
+                }]
                 .to_vec(),
+                workperday: WorkPerDayInMinutes {
+                    monday: 510,
+                    ..Default::default()
+                },
                 ..Default::default()
             };
 
@@ -1494,9 +1523,9 @@ mod tests {
             log::debug!("{}", status);
 
             assert_eq!(
-                Duration::hours(1).add(Duration::minutes(15)),
+                Duration::minutes(16).add(Duration::seconds(5)),
                 status.overtime.duration,
-                "expected 1:15 overtime but was {}",
+                "expected 0:16 overtime but was {}",
                 status.overtime
             );
         }
@@ -1744,8 +1773,8 @@ mod tests {
                     },
                 ]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    friday: 6,
+                workperday: WorkPerDayInMinutes {
+                    friday: 6 * 60,
                     ..Default::default()
                 },
                 threshold_limits: 5,
@@ -1808,8 +1837,8 @@ mod tests {
                     },
                 ]
                 .to_vec(),
-                workperday: WorkPerDay {
-                    friday: 6,
+                workperday: WorkPerDayInMinutes {
+                    friday: 6 * 60,
                     ..Default::default()
                 },
                 threshold_limits: 5,
