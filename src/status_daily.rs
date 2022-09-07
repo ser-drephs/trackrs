@@ -379,6 +379,8 @@ mod tests {
 
     use colored::control::ShouldColorize;
 
+    use std::ops::Sub;
+
     fn logger() {
         std::env::set_var("RUST_LOG", "debug");
         let _ = env_logger::builder().is_test(true).try_init();
@@ -615,7 +617,7 @@ mod tests {
         #[test]
         fn status_daily_temp_end() {
             logger();
-            let local = Local.ymd(2022, 2, 2).and_hms(8, 0, 0);
+            let local = chrono::Local::now().sub(Duration::minutes(35));
             let est_end =
                 StatusTime::from(local.add(Duration::hours(8).add(Duration::minutes(30))));
             let data = TimeData {
@@ -649,7 +651,17 @@ mod tests {
 
             log::debug!("{}", status);
 
+            let str = format!("{}", status);
+            let lines = str.split('\n').collect::<Vec<&str>>();
+
             if ShouldColorize::from_env().should_colorize() {
+                //assert worktime
+                assert_eq!("Work time:   00:05 (\u{1b}[91m-07:55\u{1b}[0m)", lines[0]);
+                //assert online
+                assert_eq!("Online time: 00:35", lines[1]);
+                //assert break
+                assert_eq!("Break:       00:00 (\u{1b}[91m-00:30\u{1b}[0m)", lines[2]);
+
                 assert!(
                     format!("{}", status).contains(&format!(
                         "End:         \u{1b}[93m{} (est.)\u{1b}[0m",
@@ -660,6 +672,13 @@ mod tests {
                     status.est_end
                 );
             } else {
+                //assert worktime
+                assert_eq!("Work time:   00:05 (-07:55)", lines[0]);
+                //assert online
+                assert_eq!("Online time: 00:35", lines[1]);
+                //assert break
+                assert_eq!("Break:       00:00 (-00:30)", lines[2]);
+
                 assert!(
                     format!("{}", status).contains(&format!("End:         {}", est_end)),
                     "Expected 'estimated end' to be: {}', but found: {}",

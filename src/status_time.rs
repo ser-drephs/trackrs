@@ -15,7 +15,7 @@ pub struct StatusTime {
 
 impl StatusTime {
     pub fn now() -> StatusTime {
-        StatusTime::from(DateTime::default())
+        StatusTime::from(Local::now())
     }
 }
 
