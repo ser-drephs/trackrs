@@ -85,7 +85,7 @@ impl StatusWeeklyBuilder {
                     .from_date(d.date.unwrap());
                 if expected >= &0 {
                     let exh = expected.to_owned() as i64;
-                    overtime -= StatusTime::from(Duration::hours(exh));
+                    overtime -= StatusTime::from(Duration::minutes(exh));
                 }
             }
         });

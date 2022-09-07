@@ -64,7 +64,7 @@ Windows | %USERPROFILE%/.trackrs | C:\Users\Alice\.trackrs
 - `folder`: the folder for the time tracker json files.
 - `threshold_limits`: time in minutes which acts as threshold for the limits. In between this limits neither `status` nor `end` will calculate additional breaks.
 - `limits`: staring from a specific hour `start`, a mandatory `minutes` break is required. This is used by `status` and `end` to calculate the working time.
-- `workperday`: setup the normal work hours for a day.
+- `workperday`: setup the normal work time for a day in minutes.
 
 Example:
 ```json
@@ -86,11 +86,11 @@ Example:
     }
   ],
   "workperday": {
-    "monday": 8,
-    "tuesday": 8,
-    "wednesday": 8,
-    "thursday": 8,
-    "friday": 8,
+    "monday": 480,
+    "tuesday": 480,
+    "wednesday": 480,
+    "thursday": 480,
+    "friday": 480,
     "saturday": 0,
     "sunday": 0
   }
