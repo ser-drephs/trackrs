@@ -76,6 +76,7 @@ impl StatusDaily {
         {
             Some(c) => {
                 log::info!("end at: {}", c.time.time());
+                log::info!("finished reading time data for {}", c.time.date());
                 self.end = Some(c.into());
             }
             None => {
@@ -133,12 +134,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(
-                s.workperday
-                    .from(d.entries[0].time)
-                    .to_owned()
-                    .into(),
-            );
+            let w = Duration::minutes(s.workperday.from(d.entries[0].time).to_owned().into());
 
             self.exp_worktime = Some(StatusTime::from(w));
 
@@ -156,9 +152,6 @@ impl StatusDaily {
 
             let mut bl = s.limits.to_owned();
             bl.sort_by(|x, y| y.start.partial_cmp(&x.start).unwrap());
-
-            // get threshold for breaks
-            // let t = Duration::minutes(s.threshold_limits.to_owned().into());
 
             self.exp_break = match bl
                 .iter_mut()
@@ -213,12 +206,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(
-                s.workperday
-                    .from(d.entries[0].time)
-                    .to_owned()
-                    .into(),
-            );
+            let w = Duration::minutes(s.workperday.from(d.entries[0].time).to_owned().into());
 
             let e = if self.r#break.to_owned().unwrap() > self.exp_break.to_owned().unwrap() {
                 w.add(self.r#break.to_owned().unwrap().into())
@@ -238,10 +226,6 @@ impl StatusDaily {
 
     fn set_overtime(&mut self) -> &mut Self {
         self.overtime = self.worktime.to_owned() - self.exp_worktime.as_ref().unwrap().to_owned();
-        // (self.start.as_ref().unwrap().to_owned()
-        //     + self.online.as_ref().unwrap().to_owned()
-        //     - self.calc_break.as_ref().unwrap().to_owned())
-        //     - self.est_end.to_owned();
         self
     }
 }
@@ -281,6 +265,7 @@ impl StatusDailyBuilder {
         }
 
         let mut d = self.inner.to_owned();
+
         d.set_start()
             .set_end()
             .set_online()
@@ -1599,6 +1584,60 @@ mod tests {
                 Duration::minutes(16).add(Duration::seconds(5)),
                 status.overtime.duration,
                 "expected 0:16 overtime but was {}",
+                status.overtime
+            );
+        }
+
+        #[test]
+        fn should_calculate_negative_overtime() {
+            logger();
+            let data = TimeData {
+                entries: [
+                    Entry {
+                        id: 1,
+                        status: Status::Connect,
+                        time: Local.ymd(2022, 2, 7).and_hms(8, 22, 11),
+                    },
+                    Entry {
+                        id: 2,
+                        status: Status::End,
+                        time: Local.ymd(2022, 2, 7).and_hms(12, 16, 32),
+                    },
+                ]
+                .to_vec(),
+                ..Default::default()
+            };
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 0,
+                        minutes: 15,
+                    },
+                    BreakLimit {
+                        start: 8,
+                        minutes: 45,
+                    },
+                ]
+                .to_vec(),
+                workperday: WorkPerDayInMinutes {
+                    monday: 360,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let status = StatusDaily::builder()
+                .data(data)
+                .settings(settings)
+                .build()
+                .unwrap();
+
+            log::debug!("{}", status);
+
+            assert_eq!(
+                Duration::hours(-2).sub(Duration::minutes(21).sub(Duration::seconds(21))),
+                status.overtime.duration,
+                "expected -2:21 overtime but was {}",
                 status.overtime
             );
         }

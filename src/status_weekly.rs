@@ -69,7 +69,7 @@ impl StatusWeeklyBuilder {
                     .settings(settings.clone())
                     .build()
                     .unwrap();
-                log::debug!(
+                log::info!(
                     "got {} working time and {} overtime",
                     s.worktime,
                     s.overtime
@@ -90,7 +90,7 @@ impl StatusWeeklyBuilder {
             }
         });
 
-        log::debug!("totally {} working time and {} overtime", total, overtime);
+        log::info!("totally {} working time and {} overtime", total, overtime);
 
         // let i_32: i32 = total.duration.num_minutes().try_into()?;
         let decimal: f64 = self.datetime_to_decimal(&total);
