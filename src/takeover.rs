@@ -76,7 +76,7 @@ impl TakeoverBuilder {
                     t.minutes = None;
                 }
             } else {
-                log::info!("no takeover requested");
+                log::debug!("no takeover requested");
             }
             Ok(t)
         }

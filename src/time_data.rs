@@ -238,7 +238,6 @@ impl TimeDataBuilder {
         let df = date.format("%Y%m%d");
         let file = self.folder.join(format!("{}.json", df));
         log::debug!("set time data file to: {:?}", &file);
-        log::info!("time data for {}", date.format("%Y-%m-%d"));
         self.inner.file = file;
         self.has_file = true;
         self.inner.date = Some(date);
