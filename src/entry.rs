@@ -30,6 +30,7 @@ pub enum Status {
     Disconnect,
     Break,
     End,
+    Takeover
 }
 
 impl Entry {

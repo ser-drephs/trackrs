@@ -116,3 +116,39 @@ fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
     assert!(a.contains("\"id\":3,\"status\":\"Connect\""));
     assert!(!a.contains("\"status\":\"End\""));
 }
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn takeover_subtracts_from_today(ctx: &mut IntegrationContext) {
+    let folder = ctx.temp_dir.path().join("trackrs");
+
+    let s = Cli::from_iter(["trackrs", "start"].iter());
+    s.execute().unwrap();
+
+    let f = fs::read_dir(&folder).unwrap();
+    let files = f
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<_>, io::Error>>()
+        .unwrap();
+    assert_eq!(&1, &files.len());
+
+    let b = Cli::from_iter(["trackrs", "break"].iter());
+    b.execute().unwrap();
+
+    let c = Cli::from_iter(["trackrs", "continue"].iter());
+    c.execute().unwrap();
+
+    let file = files.first().unwrap();
+    let r = std::fs::File::open(file).unwrap();
+    let raw: Vec<String> = std::io::BufRead::lines(std::io::BufReader::new(r))
+        .map(|l| l.unwrap())
+        .collect();
+
+    let a = raw.first().unwrap();
+
+    assert!(a.contains("\"id\":1,\"status\":\"Connect\""));
+    assert!(a.contains("\"id\":2,\"status\":\"Break\""));
+    assert!(a.contains("\"id\":3,\"status\":\"Connect\""));
+    assert!(!a.contains("\"status\":\"End\""));
+}

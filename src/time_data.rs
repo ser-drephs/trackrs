@@ -91,21 +91,7 @@ impl TimeData {
         self.assert_build()?;
         let last_id = match self.entries.last() {
             Some(last) => last.id,
-            None => {
-                if self.takeover.is_some() {
-                    let m = self.takeover.as_ref().unwrap();
-                    let time = time.sub(Duration::minutes(m.minutes.unwrap().try_into()?));
-                    let t_entry = Entry::builder()
-                        .id(0)
-                        .status(Status::Connect)
-                        .time(time)
-                        .build()?;
-                    self.entries.append(&mut [t_entry].to_vec());
-                    1
-                } else {
-                    0
-                }
-            }
+            None => 0,
         };
 
         let entry = Entry::builder()
@@ -115,6 +101,42 @@ impl TimeData {
             .build()?;
         log::debug!("append time data: {:?}", entry);
         self.entries.append(&mut [entry].to_vec());
+        Ok(self)
+    }
+
+    pub fn assert_takeover(&mut self, time: DateTime<Local>) -> Result<&mut Self, TrackerError> {
+        self.assert_build()?;
+        if self.takeover.is_some() {
+            let m = self.takeover.as_ref().unwrap();
+            let time = time.sub(Duration::minutes(m.minutes.unwrap().try_into()?));
+            let t_entry = Entry::builder()
+                .id(0)
+                .status(Status::Connect)
+                .time(time)
+                .build()?;
+            self.entries.append(&mut [t_entry].to_vec());
+        }
+        Ok(self)
+    }
+
+    pub fn takeover(&mut self, takeover: Duration) -> Result<&mut Self, TrackerError> {
+        self.assert_build()?;
+        let end = self.entries.iter().find(|&x| x.status == Status::End);
+        if end.is_none() {
+            log::warn!("End first to takeover time!")
+        } else {
+            let last_id = self.entries.last().unwrap().id;
+            let old_time = Option::unwrap(end).time;
+            self.entries[(last_id - 1) as usize].time = old_time.sub(takeover);
+
+            let entry = Entry::builder()
+                .id(last_id)
+                .status(Status::Takeover)
+                .time(old_time)
+                .build()?;
+            log::debug!("append takeover: {:?}", entry);
+            self.entries.append(&mut [entry].to_vec());
+        }
         Ok(self)
     }
 
@@ -247,7 +269,7 @@ mod tests {
 
     use chrono::{Duration, Local, TimeZone, Timelike};
 
-    use crate::{Entry, Status, TimeData, TrackerError};
+    use crate::{Entry, Status, TimeData, TrackerError, Takeover};
 
     fn logger() {
         // std::env::set_var("RUST_LOG", "debug");
@@ -559,26 +581,25 @@ mod tests {
         fn should_takeover_time() -> Result<(), TrackerError> {
             logger();
             env::set_var("RUST_TEST", "true");
-            let file_content = "{\"minutes\":15}";
             let temp_dir = tempfile::tempdir()?;
-            set_current_dir(temp_dir.as_ref())?;
-            let takeover_file = temp_dir.path().join(".trackrs-takeover");
             let time_file = temp_dir.path().join("20220202.json");
             let day = Local.ymd(2022, 2, 2);
-            let mut file = File::create(&takeover_file)?;
-
-            file.write_all(file_content.as_bytes())?;
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
                 .date(day)
                 .build()?;
             time_data
-                .read_from_file()?
+                .read_from_file()?;
+
+            time_data.takeover = Some(Takeover::builder().file().set(15)?);
+
+            time_data
+                .assert_takeover(day.and_hms(2, 16, 0))?
                 .append(Status::Connect, day.and_hms(2, 16, 0))?
                 .append(Status::End, day.and_hms(5, 0, 0))?
                 .write_to_file()?;
-            assert!(&time_file.exists());
+            assert!(&time_file.exists(), "time file should exist");
 
             let takeover_time = time_data.entries[0].to_owned();
             let first_connect = time_data.entries[1].to_owned();
@@ -590,7 +611,7 @@ mod tests {
                 "expected 15 minutes diff, but got {}",
                 diff
             );
-            assert_eq!(day.and_hms(2, 1, 0), takeover_time.time);
+            assert_eq!(day.and_hms(2, 1, 0), takeover_time.time, "takeover time doesnt match");
             Ok(())
         }
 
@@ -613,6 +634,7 @@ mod tests {
                 .build()?;
             time_data
                 .read_from_file()?
+                .assert_takeover(day.and_hms(2, 15, 0))?
                 .append(Status::Connect, day.and_hms(2, 15, 0))?
                 .append(Status::End, day.and_hms(2, 45, 0))?
                 .write_to_file()?;
@@ -656,6 +678,7 @@ mod tests {
                 .build()?;
             time_data
                 .read_from_file()?
+                .assert_takeover(day.and_hms(2, 15, 0))?
                 .append(Status::Connect, day.and_hms(2, 15, 0))?
                 .append(Status::End, day.and_hms(4, 14, 0))?
                 .write_to_file()?;
@@ -671,6 +694,37 @@ mod tests {
                 "expected 1:35 minutes diff, but got {}",
                 diff
             );
+            Ok(())
+        }
+
+        #[test]
+        fn should_create_takeover_entry() -> Result<(), TrackerError> {
+            logger();
+            let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}]";
+            let temp_dir = tempfile::tempdir()?;
+            let time_file = temp_dir.path().join("20220804.json");
+            let mut file = File::create(&time_file)?;
+            file.write_all(file_content.as_bytes())?;
+
+            let mut time_data = TimeData::builder()
+                .folder(temp_dir.into_path().into())
+                .date(Local.ymd(2022, 8, 4))
+                .build()?;
+
+            time_data
+                .read_from_file()?
+                .takeover(Duration::minutes(20))?;
+            assert_eq!(3, time_data.entries.len());
+
+            let end = time_data.entries[1].to_owned();
+            assert_eq!(2, end.id);
+            assert_eq!(Status::End, end.status);
+            assert_eq!((3, 40, 53), (end.time.hour(), end.time.minute(), end.time.second()));
+
+            let last = time_data.entries.last().unwrap();
+            assert_eq!(3, last.id);
+            assert_eq!(Status::Takeover, last.status);
+            assert_eq!((4, 0, 53), (last.time.hour(), last.time.minute(), last.time.second()));
             Ok(())
         }
     }

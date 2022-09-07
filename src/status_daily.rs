@@ -392,7 +392,7 @@ mod tests {
     use std::ops::Sub;
 
     fn logger() {
-        std::env::set_var("RUST_LOG", "debug");
+        // std::env::set_var("RUST_LOG", "debug");
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
@@ -713,6 +713,79 @@ mod tests {
                         id: 3,
                         status: Status::End,
                         time: Local.ymd(2022, 2, 2).and_hms(12, 16, 0),
+                    },
+                ]
+                .to_vec(),
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [BreakLimit {
+                    start: 8,
+                    minutes: 45,
+                }]
+                .to_vec(),
+                workperday: WorkPerDayInMinutes {
+                    wednesday: 6 * 60,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let status = StatusDaily::builder()
+                .data(data)
+                .settings(settings)
+                .build()
+                .unwrap();
+
+            log::debug!("{}", status);
+
+            if ShouldColorize::from_env().should_colorize() {
+                assert_eq!(
+                    indoc!(
+                        "Work time:   03:54 (\u{1b}[91m-02:06\u{1b}[0m)
+                        Online time: 03:54
+                        Break:       00:00 (+00:00)
+
+                        Started:     08:22
+                        End:         \u{1b}[92m12:16\u{1b}[0m"
+                    ),
+                    format!("{}", status)
+                );
+            } else {
+                assert_eq!(
+                    indoc!(
+                        "Work time:   03:54 (-02:06)
+                    Online time: 03:54
+                    Break:       00:00 (+00:00)
+
+                    Started:     08:22
+                    End:         12:16"
+                    ),
+                    format!("{}", status)
+                );
+            }
+        }
+
+        #[test]
+        fn status_daily_should_ignore_takeover() {
+            logger();
+            let data = TimeData {
+                entries: [
+                    Entry {
+                        id: 1,
+                        status: Status::Connect,
+                        time: Local.ymd(2022, 2, 2).and_hms(8, 22, 0),
+                    },
+                    Entry {
+                        id: 3,
+                        status: Status::End,
+                        time: Local.ymd(2022, 2, 2).and_hms(12, 16, 0),
+                    },
+                    Entry {
+                        id: 4,
+                        status: Status::Takeover,
+                        time: Local.ymd(2022, 2, 2).and_hms(12, 46, 0),
                     },
                 ]
                 .to_vec(),

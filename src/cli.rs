@@ -97,7 +97,8 @@ impl CliExecute for Cli {
             Commands::Status { week } => self.invoke_status(week),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
-            _ => self.invoke_start(), // default and Command::Start.
+            Commands::Start => self.invoke_start(),
+            _ => self.invoke_continue(), // default and Command::Start.
         }
     }
 
@@ -126,6 +127,21 @@ impl CliExecute for Cli {
 
 impl Cli {
     fn invoke_start(&self) -> TrackerResult {
+        log::info!("start executed");
+        let settings = Settings::new()?;
+        let mut time_data = TimeData::builder()
+            .folder(settings.folder.into())
+            .today()
+            .build()?;
+        let now = Local::now();
+        time_data
+            .read_from_file()?
+            .assert_takeover(now)?
+            .append(Status::Connect, now)?
+            .write_to_file()
+    }
+
+    fn invoke_continue(&self) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
         let mut time_data = TimeData::builder()
@@ -239,7 +255,22 @@ impl Cli {
 
     fn invoke_takeover(&self, minutes: &u16) -> TrackerResult {
         log::info!("takeover {} minutes", minutes);
-
-        Ok(())
+        let settings = Settings::new()?;
+        let folder: &str = settings.folder.as_ref();
+        let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
+        time_data.read_from_file()?;
+        let status = StatusDaily::builder()
+            .data(time_data.clone())
+            .settings(settings)
+            .build()?;
+        let now = Local::now();
+        time_data
+            .append(Status::End, now)?
+            .assert_break(
+                status.exp_break.unwrap().duration,
+                status.r#break.unwrap().duration,
+            )?
+            .write_to_file()?;
+        self.invoke_status(&None)
     }
 }
