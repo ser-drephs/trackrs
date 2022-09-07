@@ -1,3 +1,17 @@
+## [1.2.0](https://github.com/ser-drephs/trackrs/compare/v1.1.0...v1.2.0) (2022-09-07)
+
+
+### Features
+
+* work time per day in minutes ([17f672c](https://github.com/ser-drephs/trackrs/commit/17f672c5fd866a23f7efb14011c72d0ad0a80368))
+
+
+### Bug Fixes
+
+* status showing wrong values with temp end ([308789f](https://github.com/ser-drephs/trackrs/commit/308789fbe458507d9532ca03191bf6257eeb3f84))
+* takeover cli ([964ef20](https://github.com/ser-drephs/trackrs/commit/964ef207ba5314edadeebee78f68185b226eab96))
+* takeover folder may not be available ([b6f8f48](https://github.com/ser-drephs/trackrs/commit/b6f8f48f90ec43760fd38169ba0371b4cecdab03))
+
 ## [1.1.0](https://github.com/ser-drephs/trackrs/compare/v1.0.1...v1.1.0) (2022-09-04)
 
 
