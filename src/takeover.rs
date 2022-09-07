@@ -27,8 +27,8 @@ pub struct TakeoverBuilder {
 impl TakeoverBuilder {
     pub fn file(&mut self) -> &mut Self {
         let d = match env::var("RUST_TEST") {
-            Ok(_) => env::current_dir().unwrap(),
-            Err(_) => dirs::home_dir().unwrap(),
+            Ok(_) => env::current_dir().unwrap_or_default(),
+            Err(_) => dirs::home_dir().unwrap_or_default(),
         };
         let f = d.join(".trackrs-takeover");
         self.file = Some(f);
@@ -136,7 +136,8 @@ mod tests {
             file.write_all(file_content.as_bytes())?;
 
             let mut b = Takeover::builder();
-            let t = b.file().get()?;
+            b.file = Some(time_file);
+            let t = b.get()?;
 
             assert!(t.minutes.is_some());
             assert_eq!(&15, t.minutes.as_ref().unwrap());
@@ -156,7 +157,8 @@ mod tests {
             file.write_all(file_content.as_bytes())?;
 
             let mut b = Takeover::builder();
-            let t = b.file().get()?;
+            b.file = Some(time_file);
+            let t = b.get()?;
 
             assert!(t.minutes.is_none());
             Ok(())
@@ -175,7 +177,8 @@ mod tests {
             set_current_dir(temp_dir.as_ref())?;
             let time_file = temp_dir.path().join(".trackrs-takeover");
             let mut b = Takeover::builder();
-            let t = b.file().set(25)?;
+            b.file = Some(time_file.to_owned());
+            let t = b.set(25)?;
 
             let exp_content = "{\"minutes\":25}";
             let act_content = fs::read_to_string(time_file)?;

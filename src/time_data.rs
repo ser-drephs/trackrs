@@ -260,7 +260,7 @@ impl TimeDataBuilder {
 #[cfg(test)]
 mod tests {
     use std::{
-        env::{self, set_current_dir},
+        env,
         fs::{self, File},
         io::Write,
         ops::Add,
@@ -268,7 +268,9 @@ mod tests {
 
     use chrono::{Duration, Local, TimeZone, Timelike};
 
-    use crate::{Entry, Status, TimeData, TrackerError, Takeover};
+    use crate::{Entry, Status, TimeData, TrackerError};
+
+    use serial_test::serial;
 
     fn logger() {
         // std::env::set_var("RUST_LOG", "debug");
@@ -296,7 +298,14 @@ mod tests {
 
     mod time_data {
 
+        use std::process::Command;
+
         use super::*;
+
+        fn wait(){
+            let mut child = Command::new("sleep").arg("1").spawn().unwrap();
+            let _result = child.wait().unwrap();
+        }
 
         #[test]
         fn should_write_time_data() -> Result<(), TrackerError> {
@@ -313,6 +322,9 @@ mod tests {
                 .append(Status::Connect, day.and_hms(2, 1, 0))?
                 .append(Status::End, day.and_hms(4, 1, 0))?
                 .write_to_file()?;
+
+            wait();
+
             assert!(&time_file.exists());
             assert!(fs::metadata(&time_file)?.len() > 0);
             Ok(())
@@ -326,6 +338,8 @@ mod tests {
             let time_file = temp_dir.path().join("20220804.json");
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
+
+            wait();
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -347,6 +361,9 @@ mod tests {
             let day = Local.ymd(2022, 8, 4);
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
+
+            wait();
+
             let initial_size = fs::metadata(&time_file)?.len();
 
             let mut time_data = TimeData::builder()
@@ -375,6 +392,8 @@ mod tests {
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
+
+            wait();
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -419,6 +438,8 @@ mod tests {
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
+
+            wait();
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -494,6 +515,8 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
+            wait();
+
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
                 .date(Local.ymd(2022, 2, 2))
@@ -541,6 +564,8 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
+            wait();
+
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
                 .date(Local.ymd(2022, 2, 2))
@@ -563,6 +588,8 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
+            wait();
+
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
                 .date(Local.ymd(2022, 2, 2))
@@ -577,126 +604,6 @@ mod tests {
         }
 
         #[test]
-        fn should_takeover_time() -> Result<(), TrackerError> {
-            logger();
-            env::set_var("RUST_TEST", "true");
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
-            let day = Local.ymd(2022, 2, 2);
-
-            let mut time_data = TimeData::builder()
-                .folder(temp_dir.into_path().into())
-                .date(day)
-                .build()?;
-            time_data
-                .read_from_file()?;
-
-            time_data.takeover = Some(Takeover::builder().file().set(15)?);
-
-            time_data
-                .assert_takeover(day.and_hms(2, 16, 0))?
-                .append(Status::Connect, day.and_hms(2, 16, 0))?
-                .append(Status::End, day.and_hms(5, 0, 0))?
-                .write_to_file()?;
-            assert!(&time_file.exists(), "time file should exist");
-
-            let takeover_time = time_data.entries[0].to_owned();
-            let first_connect = time_data.entries[1].to_owned();
-            let diff = first_connect.time - takeover_time.time;
-
-            assert_eq!(
-                Duration::minutes(15).num_seconds(),
-                diff.num_seconds(),
-                "expected 15 minutes diff, but got {}",
-                diff
-            );
-            assert_eq!(day.and_hms(2, 1, 0), takeover_time.time, "takeover time doesnt match");
-            Ok(())
-        }
-
-        #[test]
-        fn should_takeover_time_check_file() -> Result<(), TrackerError> {
-            logger();
-            env::set_var("RUST_TEST", "true");
-            let file_content = "{\"minutes\":15}";
-            let temp_dir = tempfile::tempdir()?;
-            set_current_dir(temp_dir.as_ref())?;
-            let takeover_file = temp_dir.path().join(".trackrs-takeover");
-            let time_file = temp_dir.path().join("20220202.json");
-            let day = Local.ymd(2022, 2, 2);
-            let mut file = File::create(&takeover_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            let mut time_data = TimeData::builder()
-                .folder(temp_dir.into_path().into())
-                .date(day)
-                .build()?;
-            time_data
-                .read_from_file()?
-                .assert_takeover(day.and_hms(2, 15, 0))?
-                .append(Status::Connect, day.and_hms(2, 15, 0))?
-                .append(Status::End, day.and_hms(2, 45, 0))?
-                .write_to_file()?;
-            assert!(&time_file.exists());
-
-            // assert file content
-            let exp_takeover = "{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T02:00";
-            let exp_connect = "{\"id\":2,\"status\":\"Connect\",\"time\":\"2022-02-02T02:15";
-
-            let act_content = fs::read_to_string(time_file)?;
-
-            assert!(
-                act_content.contains(exp_takeover),
-                "expected content to contain Takeover Connect with ID 1, but got {}",
-                act_content
-            );
-            assert!(
-                act_content.contains(exp_connect),
-                "expected content to contain Connect with ID 2, but got {}",
-                act_content
-            );
-            Ok(())
-        }
-
-        #[test]
-        fn should_takeover_time_over_an_hour() -> Result<(), TrackerError> {
-            logger();
-            env::set_var("RUST_TEST", "true");
-            let file_content = "{\"minutes\":95}";
-            let temp_dir = tempfile::tempdir()?;
-            set_current_dir(temp_dir.as_ref())?;
-            let takeover_file = temp_dir.path().join(".trackrs-takeover");
-            let time_file = temp_dir.path().join("20220202.json");
-            let day = Local.ymd(2022, 2, 2);
-            let mut file = File::create(&takeover_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            let mut time_data = TimeData::builder()
-                .folder(temp_dir.into_path().into())
-                .date(day)
-                .build()?;
-            time_data
-                .read_from_file()?
-                .assert_takeover(day.and_hms(2, 15, 0))?
-                .append(Status::Connect, day.and_hms(2, 15, 0))?
-                .append(Status::End, day.and_hms(4, 14, 0))?
-                .write_to_file()?;
-            assert!(&time_file.exists());
-
-            let takeover_time = time_data.entries[0].to_owned();
-            let first_connect = time_data.entries[1].to_owned();
-            let diff = first_connect.time - takeover_time.time;
-
-            assert_eq!(
-                Duration::minutes(95).num_seconds(),
-                diff.num_seconds(),
-                "expected 1:35 minutes diff, but got {}",
-                diff
-            );
-            Ok(())
-        }
-
-        #[test]
         fn should_create_takeover_entry() -> Result<(), TrackerError> {
             logger();
             let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}]";
@@ -704,6 +611,8 @@ mod tests {
             let time_file = temp_dir.path().join("20220804.json");
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
+
+            wait();
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -718,13 +627,175 @@ mod tests {
             let end = time_data.entries[1].to_owned();
             assert_eq!(2, end.id);
             assert_eq!(Status::End, end.status);
-            assert_eq!((3, 40, 53), (end.time.hour(), end.time.minute(), end.time.second()));
+            assert_eq!(
+                (3, 40, 53),
+                (end.time.hour(), end.time.minute(), end.time.second())
+            );
 
             let last = time_data.entries.last().unwrap();
             assert_eq!(3, last.id);
             assert_eq!(Status::Takeover, last.status);
-            assert_eq!((4, 0, 53), (last.time.hour(), last.time.minute(), last.time.second()));
+            assert_eq!(
+                (4, 0, 53),
+                (last.time.hour(), last.time.minute(), last.time.second())
+            );
             Ok(())
+        }
+
+        mod takeover {
+
+            use super::*;
+
+            struct TakeoverContext {
+                temp_dir: tempfile::TempDir,
+            }
+
+            impl test_context::TestContext for TakeoverContext {
+                fn setup() -> TakeoverContext {
+                    logger();
+                    env::set_var("RUST_TEST", "true");
+                    let temp_dir = tempfile::tempdir().unwrap();
+                    env::set_current_dir(&temp_dir).unwrap();
+                    TakeoverContext { temp_dir }
+                }
+
+                fn teardown(self) {
+                    self.temp_dir.close().unwrap();
+                }
+            }
+
+            #[test_context::test_context(TakeoverContext)]
+            #[test]
+            #[serial]
+            fn should_takeover_time(ctx: &mut TakeoverContext) -> Result<(), TrackerError> {
+                let time_file = ctx.temp_dir.path().join("20220202.json");
+                let day = Local.ymd(2022, 2, 2);
+
+                let file_content = "{\"minutes\":15}";
+                let takeover_file = ctx.temp_dir.path().join(".trackrs-takeover");
+                let mut file = File::create(&takeover_file)?;
+                file.write_all(file_content.as_bytes())?;
+
+                wait();
+
+                let mut time_data = TimeData::builder()
+                    .folder(ctx.temp_dir.as_ref().to_owned().into())
+                    .date(day)
+                    .build()?;
+                time_data
+                    .read_from_file()?
+                    .assert_takeover(day.and_hms(2, 16, 0))?
+                    .append(Status::Connect, day.and_hms(2, 16, 0))?
+                    .append(Status::End, day.and_hms(5, 0, 0))?
+                    .write_to_file()?;
+                assert!(&time_file.exists(), "time file should exist");
+
+                let takeover_time = time_data.entries[0].to_owned();
+                let first_connect = time_data.entries[1].to_owned();
+                let diff = first_connect.time - takeover_time.time;
+
+                assert_eq!(
+                    Duration::minutes(15).num_seconds(),
+                    diff.num_seconds(),
+                    "expected 15 minutes diff, but got {}",
+                    diff
+                );
+                assert_eq!(
+                    day.and_hms(2, 1, 0),
+                    takeover_time.time,
+                    "takeover time doesnt match"
+                );
+                Ok(())
+            }
+
+            #[test_context::test_context(TakeoverContext)]
+            #[test]
+            #[serial]
+            fn should_takeover_time_check_file(
+                ctx: &mut TakeoverContext,
+            ) -> Result<(), TrackerError> {
+                let time_file = ctx.temp_dir.path().join("20220202.json");
+                let day = Local.ymd(2022, 2, 2);
+
+                let file_content = "{\"minutes\":15}";
+                let takeover_file = ctx.temp_dir.path().join(".trackrs-takeover");
+                let mut file = File::create(&takeover_file)?;
+                file.write_all(file_content.as_bytes())?;
+
+                wait();
+
+                let mut time_data = TimeData::builder()
+                    .folder(ctx.temp_dir.as_ref().to_owned().into())
+                    .date(day)
+                    .build()?;
+                time_data
+                    .read_from_file()?
+                    .assert_takeover(day.and_hms(2, 15, 0))?
+                    .append(Status::Connect, day.and_hms(2, 15, 0))?
+                    .append(Status::End, day.and_hms(2, 45, 0))?
+                    .write_to_file()?;
+                assert!(&time_file.exists());
+
+                // assert file content
+                let exp_takeover = "{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T02:00";
+                let exp_connect = "{\"id\":2,\"status\":\"Connect\",\"time\":\"2022-02-02T02:15";
+
+                let act_content = fs::read_to_string(time_file)?;
+
+                assert!(
+                    act_content.contains(exp_takeover),
+                    "expected content to contain Takeover Connect with ID 1, but got {}",
+                    act_content
+                );
+                assert!(
+                    act_content.contains(exp_connect),
+                    "expected content to contain Connect with ID 2, but got {}",
+                    act_content
+                );
+
+                Ok(())
+            }
+
+            #[test_context::test_context(TakeoverContext)]
+            #[test]
+            #[serial]
+            fn should_takeover_time_over_an_hour(
+                ctx: &mut TakeoverContext,
+            ) -> Result<(), TrackerError> {
+                let time_file = ctx.temp_dir.path().join("20220202.json");
+                let day = Local.ymd(2022, 2, 2);
+
+                let file_content = "{\"minutes\":95}";
+                let takeover_file = ctx.temp_dir.path().join(".trackrs-takeover");
+                let mut file = File::create(&takeover_file)?;
+                file.write_all(file_content.as_bytes())?;
+
+                wait();
+
+                let mut time_data = TimeData::builder()
+                    .folder(ctx.temp_dir.as_ref().to_owned().into())
+                    .date(day)
+                    .build()?;
+                time_data
+                    .read_from_file()?
+                    .assert_takeover(day.and_hms(2, 15, 0))?
+                    .append(Status::Connect, day.and_hms(2, 15, 0))?
+                    .append(Status::End, day.and_hms(4, 14, 0))?
+                    .write_to_file()?;
+                assert!(&time_file.exists());
+
+                let takeover_time = time_data.entries[0].to_owned();
+                let first_connect = time_data.entries[1].to_owned();
+                let diff = first_connect.time - takeover_time.time;
+
+                assert_eq!(
+                    Duration::minutes(95).num_seconds(),
+                    diff.num_seconds(),
+                    "expected 1:35 minutes diff, but got {}",
+                    diff
+                );
+                Ok(())
+            }
         }
     }
 }
