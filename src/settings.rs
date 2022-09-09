@@ -26,7 +26,7 @@ pub struct Settings {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[allow(unused)]
 pub struct BreakLimit {
-    pub start: u8,
+    pub start: u16,
     pub minutes: u8,
 }
 
@@ -236,11 +236,11 @@ mod tests {
                 threshold_limits: 25,
                 limits: [
                     BreakLimit {
-                        start: 3,
+                        start: 3 * 60,
                         minutes: 40,
                     },
                     BreakLimit {
-                        start: 2,
+                        start: 2 * 60,
                         minutes: 15,
                     },
                 ]

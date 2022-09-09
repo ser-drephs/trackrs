@@ -241,7 +241,7 @@ mod tests {
         fn get_settings() -> Settings {
             Settings {
                 limits: [BreakLimit {
-                    start: 8,
+                    start: 8 * 60,
                     minutes: 45,
                 }]
                 .to_vec(),

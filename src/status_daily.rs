@@ -155,7 +155,7 @@ impl StatusDaily {
 
             self.exp_break = match bl
                 .iter_mut()
-                .find(|x| tft - t >= Duration::hours(x.start.to_owned().into()))
+                .find(|x| tft - t >= Duration::minutes(x.start.to_owned().into()))
             {
                 Some(eb) => {
                     log::debug!("should take a break of {}", eb.minutes);
@@ -416,7 +416,7 @@ mod tests {
             };
             let settings = Settings {
                 limits: [BreakLimit {
-                    start: 6,
+                    start: 6 * 60,
                     minutes: 30,
                 }]
                 .to_vec(),
@@ -491,7 +491,7 @@ mod tests {
             };
             let settings = Settings {
                 limits: [BreakLimit {
-                    start: 6,
+                    start: 6 * 60,
                     minutes: 30,
                 }]
                 .to_vec(),
@@ -565,7 +565,7 @@ mod tests {
             };
             let settings = Settings {
                 limits: [BreakLimit {
-                    start: 6,
+                    start: 6 * 60,
                     minutes: 30,
                 }]
                 .to_vec(),
@@ -626,7 +626,7 @@ mod tests {
             };
             let settings = Settings {
                 limits: [BreakLimit {
-                    start: 6,
+                    start: 6 * 60,
                     minutes: 30,
                 }]
                 .to_vec(),
@@ -706,7 +706,7 @@ mod tests {
 
             let settings = Settings {
                 limits: [BreakLimit {
-                    start: 8,
+                    start: 8 * 60,
                     minutes: 45,
                 }]
                 .to_vec(),
@@ -779,7 +779,7 @@ mod tests {
 
             let settings = Settings {
                 limits: [BreakLimit {
-                    start: 8,
+                    start: 8 * 60,
                     minutes: 45,
                 }]
                 .to_vec(),
@@ -1104,15 +1104,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1169,15 +1169,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1236,15 +1236,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1297,15 +1297,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1358,11 +1358,11 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1420,15 +1420,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1470,7 +1470,7 @@ mod tests {
 
             let settings = Settings {
                 limits: [BreakLimit {
-                    start: 8,
+                    start: 8 * 60,
                     minutes: 45,
                 }]
                 .to_vec(),
@@ -1561,7 +1561,7 @@ mod tests {
             };
             let settings = Settings {
                 limits: [BreakLimit {
-                    start: 8,
+                    start: 8 * 60,
                     minutes: 30,
                 }]
                 .to_vec(),
@@ -1614,7 +1614,7 @@ mod tests {
                         minutes: 15,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                 ]
@@ -1674,15 +1674,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1743,15 +1743,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1813,15 +1813,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1872,15 +1872,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
@@ -1936,15 +1936,15 @@ mod tests {
             let settings = Settings {
                 limits: [
                     BreakLimit {
-                        start: 6,
+                        start: 6 * 60,
                         minutes: 30,
                     },
                     BreakLimit {
-                        start: 8,
+                        start: 8 * 60,
                         minutes: 45,
                     },
                     BreakLimit {
-                        start: 10,
+                        start: 10 * 60,
                         minutes: 60,
                     },
                 ]
