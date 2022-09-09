@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{Date, DateTime, Duration, Local};
 
-use crate::{Entry, Status, Takeover, TrackerError};
+use crate::{Entry, Status, Takeover, TrackerError, Folder};
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
@@ -20,9 +20,10 @@ trait TimeDataFile {
 
 #[derive(Default, Clone, Debug)]
 pub struct TimeData {
+    // todo: refactor
     pub entries: Vec<Entry>,
-    pub(super) file: PathBuf,
-    pub(super) build: bool,
+    pub file: PathBuf,
+    pub build: bool,
     pub date: Option<Date<Local>>,
     pub takeover: Option<Takeover>,
 }
@@ -184,56 +185,28 @@ impl TimeData {
 }
 
 pub struct TimeDataBuilder {
+    // todo: remove
     inner: TimeData,
+    // todo: remove
     folder: PathBuf,
     has_file: bool,
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct Folder {
-    inner: PathBuf,
-}
-
-impl From<PathBuf> for Folder {
-    fn from(path: PathBuf) -> Self {
-        Folder { inner: path }
-    }
-}
-
-impl From<&str> for Folder {
-    fn from(str: &str) -> Self {
-        Folder {
-            inner: PathBuf::from_str(str).unwrap(),
-        }
-    }
-}
-
-impl From<String> for Folder {
-    fn from(str: String) -> Self {
-        Folder {
-            inner: PathBuf::from_str(&str).unwrap(),
-        }
-    }
-}
-
-impl From<Folder> for PathBuf {
-    fn from(val: Folder) -> Self {
-        val.inner
-    }
-}
-
 impl TimeDataBuilder {
+    /// Set the time data folder
     pub fn folder(&mut self, folder: Folder) -> &mut Self {
         log::debug!("set time data folder to: {:?}", &folder);
-        fs::create_dir_all(&folder.inner).unwrap();
+        fs::create_dir_all(&folder).unwrap();
         self.folder = folder.into();
         self
     }
 
+    /// set date to today
     pub fn today(&mut self) -> &mut Self {
         self.date(Local::today())
     }
 
+    /// set a date for the time data
     pub fn date(&mut self, date: Date<Local>) -> &mut Self {
         let df = date.format("%Y%m%d");
         let file = self.folder.join(format!("{}.json", df));
@@ -244,6 +217,7 @@ impl TimeDataBuilder {
         self
     }
 
+    // todo: remove
     pub fn build(&mut self) -> Result<TimeData, TrackerError> {
         if !self.has_file {
             Err(TrackerError::TimeDataError {
@@ -256,6 +230,45 @@ impl TimeDataBuilder {
         }
     }
 }
+
+// #[derive(Debug, Default, Clone)]
+// pub struct Folder {
+//     inner: PathBuf,
+// }
+
+// impl From<PathBuf> for Folder {
+//     fn from(path: PathBuf) -> Self {
+//         Folder { inner: path }
+//     }
+// }
+
+// impl From<&str> for Folder {
+//     fn from(str: &str) -> Self {
+//         Folder {
+//             inner: PathBuf::from_str(str).unwrap(),
+//         }
+//     }
+// }
+
+// impl From<String> for Folder {
+//     fn from(str: String) -> Self {
+//         Folder {
+//             inner: PathBuf::from_str(&str).unwrap(),
+//         }
+//     }
+// }
+
+// impl From<Folder> for PathBuf {
+//     fn from(val: Folder) -> Self {
+//         val.inner
+//     }
+// }
+
+// impl From<&Folder> for PathBuf {
+//     fn from(val: &Folder) -> Self {
+//         val.inner.to_owned()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -298,14 +311,9 @@ mod tests {
 
     mod time_data {
 
-        use std::process::Command;
+        use crate::test_utils::wait;
 
         use super::*;
-
-        fn wait(){
-            let mut child = Command::new("sleep").arg("1").spawn().unwrap();
-            let _result = child.wait().unwrap();
-        }
 
         #[test]
         fn should_write_time_data() -> Result<(), TrackerError> {
@@ -323,7 +331,7 @@ mod tests {
                 .append(Status::End, day.and_hms(4, 1, 0))?
                 .write_to_file()?;
 
-            wait();
+            wait(1);
 
             assert!(&time_file.exists());
             assert!(fs::metadata(&time_file)?.len() > 0);
@@ -339,7 +347,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            wait();
+            wait(1);
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -362,7 +370,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            wait();
+            wait(1);
 
             let initial_size = fs::metadata(&time_file)?.len();
 
@@ -393,7 +401,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            wait();
+            wait(1);
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -439,7 +447,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            wait();
+            wait(1);
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -515,7 +523,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            wait();
+            wait(1);
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -564,7 +572,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            wait();
+            wait(1);
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -588,7 +596,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            wait();
+            wait(1);
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -612,7 +620,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            wait();
+            wait(1);
 
             let mut time_data = TimeData::builder()
                 .folder(temp_dir.into_path().into())
@@ -676,7 +684,7 @@ mod tests {
                 let mut file = File::create(&takeover_file)?;
                 file.write_all(file_content.as_bytes())?;
 
-                wait();
+                wait(1);
 
                 let mut time_data = TimeData::builder()
                     .folder(ctx.temp_dir.as_ref().to_owned().into())
@@ -722,7 +730,7 @@ mod tests {
                 let mut file = File::create(&takeover_file)?;
                 file.write_all(file_content.as_bytes())?;
 
-                wait();
+                wait(1);
 
                 let mut time_data = TimeData::builder()
                     .folder(ctx.temp_dir.as_ref().to_owned().into())
@@ -770,7 +778,7 @@ mod tests {
                 let mut file = File::create(&takeover_file)?;
                 file.write_all(file_content.as_bytes())?;
 
-                wait();
+                wait(1);
 
                 let mut time_data = TimeData::builder()
                     .folder(ctx.temp_dir.as_ref().to_owned().into())

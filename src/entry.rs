@@ -78,6 +78,7 @@ impl EntryBuilder {
 
     /// Build the entry.
     pub fn build(&mut self) -> Result<Entry, TrackerError> {
+        // todo: refactor
         if !self.time_set {
             Err(TrackerError::EntryError {
                 message: "time not set".to_owned(),

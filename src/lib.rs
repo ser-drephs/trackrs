@@ -7,7 +7,11 @@ mod status_time;
 mod status_weekly;
 mod takeover;
 mod time_data;
+mod time_data_old;
 mod time_data_weekly;
+
+#[cfg(test)]
+pub mod test_utils;
 
 pub use cli::*;
 pub use entry::*;
@@ -17,5 +21,8 @@ pub use status_daily::*;
 pub use status_time::*;
 pub use status_weekly::*;
 pub use takeover::*;
-pub use time_data::*;
+pub use time_data_old::*;
 pub use time_data_weekly::*;
+pub use time_data::*;
+
+

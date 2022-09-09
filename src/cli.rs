@@ -126,6 +126,13 @@ impl CliExecute for Cli {
 }
 
 impl Cli {
+
+    fn test() {
+        use crate::TimeDataDaily;
+
+        let b = TimeDataDaily::builder();
+    }
+
     fn invoke_start(&self) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;

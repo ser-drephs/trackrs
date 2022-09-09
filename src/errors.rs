@@ -19,7 +19,7 @@ pub enum TrackerError {
     TrackerTakeoverParseError(#[from] std::num::ParseIntError),
     #[error("entry data not set: {message}")]
     EntryError { message: String },
-    #[error("time data error: {message}")]
+    #[error("time data error: {message}")] // Todo: remove
     TimeDataError { message: String },
     #[error("week crosses year: {message}")]
     TimeDataWeekCrossesYear { message: String },
@@ -31,4 +31,8 @@ pub enum TrackerError {
     TakeoverSetError { message: String },
     #[error("get takeover error: {message}")]
     TakeoverGetError { message: String },
+
+    #[error("time data 2 error")] // todo: rename
+    TimeData2Error(#[from] crate::TimeDataError)
 }
+
