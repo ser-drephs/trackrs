@@ -367,8 +367,9 @@ mod tests {
     use chrono::{DateTime, Duration, Local, TimeZone};
 
     use crate::{
-        BreakLimit, Entry, Settings, Status, StatusDaily, StatusTime, TimeData, WorkPerDayInMinutes,
+        BreakLimit, Settings, Status, StatusDaily, StatusTime, TimeData, WorkPerDayInMinutes,
     };
+    use crate::Entry;
 
     use colored::control::ShouldColorize;
 

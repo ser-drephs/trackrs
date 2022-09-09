@@ -2,12 +2,11 @@ use std::{
     fs::{self, File, OpenOptions},
     ops::Sub,
     path::PathBuf,
-    str::FromStr,
 };
 
 use chrono::{Date, DateTime, Duration, Local};
 
-use crate::{Entry, Status, Takeover, TrackerError, Folder};
+use crate::{time_data::Folder, Entry, Status, Takeover, TrackerError};
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;

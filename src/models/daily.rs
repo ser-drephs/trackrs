@@ -1,12 +1,11 @@
-use crate::{Entry};
+use crate::{time_data::DailyBuilder, Entry};
 
-use super::daily_builder::DailyBuilder;
 
 #[derive(Default, Clone, Debug)]
 #[allow(dead_code)]
 pub struct Daily {
     // todo: refactor
-    pub(super) entries: Vec<Entry>,
+    pub entries: Vec<Entry>,
     // date: Option<Date<Local>>,
     // takeover: Option<Takeover>,
 }

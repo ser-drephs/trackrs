@@ -2,7 +2,7 @@ use std::{fs::File, io::Write};
 
 use chrono::{Local, TimeZone};
 
-use trackrs::{TimeDataDaily, TrackerError};
+use trackrs::{TrackerError, TimeDataDaily};
 
 mod common;
 
@@ -28,14 +28,7 @@ mod daily_builder {
     }
 
     #[test]
-    #[should_panic(expected = "time data root is not provided for time data builder")]
-    fn build_root_not_set() {
-        common::setup();
-        TimeDataDaily::builder().build().unwrap();
-    }
-
-    #[test]
-    fn build_root_not_set_unwind(){
+    fn build_root_not_set_unwind() {
         common::setup();
         let result = common::catch_unwind_silent(|| TimeDataDaily::builder().build().unwrap());
         assert!(result.is_err());

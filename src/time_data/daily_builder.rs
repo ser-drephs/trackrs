@@ -1,10 +1,8 @@
+use chrono::{Date, Local};
 use std::fs::File;
 
-use chrono::{Date, Local};
-
-use crate::{Entry, TimeDataError};
-
-use super::{Folder, TimeDataDaily};
+use super::{Folder, TimeDataError};
+use crate::{Entry, TimeDataDaily};
 
 type Result = std::result::Result<TimeDataDaily, TimeDataError>;
 
@@ -83,11 +81,9 @@ impl<'a> DailyBuilder<'a> {
 #[cfg(test)]
 mod tests {
 
-    use chrono::{DateTime, TimeZone};
-
-    use crate::{test_utils::init, Status};
-
     use super::*;
+    use crate::{test_utils::init, Status};
+    use chrono::{DateTime, TimeZone};
 
     #[test]
     fn error_root_not_set() {

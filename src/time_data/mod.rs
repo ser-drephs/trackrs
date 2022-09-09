@@ -1,8 +1,8 @@
 mod folder;
-mod daily_builder;
-mod model;
-mod error;
-
 pub use folder::*;
+
+mod error;
 pub use error::*;
-pub use model::Daily as TimeDataDaily;
+
+mod daily_builder;
+pub use daily_builder::*;

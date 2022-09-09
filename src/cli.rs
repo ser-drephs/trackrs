@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 use crate::{
-    entry::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
+    entry_builder::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -127,10 +127,9 @@ impl CliExecute for Cli {
 
 impl Cli {
 
-    fn test() {
-        use crate::TimeDataDaily;
+    fn _test() {
 
-        let b = TimeDataDaily::builder();
+        let _b = crate::TimeDataDaily::builder();
     }
 
     fn invoke_start(&self) -> TrackerResult {

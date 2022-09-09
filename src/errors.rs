@@ -33,6 +33,6 @@ pub enum TrackerError {
     TakeoverGetError { message: String },
 
     #[error("time data 2 error")] // todo: rename
-    TimeData2Error(#[from] crate::TimeDataError)
+    TimeData2Error(#[from] crate::time_data::TimeDataError)
 }
 
