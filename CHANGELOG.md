@@ -1,3 +1,10 @@
+## [1.3.0](https://github.com/ser-drephs/trackrs/compare/v1.2.0...v1.3.0) (2022-09-09)
+
+
+### Features
+
+* limits in minutes ([f83150c](https://github.com/ser-drephs/trackrs/commit/f83150c18da907feb29cc8c7a644e3959b56d548))
+
 ## [1.2.0](https://github.com/ser-drephs/trackrs/compare/v1.1.0...v1.2.0) (2022-09-07)
 
 
