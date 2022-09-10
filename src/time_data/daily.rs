@@ -3,14 +3,14 @@ use crate::{time_data::DailyBuilder, Entry};
 
 #[derive(Default, Clone, Debug)]
 #[allow(dead_code)]
-pub struct Daily {
+pub struct TimeDataDaily {
     // todo: refactor
     pub entries: Vec<Entry>,
     // date: Option<Date<Local>>,
     // takeover: Option<Takeover>,
 }
 
-impl Daily {
+impl TimeDataDaily {
     pub fn builder<'a>() -> DailyBuilder<'a> {
         DailyBuilder::default()
     }

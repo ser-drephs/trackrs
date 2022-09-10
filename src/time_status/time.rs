@@ -6,20 +6,20 @@ use crate::Entry;
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
-pub struct StatusTime {
+pub struct TimeStatus {
     inner: Option<Entry>,
     pub duration: Duration,
     pub hours: i64,
     pub minutes: i64,
 }
 
-impl StatusTime {
-    pub fn now() -> StatusTime {
-        StatusTime::from(Local::now())
+impl TimeStatus {
+    pub fn now() -> TimeStatus {
+        TimeStatus::from(Local::now())
     }
 }
 
-impl std::fmt::Display for StatusTime {
+impl std::fmt::Display for TimeStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut negative = false;
 
@@ -45,10 +45,10 @@ impl std::fmt::Display for StatusTime {
     }
 }
 
-impl From<&Entry> for StatusTime {
+impl From<&Entry> for TimeStatus {
     fn from(e: &Entry) -> Self {
         let d = Duration::seconds(e.time.num_seconds_from_midnight().into());
-        StatusTime {
+        TimeStatus {
             duration: d,
             minutes: d.num_minutes() % 60,
             hours: d.num_hours(),
@@ -57,10 +57,10 @@ impl From<&Entry> for StatusTime {
     }
 }
 
-impl From<DateTime<Local>> for StatusTime {
+impl From<DateTime<Local>> for TimeStatus {
     fn from(time: DateTime<Local>) -> Self {
         let duration = Duration::seconds(time.num_seconds_from_midnight().into());
-        StatusTime {
+        TimeStatus {
             duration,
             minutes: duration.num_minutes() % 60,
             hours: duration.num_hours(),
@@ -69,9 +69,9 @@ impl From<DateTime<Local>> for StatusTime {
     }
 }
 
-impl From<Duration> for StatusTime {
+impl From<Duration> for TimeStatus {
     fn from(duration: Duration) -> Self {
-        StatusTime {
+        TimeStatus {
             duration,
             minutes: duration.num_minutes() % 60,
             hours: duration.num_hours(),
@@ -80,13 +80,13 @@ impl From<Duration> for StatusTime {
     }
 }
 
-impl From<StatusTime> for Duration {
-    fn from(s: StatusTime) -> Self {
+impl From<TimeStatus> for Duration {
+    fn from(s: TimeStatus) -> Self {
         s.duration
     }
 }
 
-impl Default for StatusTime {
+impl Default for TimeStatus {
     fn default() -> Self {
         Self {
             duration: Duration::seconds(0),
@@ -97,56 +97,56 @@ impl Default for StatusTime {
     }
 }
 
-impl PartialEq for StatusTime {
+impl PartialEq for TimeStatus {
     fn eq(&self, other: &Self) -> bool {
         self.duration == other.duration
     }
 }
 
-impl PartialOrd for StatusTime {
+impl PartialOrd for TimeStatus {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.duration.partial_cmp(&other.duration)
     }
 }
 
-impl Sub for StatusTime {
-    type Output = StatusTime;
+impl Sub for TimeStatus {
+    type Output = TimeStatus;
 
     fn sub(self, rhs: Self) -> Self::Output {
         let d = self.duration - rhs.duration;
-        StatusTime::from(d)
+        TimeStatus::from(d)
     }
 }
 
-impl Add for StatusTime {
-    type Output = StatusTime;
+impl Add for TimeStatus {
+    type Output = TimeStatus;
 
     fn add(self, rhs: Self) -> Self::Output {
         let d = self.duration + rhs.duration;
-        StatusTime::from(d)
+        TimeStatus::from(d)
     }
 }
 
-impl AddAssign for StatusTime {
+impl AddAssign for TimeStatus {
     fn add_assign(&mut self, rhs: Self) {
         let duration = self.duration + rhs.duration;
-        *self = StatusTime::from(duration);
+        *self = TimeStatus::from(duration);
     }
 }
 
-impl SubAssign for StatusTime {
+impl SubAssign for TimeStatus {
     fn sub_assign(&mut self, rhs: Self) {
         let duration = self.duration - rhs.duration;
-        *self = StatusTime::from(duration);
+        *self = TimeStatus::from(duration);
     }
 }
 
-impl Mul<i32> for StatusTime {
-    type Output = StatusTime;
+impl Mul<i32> for TimeStatus {
+    type Output = TimeStatus;
 
     fn mul(self, rhs: i32) -> Self::Output {
         let d = self.duration.mul(rhs);
-        StatusTime::from(d)
+        TimeStatus::from(d)
     }
 }
 
@@ -170,7 +170,7 @@ mod tests {
                 status: Status::Connect,
                 time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
             };
-            let status = StatusTime::from(&data);
+            let status = TimeStatus::from(&data);
             assert_eq!("08:03", format!("{}", status));
         }
     }
@@ -193,7 +193,7 @@ mod tests {
                 status: Status::Disconnect,
                 time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
             };
-            let status = StatusTime::from(&entry);
+            let status = TimeStatus::from(&entry);
             assert!(
                 status.duration.ge(&d),
                 "duration {} should be greater or equal to {}",
@@ -215,7 +215,7 @@ mod tests {
         fn should_create_from_datetime() {
             let l = DateTime::default();
             let d = Duration::seconds(l.num_seconds_from_midnight().into());
-            let status = StatusTime::from(l);
+            let status = TimeStatus::from(l);
             assert!(status.duration.ge(&d));
             assert!(status.minutes.ge(&(&d.num_minutes() % 60)));
             assert!(status.inner.is_none());
@@ -224,7 +224,7 @@ mod tests {
         #[test]
         fn duration() {
             let d = Duration::minutes(10);
-            let status = StatusTime::from(d);
+            let status = TimeStatus::from(d);
             assert!(status.duration.ge(&d));
             assert!(status.minutes.ge(&d.num_minutes()));
             assert!(status.inner.is_none());
@@ -239,89 +239,89 @@ mod tests {
 
         #[test]
         fn should_sub() {
-            let a = StatusTime::from(Duration::minutes(20));
-            let b = StatusTime::from(Duration::minutes(5));
+            let a = TimeStatus::from(Duration::minutes(20));
+            let b = TimeStatus::from(Duration::minutes(5));
 
-            let e = StatusTime::from(Duration::minutes(15));
+            let e = TimeStatus::from(Duration::minutes(15));
             assert_eq!(e, a - b);
         }
 
         #[test]
         fn should_add() {
-            let a = StatusTime::from(Duration::minutes(20));
-            let b = StatusTime::from(Duration::minutes(5));
+            let a = TimeStatus::from(Duration::minutes(20));
+            let b = TimeStatus::from(Duration::minutes(5));
 
-            let e = StatusTime::from(Duration::minutes(25));
+            let e = TimeStatus::from(Duration::minutes(25));
             assert_eq!(e, a + b);
         }
 
         #[test]
         fn should_addassign() {
-            let mut a = StatusTime::from(Duration::minutes(20));
-            let b = StatusTime::from(Duration::minutes(5));
+            let mut a = TimeStatus::from(Duration::minutes(20));
+            let b = TimeStatus::from(Duration::minutes(5));
 
             a += b;
 
-            let e = StatusTime::from(Duration::minutes(25));
+            let e = TimeStatus::from(Duration::minutes(25));
             assert_eq!(e, a);
         }
 
         #[test]
         fn should_addassign_from_default() {
-            let mut a = StatusTime::default();
-            let b = StatusTime::from(Duration::minutes(5));
-            let c = StatusTime::from(Duration::minutes(1));
+            let mut a = TimeStatus::default();
+            let b = TimeStatus::from(Duration::minutes(5));
+            let c = TimeStatus::from(Duration::minutes(1));
 
             a += b;
             a += c;
 
-            let e = StatusTime::from(Duration::minutes(6));
+            let e = TimeStatus::from(Duration::minutes(6));
             assert_eq!(e, a);
         }
 
         #[test]
         fn should_subassign() {
-            let mut a = StatusTime::from(Duration::minutes(20));
-            let b = StatusTime::from(Duration::minutes(5));
+            let mut a = TimeStatus::from(Duration::minutes(20));
+            let b = TimeStatus::from(Duration::minutes(5));
 
             a -= b;
 
-            let e = StatusTime::from(Duration::minutes(15));
+            let e = TimeStatus::from(Duration::minutes(15));
             assert_eq!(e, a);
         }
 
         #[test]
         fn should_subassign_from_default() {
-            let mut a = StatusTime::default();
-            let b = StatusTime::from(Duration::minutes(5));
-            let c = StatusTime::from(Duration::minutes(1));
+            let mut a = TimeStatus::default();
+            let b = TimeStatus::from(Duration::minutes(5));
+            let c = TimeStatus::from(Duration::minutes(1));
 
             a -= b;
             a -= c;
 
-            let e = StatusTime::from(Duration::minutes(-6));
+            let e = TimeStatus::from(Duration::minutes(-6));
             assert_eq!(e, a);
         }
 
         #[test]
         fn should_mul() {
-            let a = StatusTime::from(Duration::minutes(20));
+            let a = TimeStatus::from(Duration::minutes(20));
 
             let t1 = a.to_owned().mul(2);
             let t2 = a.mul(-1);
 
-            let e1 = StatusTime::from(Duration::minutes(40));
-            let e2 = StatusTime::from(Duration::minutes(-20));
+            let e1 = TimeStatus::from(Duration::minutes(40));
+            let e2 = TimeStatus::from(Duration::minutes(-20));
             assert_eq!(e1, t1);
             assert_eq!(e2, t2);
         }
 
         #[test]
         fn should_cmp() {
-            let a = StatusTime::from(Duration::minutes(20));
+            let a = TimeStatus::from(Duration::minutes(20));
 
-            let b1 = StatusTime::from(Duration::minutes(40));
-            let b2 = StatusTime::from(Duration::minutes(-20));
+            let b1 = TimeStatus::from(Duration::minutes(40));
+            let b2 = TimeStatus::from(Duration::minutes(-20));
 
             assert_eq!(Ordering::Less, a.partial_cmp(&b1).unwrap());
             assert_eq!(Ordering::Greater, a.partial_cmp(&b2).unwrap());
@@ -329,8 +329,8 @@ mod tests {
 
         #[test]
         fn should_eq() {
-            let a = StatusTime::from(Duration::minutes(20));
-            let b = StatusTime::from(Duration::minutes(20));
+            let a = TimeStatus::from(Duration::minutes(20));
+            let b = TimeStatus::from(Duration::minutes(20));
             assert_eq!(Ordering::Equal, a.partial_cmp(&b).unwrap());
         }
     }

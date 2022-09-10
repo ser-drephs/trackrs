@@ -61,17 +61,9 @@ impl TimeData {
             // calculate time for connect entry afterwards
             let local_c = Duration::minutes(1);
             let time_c = now - local_c;
-            let entry_c = Entry::builder()
-                .id(last_id)
-                .status(Status::Connect)
-                .time(time_c)
-                .build()?;
+            let entry_c = Entry::new(last_id + 1, Status::Connect, time_c);
 
-            let entry_e = Entry::builder()
-                .id(last_id + 1)
-                .status(Status::End)
-                .time(now)
-                .build()?;
+            let entry_e = Entry::new(last_id + 2, Status::End, now);
             log::debug!(
                 "fill break with {:?} and {:?}",
                 self.entries[last_index as usize],
@@ -94,11 +86,7 @@ impl TimeData {
             None => 0,
         };
 
-        let entry = Entry::builder()
-            .id(last_id)
-            .status(status)
-            .time(time)
-            .build()?;
+        let entry = Entry::new(last_id + 1, status, time);
         log::debug!("append time data: {:?}", entry);
         self.entries.append(&mut [entry].to_vec());
         Ok(self)
@@ -109,11 +97,7 @@ impl TimeData {
         if self.takeover.is_some() {
             let m = self.takeover.as_ref().unwrap();
             let time = time.sub(Duration::minutes(m.minutes.unwrap().try_into()?));
-            let t_entry = Entry::builder()
-                .id(0)
-                .status(Status::Connect)
-                .time(time)
-                .build()?;
+            let t_entry = Entry::new(1, Status::Connect, time);
             self.entries.append(&mut [t_entry].to_vec());
         }
         Ok(self)
@@ -129,11 +113,7 @@ impl TimeData {
             let old_time = Option::unwrap(end).time;
             self.entries[(last_id - 1) as usize].time = old_time.sub(takeover);
 
-            let entry = Entry::builder()
-                .id(last_id)
-                .status(Status::Takeover)
-                .time(old_time)
-                .build()?;
+            let entry = Entry::new(last_id + 1, Status::Takeover, old_time);
             log::debug!("append takeover: {:?}", entry);
             self.entries.append(&mut [entry].to_vec());
         }

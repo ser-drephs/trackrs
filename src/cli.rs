@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 use crate::{
-    entry_builder::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
+    Status, Settings, StatusDaily, StatusWeekly, TimeDataDaily, TimeDataWeekly, TrackerError,
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -135,9 +135,9 @@ impl Cli {
     fn invoke_start(&self) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
-            .today()
+        let mut time_data = TimeDataDaily::builder()
+            .root(&settings.folder.into())
+            .date(&Local::today())
             .build()?;
         let now = Local::now();
         time_data
@@ -150,9 +150,9 @@ impl Cli {
     fn invoke_continue(&self) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
-            .today()
+        let mut time_data = TimeDataDaily::builder()
+            .root(&settings.folder.into())
+            .date(&Local::today())
             .build()?;
         let now = Local::now();
         time_data
@@ -164,13 +164,12 @@ impl Cli {
     fn invoke_break(&self) -> TrackerResult {
         log::info!("break executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
-            .today()
+        let mut time_data = TimeDataDaily::builder()
+            .root(&settings.folder.into())
+            .date(&Local::today())
             .build()?;
         let now = Local::now();
         time_data
-            .read_from_file()?
             .append(Status::Break, now)?
             .write_to_file()
     }
@@ -179,8 +178,7 @@ impl Cli {
         log::info!("end executed");
         let settings = Settings::new()?;
         let folder: &str = settings.folder.as_ref();
-        let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
-        time_data.read_from_file()?;
+        let mut time_data = TimeDataDaily::builder().root(&folder.into()).date(&Local::today()).build()?;
         let status = StatusDaily::builder()
             .data(time_data.clone())
             .settings(settings)

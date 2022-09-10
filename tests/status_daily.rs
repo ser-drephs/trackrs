@@ -4,8 +4,8 @@ mod display {
     use colored::control::ShouldColorize;
     use indoc::indoc;
     use trackrs::{
-        BreakLimit, Entry, Settings, Status, StatusDaily, TimeData, TrackerError,
-        WorkPerDayInMinutes,
+        settings::BreakLimit, Entry, Settings, Status, StatusDaily, TimeData, TrackerError,
+        settings::WorkPerDayInMinutes,
     };
 
     type TestResult = Result<(), TrackerError>;
@@ -20,26 +20,10 @@ mod display {
         logger();
         let data = TimeData {
             entries: [
-                Entry::builder()
-                    .id(0)
-                    .status(Status::Connect)
-                    .time(Local.ymd(2022, 2, 2).and_hms(8, 3, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(1)
-                    .status(Status::Break)
-                    .time(Local.ymd(2022, 2, 2).and_hms(12, 3, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(2)
-                    .status(Status::Connect)
-                    .time(Local.ymd(2022, 2, 2).and_hms(12, 23, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(3)
-                    .status(Status::End)
-                    .time(Local.ymd(2022, 2, 2).and_hms(14, 45, 0))
-                    .build()?,
+                Entry::new(0, Status::Connect, Local.ymd(2022, 2, 2).and_hms(8, 3, 0)),
+                Entry::new(1, Status::Break, Local.ymd(2022, 2, 2).and_hms(12, 3, 0)),
+                Entry::new(2, Status::Connect, Local.ymd(2022, 2, 2).and_hms(12, 23, 0)),
+                Entry::new(3, Status::End, Local.ymd(2022, 2, 2).and_hms(14, 45, 0)),
             ]
             .to_vec(),
             ..Default::default()
@@ -96,26 +80,10 @@ mod display {
         logger();
         let data = TimeData {
             entries: [
-                Entry::builder()
-                    .id(0)
-                    .status(Status::Connect)
-                    .time(Local.ymd(2022, 2, 2).and_hms(8, 3, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(1)
-                    .status(Status::Break)
-                    .time(Local.ymd(2022, 2, 2).and_hms(12, 3, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(2)
-                    .status(Status::Connect)
-                    .time(Local.ymd(2022, 2, 2).and_hms(12, 43, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(3)
-                    .status(Status::End)
-                    .time(Local.ymd(2022, 2, 2).and_hms(17, 45, 0))
-                    .build()?,
+                Entry::new(0, Status::Connect, Local.ymd(2022, 2, 2).and_hms(8, 3, 0)),
+                Entry::new(1, Status::Break, Local.ymd(2022, 2, 2).and_hms(12, 3, 0)),
+                Entry::new(2, Status::Connect, Local.ymd(2022, 2, 2).and_hms(12, 43, 0)),
+                Entry::new(3, Status::End, Local.ymd(2022, 2, 2).and_hms(17, 45, 0)),
             ]
             .to_vec(),
             ..Default::default()
@@ -171,26 +139,10 @@ mod display {
         logger();
         let data = TimeData {
             entries: [
-                Entry::builder()
-                    .id(0)
-                    .status(Status::Connect)
-                    .time(Local.ymd(2022, 2, 2).and_hms(8, 3, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(1)
-                    .status(Status::Break)
-                    .time(Local.ymd(2022, 2, 2).and_hms(12, 3, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(2)
-                    .status(Status::Connect)
-                    .time(Local.ymd(2022, 2, 2).and_hms(12, 33, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(3)
-                    .status(Status::End)
-                    .time(Local.ymd(2022, 2, 2).and_hms(16, 33, 0))
-                    .build()?,
+                Entry::new(0, Status::Connect, Local.ymd(2022, 2, 2).and_hms(8, 3, 0)),
+                Entry::new(1, Status::Break, Local.ymd(2022, 2, 2).and_hms(12, 3, 0)),
+                Entry::new(2, Status::Connect, Local.ymd(2022, 2, 2).and_hms(12, 33, 0)),
+                Entry::new(3, Status::End, Local.ymd(2022, 2, 2).and_hms(16, 33, 0)),
             ]
             .to_vec(),
             ..Default::default()
@@ -247,16 +199,8 @@ mod display {
         logger();
         let data = TimeData {
             entries: [
-                Entry::builder()
-                    .id(0)
-                    .status(Status::Connect)
-                    .time(Local.ymd(2022, 2, 2).and_hms(8, 22, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(1)
-                    .status(Status::End)
-                    .time(Local.ymd(2022, 2, 2).and_hms(12, 16, 0))
-                    .build()?,
+                Entry::new(0, Status::Connect, Local.ymd(2022, 2, 2).and_hms(8, 22, 0)),
+                Entry::new(1, Status::End, Local.ymd(2022, 2, 2).and_hms(12, 16, 0)),
             ]
             .to_vec(),
             ..Default::default()
@@ -316,21 +260,9 @@ mod display {
         logger();
         let data = TimeData {
             entries: [
-                Entry::builder()
-                    .id(0)
-                    .status(Status::Connect)
-                    .time(Local.ymd(2022, 2, 2).and_hms(8, 22, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(1)
-                    .status(Status::End)
-                    .time(Local.ymd(2022, 2, 2).and_hms(12, 16, 0))
-                    .build()?,
-                Entry::builder()
-                    .id(2)
-                    .status(Status::Takeover)
-                    .time(Local.ymd(2022, 2, 2).and_hms(12, 46, 0))
-                    .build()?,
+                Entry::new(0, Status::Connect, Local.ymd(2022, 2, 2).and_hms(8, 22, 0)),
+                Entry::new(1, Status::End, Local.ymd(2022, 2, 2).and_hms(12, 16, 0)),
+                Entry::new(2, Status::Takeover, Local.ymd(2022, 2, 2).and_hms(12, 46, 0)),
             ]
             .to_vec(),
             ..Default::default()

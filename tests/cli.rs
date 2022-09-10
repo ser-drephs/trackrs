@@ -1,11 +1,10 @@
+use clap::Parser;
+use serial_test::serial;
 use std::{
     env,
     fs::{self, OpenOptions},
     io,
 };
-
-use clap::Parser;
-use serial_test::serial;
 use trackrs::{Cli, CliExecute, Settings};
 
 fn logger() {

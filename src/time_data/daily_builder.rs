@@ -1,8 +1,7 @@
+use super::{Folder, TimeDataDaily, TimeDataError};
+use crate::Entry;
 use chrono::{Date, Local};
 use std::fs::File;
-
-use super::{Folder, TimeDataError};
-use crate::{Entry, TimeDataDaily};
 
 type Result = std::result::Result<TimeDataDaily, TimeDataError>;
 
@@ -102,12 +101,7 @@ mod tests {
     #[test]
     fn build_with_entries() {
         init();
-        let data = vec![Entry::builder()
-            .id(1)
-            .status(Status::Connect)
-            .time(DateTime::default())
-            .build()
-            .unwrap()];
+        let data = vec![Entry::new(1, Status::Connect, DateTime::default())];
         let daily_r = TimeDataDaily::builder().entries(&data).build();
         assert!(daily_r.is_ok());
         let daily = daily_r.unwrap();
