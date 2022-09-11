@@ -1,5 +1,9 @@
 use std::process::Command;
 
+use crate::TrackerError;
+
+pub(crate) type TestResult = std::result::Result<(), TrackerError>;
+
 pub fn init() {
     std::env::set_var("RUST_LOG", "debug");
     let _ = env_logger::builder().is_test(true).try_init();

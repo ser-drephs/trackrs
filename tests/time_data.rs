@@ -2,7 +2,7 @@ use std::{fs::File, io::Write};
 
 use chrono::{Local, TimeZone};
 
-use trackrs::{TrackerError, TimeDataDaily};
+use trackrs::TrackerError;
 
 mod common;
 
@@ -12,6 +12,7 @@ type TestResult = std::result::Result<(), TrackerError>;
 mod daily_builder {
 
     use super::*;
+    use trackrs::TimeDataDaily;
 
     #[test]
     fn build_without_file() -> TestResult {
@@ -54,4 +55,35 @@ mod daily_builder {
         assert_eq!(2, daily.len(), "two entries in file");
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod weekly_builder {
+
+    use super::*;
+    use trackrs::TimeDataWeekly;
+
+    #[test]
+    fn build_without_file() -> TestResult {
+        common::setup();
+        let temp_dir = tempfile::tempdir()?;
+        let weekly_r = TimeDataWeekly::builder()
+            .root(&temp_dir.into_path().into())
+            .year(&2022)
+            .week(&23)
+            .build();
+        assert!(weekly_r.is_ok());
+        let weekly = weekly_r.unwrap();
+        assert_eq!(0, weekly.len(), "no entries available");
+        Ok(())
+    }
+
+    #[test]
+    fn build_root_not_set_unwind() {
+        common::setup();
+        let result = common::catch_unwind_silent(|| TimeDataWeekly::builder().build().unwrap());
+        assert!(result.is_err());
+    }
+
+    // todo: test with weekly data
 }

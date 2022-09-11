@@ -21,8 +21,8 @@ pub enum TrackerError {
     EntryError { message: String },
     #[error("time data error: {message}")] // Todo: remove
     TimeDataError { message: String },
-    #[error("week crosses year: {message}")]
-    TimeDataWeekCrossesYear { message: String },
+    // #[error("week crosses year: {message}")]
+    // TimeDataWeekCrossesYear { message: String },
     #[error("status error: {message}")]
     StatusError { message: String },
     #[error("weekly status error: {message}")]
@@ -33,6 +33,8 @@ pub enum TrackerError {
     TakeoverGetError { message: String },
 
     #[error("time data 2 error")] // todo: rename
-    TimeData2Error(#[from] crate::time_data::TimeDataError)
+    TimeData2Error(#[from] crate::time_data::TimeDataError),
+    #[error("time status 2 error")] // todo: rename
+    TimeStatus2Error(#[from] crate::time_status::TimeStatusError)
 }
 

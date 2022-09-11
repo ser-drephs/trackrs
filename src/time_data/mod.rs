@@ -10,8 +10,8 @@ pub use daily_builder::*;
 mod weekly_builder;
 pub use weekly_builder::*;
 
-mod daily;
-pub use daily::*;
+mod daily_data;
+pub use daily_data::*;
 
-mod week;
-pub use week::*;
+mod weekly_data;
+pub use weekly_data::*;

@@ -3,12 +3,12 @@ use std::{fmt::Display, ops::Mul};
 use chrono::Duration;
 use colored::Colorize;
 
-use crate::{Settings, StatusDaily, TimeStatus, TimeStatusDaily, TimeStatusWeekly, TrackerError};
-use super::
+use crate::{TimeStatus, WeeklyBuilder};
+
 
 #[derive(Clone, Default, Debug)]
 pub struct TimeStatusWeekly {
-    week: i8,
+    pub week: i8,
     total: TimeStatus,
     overtime: TimeStatus,
     decimal: f64,

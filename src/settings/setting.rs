@@ -17,6 +17,7 @@ pub struct ReqSettings {
 pub struct Settings {
     pub file: String,
     pub folder: String,
+    /// threshold for limits in minutes
     pub threshold_limits: u8,
     pub limits: Vec<BreakLimit>,
     pub workperday: WorkPerDayInMinutes,

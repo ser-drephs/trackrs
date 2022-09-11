@@ -50,11 +50,11 @@ impl<'a> DailyBuilder<'a> {
             self.data.unwrap().to_owned()
         } else {
             if self.root.is_none() {
-                return Err(TimeDataError::RootNotProvided);
+                return Err(TimeDataError::BuilderDataMissing { r#type: "root".to_string() });
             }
 
             if self.date.is_none() {
-                return Err(TimeDataError::DateNotProvided);
+                return Err(TimeDataError::BuilderDataMissing { r#type: "date".to_string() });
             }
 
             let folder = self.root.unwrap();
