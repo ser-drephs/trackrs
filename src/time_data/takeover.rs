@@ -1,12 +1,12 @@
+use crate::TimeDataError;
+use serde::{Deserialize, Serialize};
 use std::{
     env,
     fs::{File, OpenOptions},
     path::PathBuf,
 };
 
-use serde::{Deserialize, Serialize};
-
-use crate::TrackerError;
+type Result = std::result::Result<Takeover, TimeDataError>;
 
 #[derive(Default, Clone, Deserialize, Serialize, Debug)]
 pub struct Takeover {
@@ -14,71 +14,51 @@ pub struct Takeover {
 }
 
 impl Takeover {
-    pub fn builder() -> TakeoverBuilder {
-        TakeoverBuilder::default()
+    pub fn new() -> Self {
+        Takeover::default()
     }
-}
 
-#[derive(Default)]
-pub struct TakeoverBuilder {
-    file: Option<PathBuf>,
-}
-
-impl TakeoverBuilder {
-    pub fn file(&mut self) -> &mut Self {
+    fn file() -> PathBuf {
         let d = match env::var("RUST_TEST") {
             Ok(_) => env::current_dir().unwrap_or_default(),
             Err(_) => dirs::home_dir().unwrap_or_default(),
         };
-        let f = d.join(".trackrs-takeover");
-        self.file = Some(f);
-        self
+        d.join(".trackrs-takeover")
     }
 
-    pub fn set(&self, minutes: u16) -> Result<Takeover, TrackerError> {
-        if self.file.is_none() {
-            Err(TrackerError::TakeoverSetError {
-                message: "takeover file not set".to_owned(),
-            })
-        } else if minutes == 0 {
+    pub fn set(&mut self, minutes: u16) -> Result {
+        if minutes == 0 {
             log::warn!("won't take over less than 0 minutes");
             Ok(Takeover::default())
         } else {
-            let t = Takeover {
-                minutes: Some(minutes),
-            };
+            let file = Takeover::file();
+            self.minutes = Some(minutes);
 
-            log::debug!("takeover {} minutes next time", t.minutes.unwrap());
+            log::debug!("takeover {} minutes next time", minutes);
             let w = OpenOptions::new()
                 .create(true)
                 .write(true)
                 .append(false)
                 .truncate(false)
-                .open(self.file.as_ref().unwrap())?;
-            serde_json::to_writer(w, &t)?;
-            Ok(t)
+                .open(file)?;
+            serde_json::to_writer(w, &self)?;
+            Ok(self.to_owned())
         }
     }
 
-    pub fn get(&self) -> Result<Takeover, TrackerError> {
-        if self.file.is_none() {
-            Err(TrackerError::TakeoverGetError {
-                message: "takeover file not set".to_owned(),
-            })
-        } else {
-            let f = self.file.as_ref().unwrap();
-            let mut t = Takeover::default();
-            if f.exists() {
-                log::debug!("takeover was requested");
-                let f = File::open(&f)?;
-                t = serde_json::from_reader(f)?;
-                if t.minutes.is_none() || t.minutes.as_ref().unwrap() <= &0 {
-                    t.minutes = None;
-                }
-            } else {
-                log::debug!("no takeover requested");
+    pub fn get(&self) -> Result {
+        let file = Takeover::file();
+        if file.exists() {
+            log::debug!("takeover was requested");
+            let f = File::open(&file)?;
+            let mut t: Takeover = serde_json::from_reader(f)?;
+            if t.minutes.is_none() || t.minutes.as_ref().unwrap() <= &0 {
+                t.minutes = None;
             }
             Ok(t)
+        } else {
+            log::debug!("no takeover requested");
+            Ok(Takeover::default())
         }
     }
 }
@@ -86,27 +66,13 @@ impl TakeoverBuilder {
 #[cfg(test)]
 mod tests {
 
-    use crate::TrackerError;
-
-    use std::env;
-    use std::fs::File;
-
-    use std::io::Write;
-
+    use crate::test_utils::init;
     use crate::Takeover;
-
+    use crate::TrackerError;
     use std::env::set_current_dir;
-
     use std::fs;
-
-    fn logger() {
-        // std::env::set_var("RUST_LOG", "debug");
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
-
-    fn test_env() {
-        env::set_var("RUST_TEST", "true");
-    }
+    use std::fs::File;
+    use std::io::Write;
 
     mod get {
 
@@ -114,20 +80,17 @@ mod tests {
 
         #[test]
         fn file_not_exists() -> Result<(), TrackerError> {
-            logger();
-            test_env();
+            init();
             let temp_dir = tempfile::tempdir()?;
             set_current_dir(temp_dir.as_ref())?;
-            let mut b = Takeover::builder();
-            let t = b.file().get()?;
+            let t = Takeover::new().get()?;
             assert!(t.minutes.is_none());
             Ok(())
         }
 
         #[test]
         fn file_contains_time() -> Result<(), TrackerError> {
-            logger();
-            test_env();
+            init();
             let file_content = "{\"minutes\":15}";
             let temp_dir = tempfile::tempdir()?;
             set_current_dir(temp_dir.as_ref())?;
@@ -135,9 +98,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            let mut b = Takeover::builder();
-            b.file = Some(time_file);
-            let t = b.get()?;
+            let t = Takeover::new().get()?;
 
             assert!(t.minutes.is_some());
             assert_eq!(&15, t.minutes.as_ref().unwrap());
@@ -147,8 +108,7 @@ mod tests {
 
         #[test]
         fn file_contains_zero_time() -> Result<(), TrackerError> {
-            logger();
-            test_env();
+            init();
             let file_content = "{\"minutes\":0}";
             let temp_dir = tempfile::tempdir()?;
             set_current_dir(temp_dir.as_ref())?;
@@ -156,9 +116,7 @@ mod tests {
             let mut file = File::create(&time_file)?;
             file.write_all(file_content.as_bytes())?;
 
-            let mut b = Takeover::builder();
-            b.file = Some(time_file);
-            let t = b.get()?;
+            let t = Takeover::new().get()?;
 
             assert!(t.minutes.is_none());
             Ok(())
@@ -171,13 +129,11 @@ mod tests {
 
         #[test]
         fn create_takeover_file() -> Result<(), TrackerError> {
-            logger();
-            test_env();
+            init();
             let temp_dir = tempfile::tempdir()?;
             set_current_dir(temp_dir.as_ref())?;
             let time_file = temp_dir.path().join(".trackrs-takeover");
-            let mut b = Takeover::builder();
-            b.file = Some(time_file.to_owned());
+            let mut b = Takeover::new();
             let t = b.set(25)?;
 
             let exp_content = "{\"minutes\":25}";
@@ -191,13 +147,12 @@ mod tests {
 
         #[test]
         fn create_empty_takeover() -> Result<(), TrackerError> {
-            logger();
-            test_env();
+            init();
             let temp_dir = tempfile::tempdir()?;
             set_current_dir(temp_dir.as_ref())?;
             let time_file = temp_dir.path().join(".trackrs-takeover");
-            let mut b = Takeover::builder();
-            let t = b.file().set(0)?;
+            let mut b = Takeover::new();
+            let t = b.set(0)?;
 
             assert!(!time_file.exists());
             assert!(t.minutes.is_none());
