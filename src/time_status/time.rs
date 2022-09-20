@@ -11,8 +11,16 @@ pub struct TimeStatus {
 }
 
 impl TimeStatus {
-    pub fn now() -> TimeStatus {
+    pub fn now() -> Self {
         TimeStatus::from(Local::now())
+    }
+
+    pub fn hours(hours: i64) -> Self{
+        TimeStatus::from(Duration::hours(hours))
+    }
+
+    pub fn minutes(minutes: i64) -> Self {
+        TimeStatus::from(Duration::minutes(minutes))
     }
 }
 

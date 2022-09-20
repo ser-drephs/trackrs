@@ -9,8 +9,9 @@ pub enum TimeStatusError {
     #[error("{r#type} is not provided for time status builder")]
     BuilderDataMissing { r#type: String },
     #[error("status error: {message}")]
-    StatusError { message: String }, // #[error("parse error")]
-                                     // ParseError(#[from] serde_json::Error),
-                                     // #[error("io error")]
-                                     // IoError(#[from] std::io::Error),
+    StatusError { message: String },
+    #[error("try from integer error")]
+    ConversionError(#[from] std::num::TryFromIntError),
+    // #[error("io error")]
+    // IoError(#[from] std::io::Error),
 }
