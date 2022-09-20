@@ -4,7 +4,7 @@ mod display {
     use colored::control::ShouldColorize;
     use indoc::indoc;
     use trackrs::{
-        settings::BreakLimit, Entry, Settings, Status, TimeData, TrackerError,
+        settings::BreakLimit, Entry, Settings, Status, TrackerError,
         settings::WorkPerDayInMinutes, TimeStatusDaily, TimeDataDaily,
     };
 
