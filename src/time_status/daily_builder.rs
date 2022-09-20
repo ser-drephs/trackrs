@@ -6,12 +6,12 @@ type StatusResult = std::result::Result<TimeStatus, TimeStatusError>;
 type Result = std::result::Result<TimeStatusDaily, TimeStatusError>;
 
 #[derive(Default)]
-pub struct TimeStatusDailyBuilder<'a> {
+pub struct DailyBuilder<'a> {
     data: Option<&'a TimeDataDaily>,
     settings: Option<&'a Settings>,
 }
 
-impl<'a> TimeStatusDailyBuilder<'a> {
+impl<'a> DailyBuilder<'a> {
     pub fn settings(&mut self, settings: &'a Settings) -> &mut Self {
         log::trace!("set settings to: {:?}", settings);
         self.settings = Some(settings);
@@ -26,12 +26,10 @@ impl<'a> TimeStatusDailyBuilder<'a> {
 
     pub fn build(&self) -> Result {
         if self.settings.is_none() {
-            return Err(TimeStatusError::BuilderDataMissing {
+            Err(TimeStatusError::BuilderDataMissing {
                 r#type: "settings".to_string(),
-            });
-        }
-
-        if self.data.is_none() {
+            })
+        } else if self.data.is_none() {
             Err(TimeStatusError::BuilderDataMissing {
                 r#type: "data".to_string(),
             })
@@ -48,6 +46,7 @@ impl<'a> TimeStatusDailyBuilder<'a> {
             let worktime = self.get_worktime(&online, &cbreak)?;
             let overtime = self.get_overtime(&worktime, &exworktime)?;
             let esend = self.get_esend(&start, &total_break, &exbreak, &exworktime)?;
+            let exworktime_break = worktime.to_owned() + exbreak.to_owned();
             Ok(TimeStatusDaily {
                 start,
                 end,
@@ -55,7 +54,7 @@ impl<'a> TimeStatusDailyBuilder<'a> {
                 r#break: total_break,
                 fbreak: first_break,
                 online,
-                exworktime,
+                exworktime: exworktime_break,
                 exbreak,
                 cbreak,
                 worktime,

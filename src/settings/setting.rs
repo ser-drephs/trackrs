@@ -1,10 +1,10 @@
-use crate::{TrackerError};
+use crate::TrackerError;
 use config::{Config, ConfigError, File, FileFormat};
 use serde::Serialize;
 use serde_derive::Deserialize;
 use std::{env, fs::OpenOptions, path::Path};
 
-use super::{WorkPerDayInMinutes, BreakLimit};
+use super::{BreakLimit, WorkPerDayInMinutes};
 
 #[derive(Serialize)]
 #[allow(unused)]
@@ -77,17 +77,5 @@ impl Settings {
     fn required_fields() -> ReqSettings {
         let d = Settings::default();
         ReqSettings { folder: d.folder }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs::OpenOptions;
-
-    use crate::{Settings, TrackerError};
-
-    mod settings {
-
-
     }
 }

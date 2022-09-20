@@ -1,4 +1,4 @@
-use crate::{TimeStatus, TimeStatusDailyBuilder};
+use crate::{TimeStatus, time_status::DailyBuilder};
 use chrono::Duration;
 use colored::Colorize;
 use std::ops::Mul;
@@ -56,8 +56,8 @@ pub struct TimeStatusDaily {
 }
 
 impl TimeStatusDaily {
-    pub fn builder<'a>() -> TimeStatusDailyBuilder<'a> {
-        TimeStatusDailyBuilder::default()
+    pub fn builder<'a>() -> DailyBuilder<'a> {
+        DailyBuilder::default()
     }
 }
 
