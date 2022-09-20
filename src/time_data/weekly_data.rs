@@ -1,5 +1,5 @@
 use super::TimeDataDaily;
-use crate::time_data::TimeDataWeeklyBuilder;
+use crate::time_data::WeeklyBuilder;
 
 #[derive(Default, Clone, Debug)]
 pub struct TimeDataWeekly {
@@ -9,8 +9,8 @@ pub struct TimeDataWeekly {
 }
 
 impl TimeDataWeekly {
-    pub fn builder<'a>() -> TimeDataWeeklyBuilder<'a> {
-        TimeDataWeeklyBuilder::default()
+    pub fn builder<'a>() -> WeeklyBuilder<'a> {
+        WeeklyBuilder::default()
     }
 
     pub fn len(&self) -> usize {

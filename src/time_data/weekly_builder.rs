@@ -6,14 +6,14 @@ use std::convert::TryInto;
 type Result = std::result::Result<TimeDataWeekly, TimeDataError>;
 
 #[derive(Default)]
-pub struct TimeDataWeeklyBuilder<'a> {
+pub struct WeeklyBuilder<'a> {
     root: Option<&'a Folder>,
     year: Option<&'a u16>,
     week: Option<u8>,
     data: Option<&'a Vec<TimeDataDaily>>,
 }
 
-impl<'a> TimeDataWeeklyBuilder<'a> {
+impl<'a> WeeklyBuilder<'a> {
     pub fn root(&mut self, folder: &'a Folder) -> &mut Self {
         log::trace!(
             "set time data root folder to: {:?}, exists: {}",
