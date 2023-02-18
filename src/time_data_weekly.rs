@@ -1,4 +1,4 @@
-use chrono::{Date, IsoWeek, Local, TimeZone, Weekday};
+use chrono::{Date, Datelike, IsoWeek, Local, TimeZone, Weekday};
 
 use crate::{Folder, TimeData, TrackerError};
 
@@ -50,17 +50,38 @@ impl TimeDataWeeklyBuilder {
     }
 
     pub fn build(&mut self) -> Result<TimeDataWeekly, TrackerError> {
-        self.set_dates()?.set_files()?;
-        Ok(self.inner.clone())
-    }
-
-    fn set_files(&mut self) -> Result<&mut Self, TrackerError> {
+        if self.year.is_none() {
+            return Err(TrackerError::TimeDataError {
+                message: "time data year not defined".to_owned(),
+            });
+        };
+        if self.week.is_none() {
+            return Err(TrackerError::TimeDataError {
+                message: "time data week not defined".to_owned(),
+            });
+        }
         if self.folder.is_none() {
             return Err(TrackerError::TimeDataError {
                 message: "time data folder is not defined".to_owned(),
             });
         }
 
+        self.assert_relative_week().set_dates()?.set_files()?;
+        Ok(self.inner.clone())
+    }
+
+    fn assert_relative_week(&mut self) -> &mut Self {
+        let week = self.week.unwrap();
+        if week < 0 {
+            let new_year = self.year.unwrap() - 1;
+            self.week(&week, Local.ymd(new_year.into(), 12, 31).iso_week());
+            self.year(new_year);
+            self.assert_relative_week();
+        }
+        self
+    }
+
+    fn set_files(&mut self) -> Result<&mut Self, TrackerError> {
         let dates = match self.dates.to_owned() {
             Some(d) => d,
             None => {
@@ -85,34 +106,9 @@ impl TimeDataWeeklyBuilder {
     }
 
     fn set_dates(&mut self) -> Result<&mut Self, TrackerError> {
-        let current_year = match self.year {
-            Some(y) => y.into(),
-            None => {
-                return Err(TrackerError::TimeDataError {
-                    message: "time data year not defined".to_owned(),
-                })
-            }
-        };
+        let current_year = self.year.unwrap().into();
 
-        let week = match self.week {
-            Some(w) => {
-                if w < 0 {
-                    return Err(TrackerError::TimeDataWeekCrossesYear {
-                        message: format!(
-                            "resulting week {} crosses year {}. this is currently not supported",
-                            w, current_year
-                        ),
-                    });
-                } else {
-                    w.try_into()?
-                }
-            }
-            None => {
-                return Err(TrackerError::TimeDataError {
-                    message: "time data week not defined".to_owned(),
-                })
-            }
-        };
+        let week = self.week.unwrap().try_into()?;
 
         let mut weekday = Weekday::Mon;
         let mut dates: Vec<Date<Local>> = Default::default();
@@ -140,7 +136,7 @@ mod tests {
     use super::*;
 
     fn logger() {
-        // std::env::set_var("RUST_LOG", "debug");
+        std::env::set_var("RUST_LOG", "debug");
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
@@ -209,15 +205,21 @@ mod tests {
         }
 
         #[test]
-        #[should_panic(expected = "crosses year")]
-        fn negative_week() {
+        fn negative_week() -> Result<(), TrackerError> {
             let d = Local.ymd(2022, 2, 2);
             let mut builder = TimeDataWeekly::builder();
             builder
                 .year(2022)
                 .week(&-60, d.iso_week())
-                .set_dates()
-                .unwrap();
+                .assert_relative_week()
+                .set_dates()?;
+            let dates = builder.dates.unwrap();
+            assert_eq!(7, dates.len());
+            assert_eq!(7, dates.first().unwrap().day());
+            assert_eq!(13, dates.last().unwrap().day());
+            assert_eq!(12, dates.last().unwrap().month());
+            assert_eq!(2020, dates.last().unwrap().year());
+            Ok(())
         }
 
         #[test]
