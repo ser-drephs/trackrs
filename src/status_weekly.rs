@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::Mul};
+use std::{env, fmt::Display, ops::Mul};
 
 use chrono::{Date, Duration, Local};
 use colored::Colorize;
@@ -65,7 +65,9 @@ impl StatusWeekly {
             self.overtime
         ]);
 
-        table.printstd();
+        if env::var("RUST_TEST").is_err() {
+            table.printstd();
+        }
     }
 }
 
@@ -215,6 +217,10 @@ mod tests {
     fn logger() {
         // std::env::set_var("RUST_LOG", "trace");
         let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    fn test_env() {
+        env::set_var("RUST_TEST", "true");
     }
 
     mod format {
@@ -519,6 +525,7 @@ mod tests {
         #[test]
         fn should_not_crash_on_format_table() -> Result<(), TrackerError> {
             logger();
+            test_env();
             let timedata = get_time_data(10, 42);
             let settings = get_settings();
             let timedata_weekly = TimeDataWeekly {

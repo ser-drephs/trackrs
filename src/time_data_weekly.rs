@@ -52,17 +52,17 @@ impl TimeDataWeeklyBuilder {
     pub fn build(&mut self) -> Result<TimeDataWeekly, TrackerError> {
         if self.year.is_none() {
             return Err(TrackerError::TimeDataError {
-                message: "time data year not defined".to_owned(),
+                message: "year not defined".to_owned(),
             });
         };
         if self.week.is_none() {
             return Err(TrackerError::TimeDataError {
-                message: "time data week not defined".to_owned(),
+                message: "week not defined".to_owned(),
             });
         }
         if self.folder.is_none() {
             return Err(TrackerError::TimeDataError {
-                message: "time data folder is not defined".to_owned(),
+                message: "folder is not defined".to_owned(),
             });
         }
 
@@ -86,7 +86,7 @@ impl TimeDataWeeklyBuilder {
             Some(d) => d,
             None => {
                 return Err(TrackerError::TimeDataError {
-                    message: "time data dates are not defined".to_owned(),
+                    message: "dates are not defined".to_owned(),
                 })
             }
         };
@@ -136,7 +136,7 @@ mod tests {
     use super::*;
 
     fn logger() {
-        std::env::set_var("RUST_LOG", "debug");
+        // std::env::set_var("RUST_LOG", "debug");
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
@@ -191,17 +191,25 @@ mod tests {
         }
 
         #[test]
-        #[should_panic(expected = "year not defined")]
         fn no_year() {
             let mut builder = TimeDataWeekly::builder();
-            builder.set_dates().unwrap();
+            let res = builder.build();
+            assert!(res.is_err());
+            assert_eq!(
+                "time data error: year not defined",
+                res.err().unwrap().to_string()
+            );
         }
 
         #[test]
-        #[should_panic(expected = "week not defined")]
         fn no_week() {
             let mut builder = TimeDataWeekly::builder();
-            builder.year(2022).set_dates().unwrap();
+            let res = builder.year(2022).build();
+            assert!(res.is_err());
+            assert_eq!(
+                "time data error: week not defined",
+                res.err().unwrap().to_string()
+            );
         }
 
         #[test]
@@ -238,17 +246,26 @@ mod tests {
         }
 
         #[test]
-        #[should_panic(expected = "folder is not defined")]
         fn no_folder() {
+            let d = Local.ymd(2022, 2, 2);
             let mut builder = TimeDataWeekly::builder();
-            builder.set_files().unwrap();
+            let res = builder.year(2012).week(&-2, d.iso_week()).build();
+            assert!(res.is_err());
+            assert_eq!(
+                "time data error: folder is not defined",
+                res.err().unwrap().to_string()
+            );
         }
 
         #[test]
-        #[should_panic(expected = "dates are not defined")]
         fn no_dates() {
             let mut builder = TimeDataWeekly::builder();
-            builder.folder(Folder::default()).set_files().unwrap();
+            let res = builder.folder(Folder::default()).set_files();
+            assert!(res.is_err());
+            assert_eq!(
+                "time data error: dates are not defined",
+                res.err().unwrap().to_string()
+            );
         }
 
         #[test]
