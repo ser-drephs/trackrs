@@ -1,3 +1,11 @@
+## [1.4.0](https://github.com/ser-drephs/trackrs/compare/v1.3.0...v1.4.0) (2023-02-19)
+
+
+### Features
+
+* format week list as table ([a9abb3f](https://github.com/ser-drephs/trackrs/commit/a9abb3fe37847db6b16bea99d2afa8d7fcc54e48))
+* week status crossing year ([4c99acd](https://github.com/ser-drephs/trackrs/commit/4c99acd9658c14d477354caff5e9c926a4e0ce97))
+
 ## [1.3.0](https://github.com/ser-drephs/trackrs/compare/v1.2.0...v1.3.0) (2022-09-09)
 
 
