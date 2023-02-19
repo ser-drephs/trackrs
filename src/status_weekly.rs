@@ -1,7 +1,8 @@
 use std::{fmt::Display, ops::Mul};
 
-use chrono::Duration;
+use chrono::{Date, Duration, Local};
 use colored::Colorize;
+use prettytable::{format, Table};
 
 use crate::{Settings, StatusDaily, StatusTime, TimeData, TimeDataWeekly, TrackerError};
 
@@ -11,6 +12,7 @@ pub struct StatusWeekly {
     total: StatusTime,
     overtime: StatusTime,
     decimal: f64,
+    entries: Vec<(Date<Local>, StatusDaily)>,
 }
 
 impl StatusWeekly {
@@ -18,6 +20,52 @@ impl StatusWeekly {
         StatusWeeklyBuilder {
             ..Default::default()
         }
+    }
+
+    pub fn format_table(&self) {
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_COLSEP);
+
+        let width = 7;
+
+        table.set_titles(row![
+            format!("{:width$}", "Date"),
+            format!("{:width$}", "Start"),
+            format!("{:width$}", "End"),
+            format!("{:width$}", "Break"),
+            format!("{:width$}", "Worktime"),
+            format!("{:width$}", "Overtime"),
+        ]);
+
+        fn status_unwrap(status: Option<StatusTime>) -> StatusTime {
+            match status {
+                Some(val) => val,
+                None => StatusTime::default(),
+            }
+        }
+
+        self.entries.iter().for_each(|(date, status)| {
+            table.add_row(row![
+                date.to_owned().format("%a %d %b"),
+                format!("{}", status_unwrap(status.start.to_owned())),
+                format!("{}", status_unwrap(status.end.to_owned())),
+                format!("{}", status_unwrap(status.r#break.to_owned())),
+                format!("{}", status.worktime),
+                format!("{}", status.overtime),
+            ]);
+        });
+
+        table.add_empty_row();
+        table.add_row(row![
+            format!("Total week {}", self.week),
+            "",
+            "",
+            self.decimal,
+            self.total,
+            self.overtime
+        ]);
+
+        table.printstd();
     }
 }
 
@@ -57,6 +105,8 @@ impl StatusWeeklyBuilder {
             }
         };
 
+        let mut entries: Vec<(Date<Local>, StatusDaily)> = Vec::new();
+
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
 
@@ -74,6 +124,7 @@ impl StatusWeeklyBuilder {
                     s.worktime,
                     s.overtime
                 );
+                entries.append(&mut [(d.date.unwrap().to_owned(), s.to_owned())].to_vec());
                 total += s.worktime;
                 overtime += s.overtime;
             } else {
@@ -86,6 +137,9 @@ impl StatusWeeklyBuilder {
                 if expected >= &0 {
                     let exh = expected.to_owned() as i64;
                     overtime -= StatusTime::from(Duration::minutes(exh));
+                    let missing_status =
+                        StatusDaily::builder().empty_with_overtime(overtime.to_owned());
+                    entries.append(&mut [(d.date.unwrap().to_owned(), missing_status)].to_vec());
                 }
             }
         });
@@ -100,6 +154,7 @@ impl StatusWeeklyBuilder {
             total,
             overtime,
             decimal: decimal.to_owned(),
+            entries,
         };
 
         Ok(sw)
@@ -176,6 +231,7 @@ mod tests {
                 total: StatusTime::from(Duration::hours(41).add(Duration::minutes(22))),
                 overtime: StatusTime::from(Duration::minutes(82)),
                 decimal: 42.5,
+                entries: Vec::new(),
             };
             log::debug!("{}", s);
 
@@ -200,6 +256,7 @@ mod tests {
                 total: StatusTime::from(Duration::hours(40)),
                 overtime: StatusTime::from(Duration::minutes(0)),
                 decimal: 40.0,
+                entries: Vec::new(),
             };
             log::debug!("{}", s);
 
@@ -217,6 +274,7 @@ mod tests {
                 total: StatusTime::from(Duration::hours(38).add(Duration::minutes(22))),
                 overtime: StatusTime::from(Duration::minutes(-98)),
                 decimal: 38.3,
+                entries: Vec::new(),
             };
             log::debug!("{}", s);
 
@@ -455,6 +513,22 @@ mod tests {
             assert_eq!(total, s.total);
             assert_eq!(overtime, s.overtime);
             assert_eq!(decimal, s.decimal);
+            Ok(())
+        }
+
+        #[test]
+        fn should_not_crash_on_format_table() -> Result<(), TrackerError> {
+            logger();
+            let timedata = get_time_data(10, 42);
+            let settings = get_settings();
+            let timedata_weekly = TimeDataWeekly {
+                entries: timedata,
+                week: 10,
+            };
+
+            let mut b = StatusWeekly::builder();
+            let s = b.data(timedata_weekly).settings(settings).build()?;
+            s.format_table();
             Ok(())
         }
     }

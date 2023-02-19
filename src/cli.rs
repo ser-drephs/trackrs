@@ -34,6 +34,10 @@ pub enum Commands {
         /// Either enter the correct week of the year or a relative value eg. -1
         #[clap(short, value_parser, allow_hyphen_values = true)]
         week: Option<i8>,
+
+        /// Format week status as table.
+        #[clap(short, long)]
+        table: bool,
     },
     /// Start tracking work
     ///
@@ -94,7 +98,7 @@ impl CliExecute for Cli {
             Commands::Break => self.invoke_break(),
             Commands::End => self.invoke_end(),
             Commands::Disconnect => self.invoke_disconnect(),
-            Commands::Status { week } => self.invoke_status(week),
+            Commands::Status { week, table } => self.invoke_status(week, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
             Commands::Start => self.invoke_start(),
@@ -187,7 +191,7 @@ impl Cli {
                 status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
-        self.invoke_status(&None)
+        self.invoke_status(&None, &false)
     }
 
     fn invoke_disconnect(&self) -> TrackerResult {
@@ -204,7 +208,7 @@ impl Cli {
             .write_to_file()
     }
 
-    fn invoke_status(&self, week: &Option<i8>) -> TrackerResult {
+    fn invoke_status(&self, week: &Option<i8>, table: &bool) -> TrackerResult {
         log::info!("status executed");
         let settings = Settings::new()?;
 
@@ -222,7 +226,12 @@ impl Cli {
                     .data(time_data)
                     .settings(settings)
                     .build()?;
-                println!("{}", status);
+
+                if *table {
+                    status.format_table();
+                } else {
+                    println!("{}", status);
+                }
             }
             None => {
                 let mut time_data = TimeData::builder()
@@ -271,6 +280,6 @@ impl Cli {
                 status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
-        self.invoke_status(&None)
+        self.invoke_status(&None, &false)
     }
 }
