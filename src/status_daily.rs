@@ -5,12 +5,12 @@ use colored::Colorize;
 
 use crate::{Settings, Status, StatusTime, TimeData, TrackerError};
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct StatusDaily {
     data: Option<TimeData>,
     settings: Option<Settings>,
-    start: Option<StatusTime>,
-    end: Option<StatusTime>,
+    pub start: Option<StatusTime>,
+    pub end: Option<StatusTime>,
     temp_end: Option<StatusTime>,
     /// first break of day
     f_break: Option<DateTime<Local>>,
@@ -276,6 +276,13 @@ impl StatusDailyBuilder {
             .set_worktime()
             .set_overtime();
         Ok(d)
+    }
+
+    pub fn empty_with_overtime(&mut self, overtime: StatusTime) -> StatusDaily {
+        StatusDaily {
+            overtime,
+            ..Default::default()
+        }
     }
 }
 
