@@ -26,7 +26,11 @@ impl StatusWeekly {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_COLSEP);
 
+        log::trace!("generating status table");
+
         let width = 7;
+
+        log::trace!("set table titels");
 
         table.set_titles(row![
             format!("{:width$}", "Date"),
@@ -44,6 +48,8 @@ impl StatusWeekly {
             }
         }
 
+        log::trace!("iterate over entries");
+
         self.entries.iter().for_each(|(date, status)| {
             table.add_row(row![
                 date.to_owned().format("%a %d %b"),
@@ -56,6 +62,9 @@ impl StatusWeekly {
         });
 
         table.add_empty_row();
+
+        log::trace!("add summary row");
+
         table.add_row(row![
             format!("Total week {}", self.week),
             "",
@@ -66,6 +75,7 @@ impl StatusWeekly {
         ]);
 
         if env::var("RUST_TEST").is_err() {
+            log::trace!("print table to std");
             table.printstd();
         }
     }
