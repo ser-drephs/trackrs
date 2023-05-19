@@ -12,26 +12,29 @@
 		"--security-opt",
 		"seccomp=unconfined"
 	],
-	"settings": {
-		"lldb.executable": "/usr/bin/lldb",
-		"files.watcherExclude": {
-			"**/target/**": true
-		},
-		"rust-analyzer.checkOnSave.command": "clippy",
-		"remote.containers.copyGitConfig": true
-	},
-	"extensions": [
-		"hbenl.vscode-test-explorer",
-        "ms-vscode.makefile-tools",
-		"gruntfuggly.todo-tree",
-		"yzhang.markdown-all-in-one",
-		"EditorConfig.EditorConfig",
-		"vadimcn.vscode-lldb",
-		"mutantdino.resourcemonitor",
-		"rust-lang.rust-analyzer",
-		"tamasfe.even-better-toml",
-		"serayuzgur.crates",
-		"ryanluker.vscode-coverage-gutters",
-		"swellaby.vscode-rust-test-adapter"
-	]
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"lldb.executable": "/usr/bin/lldb",
+				"files.watcherExclude": {
+					"**/target/**": true
+				},
+				"rust-analyzer.checkOnSave.command": "clippy"
+			},
+			"extensions": [
+				"hbenl.vscode-test-explorer",
+				"ms-vscode.makefile-tools",
+				"gruntfuggly.todo-tree",
+				"yzhang.markdown-all-in-one",
+				"EditorConfig.EditorConfig",
+				"vadimcn.vscode-lldb",
+				"mutantdino.resourcemonitor",
+				"rust-lang.rust-analyzer",
+				"tamasfe.even-better-toml",
+				"serayuzgur.crates",
+				"ryanluker.vscode-coverage-gutters",
+				"swellaby.vscode-rust-test-adapter"
+			]
+		}
+	}
 }
