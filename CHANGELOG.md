@@ -1,3 +1,10 @@
+### [1.4.1](https://github.com/ser-drephs/trackrs/compare/v1.4.0...v1.4.1) (2023-05-19)
+
+
+### Bug Fixes
+
+* status table under linux ([fdd2693](https://github.com/ser-drephs/trackrs/commit/fdd269321ffe8bfad58106ca31cbf7ffc4115ec1))
+
 ## [1.4.0](https://github.com/ser-drephs/trackrs/compare/v1.3.0...v1.4.0) (2023-02-19)
 
 
