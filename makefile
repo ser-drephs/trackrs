@@ -16,13 +16,13 @@ build-release:
 	cargo build --release --offline
 
 build-release-linux-musl:
-	cargo build --release --target x86_64-unknown-linux-gnu
+	cargo build --release --locked --target x86_64-unknown-linux-gnu
 
 build-release-win:
-	cargo build --release --target x86_64-pc-windows-gnu
+	cargo build --release --locked --target x86_64-pc-windows-gnu
 
 build-release-mac:
-	cargo build --release --target x86_64-apple-darwin
+	cargo build --release --locked --target x86_64-apple-darwin
 
 release-linux:
 	cargo build --offline --release --target x86_64-unknown-linux-gnu

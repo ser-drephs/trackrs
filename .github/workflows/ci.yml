@@ -40,7 +40,7 @@ jobs:
     - name: build
       id: build
       if: success()
-      run: make build
+      run: make build-ci
 
     - name: run tests
       id: test
