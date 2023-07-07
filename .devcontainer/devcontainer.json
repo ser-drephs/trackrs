@@ -6,6 +6,7 @@
 			"VARIANT": "bullseye"
 		}
 	},
+    "remoteUser": "vscode",
 	"runArgs": [
 		"--init",
 		"--cap-add=SYS_PTRACE",
