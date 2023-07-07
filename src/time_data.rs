@@ -7,13 +7,13 @@ use std::{
 
 use chrono::{Date, DateTime, Duration, Local};
 
-use crate::{Entry, Status, Takeover, TrackerError};
+use crate::{dto::TrackerData, model::Status, Entry, Takeover, TrackerError};
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
 
 trait TimeDataFile {
-    fn read_from_file(&mut self) -> Result<&mut Self, TrackerError>;
+    fn read_from_entries_file(&mut self) -> Result<&mut Self, TrackerError>;
 
     fn write_to_file(&self) -> Result<(), TrackerError>;
 }
@@ -21,6 +21,7 @@ trait TimeDataFile {
 #[derive(Default, Clone, Debug)]
 pub struct TimeData {
     pub entries: Vec<Entry>,
+    pub data: TrackerData,
     pub(super) file: PathBuf,
     pub(super) build: bool,
     pub date: Option<Date<Local>>,
@@ -140,7 +141,7 @@ impl TimeData {
         Ok(self)
     }
 
-    pub fn read_from_file(&mut self) -> Result<&mut Self, TrackerError> {
+    pub fn read_from_entries_file(&mut self) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         if self.file.exists() {
             let f = File::open(&self.file)?;
@@ -158,6 +159,26 @@ impl TimeData {
         }
 
         Ok(self)
+    }
+
+    pub fn read_from_file(&mut self) -> Result<&mut Self, TrackerError> {
+        self.assert_build()?;
+        if self.file.exists() {
+            let f = File::open(&self.file)?;
+            let data: TrackerData = match serde_json::from_reader(&f) {
+                Ok(res) => res,
+                Err(_) => TimeData::convert_model(&f)?,
+            };
+            self.data = data;
+        }
+
+        Ok(self)
+    }
+
+    fn convert_model(f: &File) -> Result<TrackerData, TrackerError> {
+        log::info!("converting to new model");
+        let entries: Vec<Entry> = serde_json::from_reader(f)?;
+        Ok(TrackerData::from(&entries))
     }
 
     pub fn write_to_file(&self) -> Result<(), TrackerError> {
@@ -268,7 +289,7 @@ mod tests {
 
     use chrono::{Duration, Local, TimeZone, Timelike};
 
-    use crate::{Entry, Status, TimeData, TrackerError};
+    use crate::{model::Status, Entry, TimeData, TrackerError};
 
     use serial_test::serial;
 
@@ -302,7 +323,7 @@ mod tests {
 
         use super::*;
 
-        fn wait(){
+        fn wait() {
             let mut child = Command::new("sleep").arg("1").spawn().unwrap();
             let _result = child.wait().unwrap();
         }
@@ -318,7 +339,7 @@ mod tests {
                 .date(day)
                 .build()?;
             time_data
-                .read_from_file()?
+                .read_from_entries_file()?
                 .append(Status::Connect, day.and_hms(2, 1, 0))?
                 .append(Status::End, day.and_hms(4, 1, 0))?
                 .write_to_file()?;
@@ -346,7 +367,7 @@ mod tests {
                 .date(Local.ymd(2022, 8, 4))
                 .build()?;
 
-            time_data.read_from_file()?;
+            time_data.read_from_entries_file()?;
             assert_eq!(2, time_data.entries.len());
             assert_eq!(2, time_data.entries.last().unwrap().id);
             Ok(())
@@ -371,7 +392,7 @@ mod tests {
                 .date(day)
                 .build()?;
 
-            time_data.read_from_file()?;
+            time_data.read_from_entries_file()?;
             assert_eq!(2, time_data.entries.len());
             assert_eq!(2, time_data.entries.last().unwrap().id);
 
@@ -401,7 +422,7 @@ mod tests {
                 .build()?;
 
             time_data
-                .read_from_file()?
+                .read_from_entries_file()?
                 .assert_break(Duration::minutes(45), Duration::minutes(15))?;
             assert_eq!(4, time_data.entries.len());
             assert_eq!(4, time_data.entries.last().unwrap().id);
@@ -447,7 +468,7 @@ mod tests {
                 .build()?;
 
             time_data
-                .read_from_file()?
+                .read_from_entries_file()?
                 .assert_break(Duration::minutes(45), Duration::minutes(15))?
                 .write_to_file()?;
             assert_eq!(4, time_data.entries.len());
@@ -522,7 +543,7 @@ mod tests {
                 .date(Local.ymd(2022, 2, 2))
                 .build()?;
 
-            time_data.read_from_file()?.assert_break(
+            time_data.read_from_entries_file()?.assert_break(
                 Duration::minutes(45),
                 Duration::hours(1).add(Duration::minutes(15)),
             )?;
@@ -572,7 +593,7 @@ mod tests {
                 .build()?;
 
             time_data
-                .read_from_file()?
+                .read_from_entries_file()?
                 .assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.len());
             assert_eq!(2, time_data.entries.last().unwrap().id);
@@ -596,7 +617,7 @@ mod tests {
                 .build()?;
 
             time_data
-                .read_from_file()?
+                .read_from_entries_file()?
                 .assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.len());
             assert_eq!(2, time_data.entries.last().unwrap().id);
@@ -620,7 +641,7 @@ mod tests {
                 .build()?;
 
             time_data
-                .read_from_file()?
+                .read_from_entries_file()?
                 .takeover(Duration::minutes(20))?;
             assert_eq!(3, time_data.entries.len());
 
@@ -683,7 +704,7 @@ mod tests {
                     .date(day)
                     .build()?;
                 time_data
-                    .read_from_file()?
+                    .read_from_entries_file()?
                     .assert_takeover(day.and_hms(2, 16, 0))?
                     .append(Status::Connect, day.and_hms(2, 16, 0))?
                     .append(Status::End, day.and_hms(5, 0, 0))?
@@ -729,7 +750,7 @@ mod tests {
                     .date(day)
                     .build()?;
                 time_data
-                    .read_from_file()?
+                    .read_from_entries_file()?
                     .assert_takeover(day.and_hms(2, 15, 0))?
                     .append(Status::Connect, day.and_hms(2, 15, 0))?
                     .append(Status::End, day.and_hms(2, 45, 0))?
@@ -777,7 +798,7 @@ mod tests {
                     .date(day)
                     .build()?;
                 time_data
-                    .read_from_file()?
+                    .read_from_entries_file()?
                     .assert_takeover(day.and_hms(2, 15, 0))?
                     .append(Status::Connect, day.and_hms(2, 15, 0))?
                     .append(Status::End, day.and_hms(4, 14, 0))?
@@ -794,6 +815,43 @@ mod tests {
                     "expected 1:35 minutes diff, but got {}",
                     diff
                 );
+                Ok(())
+            }
+        }
+
+        mod convert {
+
+            use super::*;
+
+            #[test]
+            fn should_convert_entries_to_trackerdata() -> Result<(), TrackerError> {
+                logger();
+                let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]";
+                let temp_dir = tempfile::tempdir()?;
+                let time_file = temp_dir.path().join("20220804.json");
+                let day = Local.ymd(2022, 8, 4);
+                let mut file = File::create(&time_file)?;
+                file.write_all(file_content.as_bytes())?;
+
+                wait();
+
+                let initial_size = fs::metadata(&time_file)?.len();
+
+                let mut time_data = TimeData::builder()
+                    .folder(temp_dir.into_path().into())
+                    .date(day)
+                    .build()?;
+
+                time_data.read_from_file()?;
+                assert_eq!(2, time_data.entries.len());
+                assert_eq!(2, time_data.entries.last().unwrap().id);
+
+                time_data.append(Status::End, day.and_hms(23, 3, 0))?;
+                assert_eq!(3, time_data.entries.len());
+                assert_eq!(3, time_data.entries.last().unwrap().id);
+
+                time_data.write_to_file()?;
+                assert!(fs::metadata(&time_file)?.len() > initial_size);
                 Ok(())
             }
         }

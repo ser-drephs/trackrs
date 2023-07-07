@@ -155,7 +155,7 @@ mod tests {
 
     use chrono::TimeZone;
 
-    use crate::Status;
+    use crate::model::Status;
 
     use super::*;
 

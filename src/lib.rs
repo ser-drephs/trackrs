@@ -21,3 +21,7 @@ pub use status_weekly::*;
 pub use takeover::*;
 pub use time_data::*;
 pub use time_data_weekly::*;
+
+
+mod dto;
+mod model;

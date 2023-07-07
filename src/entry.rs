@@ -3,7 +3,7 @@ use std::str::FromStr;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
-use crate::TrackerError;
+use crate::{model::Status, TrackerError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Entry {
@@ -24,21 +24,24 @@ impl Default for Entry {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum Status {
-    Connect,
-    Disconnect,
-    Break,
-    End,
-    Takeover
-}
-
 impl Entry {
     pub fn builder() -> EntryBuilder {
         EntryBuilder {
             inner: Default::default(),
             time_set: false,
         }
+    }
+
+    pub fn id(&self) -> &u8 {
+        &self.id
+    }
+
+    pub fn status(&self) -> &Status {
+        &self.status
+    }
+
+    pub fn time(&self) -> &DateTime<Local> {
+        &self.time
     }
 }
 

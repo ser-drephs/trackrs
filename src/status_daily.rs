@@ -3,7 +3,7 @@ use std::ops::{Add, Mul};
 use chrono::{DateTime, Duration, Local};
 use colored::Colorize;
 
-use crate::{Settings, Status, StatusTime, TimeData, TrackerError};
+use crate::{Settings, model::Status, StatusTime, TimeData, TrackerError};
 
 #[derive(Default, Clone, Debug)]
 pub struct StatusDaily {
@@ -374,7 +374,7 @@ mod tests {
     use chrono::{DateTime, Duration, Local, TimeZone};
 
     use crate::{
-        BreakLimit, Entry, Settings, Status, StatusDaily, StatusTime, TimeData, WorkPerDayInMinutes,
+        BreakLimit, Entry, Settings, model::Status, StatusDaily, StatusTime, TimeData, WorkPerDayInMinutes,
     };
 
     use indoc::indoc;

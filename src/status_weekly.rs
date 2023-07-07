@@ -222,7 +222,7 @@ mod tests {
 
     use chrono::{Local, TimeZone};
 
-    use crate::{BreakLimit, Entry, Status};
+    use crate::{BreakLimit, Entry, model::Status};
 
     fn logger() {
         // std::env::set_var("RUST_LOG", "trace");

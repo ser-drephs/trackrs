@@ -97,7 +97,7 @@ impl TimeDataWeeklyBuilder {
             let mut b = TimeData::builder();
             let f = self.folder.as_ref().unwrap().to_owned();
             let mut t = b.folder(f).date(d.to_owned()).build().unwrap();
-            t.read_from_file().unwrap();
+            t.read_from_entries_file().unwrap();
             let mut v = [t].to_vec();
             entries.append(v.as_mut());
         });

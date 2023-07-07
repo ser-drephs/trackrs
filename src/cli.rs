@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 use crate::{
-    entry::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
+    model::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -139,7 +139,7 @@ impl Cli {
             .build()?;
         let now = Local::now();
         time_data
-            .read_from_file()?
+            .read_from_entries_file()?
             .assert_takeover(now)?
             .append(Status::Connect, now)?
             .write_to_file()
@@ -154,7 +154,7 @@ impl Cli {
             .build()?;
         let now = Local::now();
         time_data
-            .read_from_file()?
+            .read_from_entries_file()?
             .append(Status::Connect, now)?
             .write_to_file()
     }
@@ -168,7 +168,7 @@ impl Cli {
             .build()?;
         let now = Local::now();
         time_data
-            .read_from_file()?
+            .read_from_entries_file()?
             .append(Status::Break, now)?
             .write_to_file()
     }
@@ -178,7 +178,7 @@ impl Cli {
         let settings = Settings::new()?;
         let folder: &str = settings.folder.as_ref();
         let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
-        time_data.read_from_file()?;
+        time_data.read_from_entries_file()?;
         let status = StatusDaily::builder()
             .data(time_data.clone())
             .settings(settings)
@@ -203,7 +203,7 @@ impl Cli {
             .build()?;
         let now = Local::now();
         time_data
-            .read_from_file()?
+            .read_from_entries_file()?
             .append(Status::Disconnect, now)?
             .write_to_file()
     }
@@ -238,7 +238,7 @@ impl Cli {
                     .folder(settings.folder.to_owned().into())
                     .today()
                     .build()?;
-                time_data.read_from_file()?;
+                time_data.read_from_entries_file()?;
                 let status = StatusDaily::builder()
                     .data(time_data)
                     .settings(settings)
@@ -267,7 +267,7 @@ impl Cli {
         let settings = Settings::new()?;
         let folder: &str = settings.folder.as_ref();
         let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
-        time_data.read_from_file()?;
+        time_data.read_from_entries_file()?;
         let status = StatusDaily::builder()
             .data(time_data.clone())
             .settings(settings)
