@@ -1,6 +1,6 @@
 mod item;
-mod item_metadata;
+mod tracker_data;
 mod item_collection;
 
-pub use item_metadata::ItemMetaData as TrackerData;
+pub use tracker_data::TrackerData;
 

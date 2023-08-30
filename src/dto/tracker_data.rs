@@ -6,24 +6,24 @@ use crate::deprecated::Entry;
 use super::item_collection::ItemCollection;
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
-pub struct ItemMetaData {
+pub struct TrackerData {
     pub date: NaiveDate,
     pub items: ItemCollection,
 }
 
-impl ItemMetaData{
+impl TrackerData{
     pub fn len(&self) -> usize {
         self.items.len()
     }
 }
 
-impl From<&Vec<Entry>> for ItemMetaData{
+impl From<&Vec<Entry>> for TrackerData{
     fn from(values: &Vec<Entry>) -> Self {
         let date = match values.first() {
             Some(first) => first.time().date_naive(),
             None => todo!(),
         };
-        ItemMetaData { date, items: ItemCollection::from(values) }
+        TrackerData { date, items: ItemCollection::from(values) }
     }
 }
 
@@ -49,7 +49,7 @@ mod tests {
             .time(Local.ymd(2022, 2, 5).and_hms(10, 1, 30))
             .build()
             .unwrap();
-        let data = ItemMetaData::from(&vec![entry, entry2]);
+        let data = TrackerData::from(&vec![entry, entry2]);
         assert_eq!(2, data.len());
         let expected_date= NaiveDate::from_ymd_opt(2022, 2, 5).unwrap();
         assert_eq!(expected_date, data.date);
