@@ -19,6 +19,7 @@ impl TrackerData{
 
 impl From<&Vec<Entry>> for TrackerData{
     fn from(values: &Vec<Entry>) -> Self {
+        log::info!("converting to new model.");
         let date = match values.first() {
             Some(first) => first.time().date_naive(),
             None => todo!(),

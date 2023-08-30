@@ -1,6 +1,6 @@
 use chrono::{Date, Datelike, IsoWeek, Local, TimeZone, Weekday};
 
-use crate::{Folder, TimeData, TrackerError};
+use crate::{TimeData, TrackerError, storage::Folder};
 
 #[derive(Default, Clone)]
 pub struct TimeDataWeekly {

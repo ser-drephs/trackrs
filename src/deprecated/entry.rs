@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{model::Status, TrackerError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[deprecated = "This is the old model. Use new model `TrackerData` instead."]
 pub struct Entry {
     pub(crate) id: u8,
 

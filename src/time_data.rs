@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{Date, DateTime, Duration, Local};
 
-use crate::{dto::TrackerData, model::Status, deprecated::Entry, Takeover, TrackerError};
+use crate::{dto::TrackerData, model::Status, deprecated::Entry, Takeover, TrackerError, storage::Folder};
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
@@ -175,6 +175,7 @@ impl TimeData {
         Ok(self)
     }
 
+    #[deprecated]
     fn convert_model(f: &File) -> Result<TrackerData, TrackerError> {
         log::info!("converting to new model");
         let entries: Vec<Entry> = serde_json::from_reader(f)?;
@@ -210,43 +211,12 @@ pub struct TimeDataBuilder {
     has_file: bool,
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct Folder {
-    inner: PathBuf,
-}
 
-impl From<PathBuf> for Folder {
-    fn from(path: PathBuf) -> Self {
-        Folder { inner: path }
-    }
-}
-
-impl From<&str> for Folder {
-    fn from(str: &str) -> Self {
-        Folder {
-            inner: PathBuf::from_str(str).unwrap(),
-        }
-    }
-}
-
-impl From<String> for Folder {
-    fn from(str: String) -> Self {
-        Folder {
-            inner: PathBuf::from_str(&str).unwrap(),
-        }
-    }
-}
-
-impl From<Folder> for PathBuf {
-    fn from(val: Folder) -> Self {
-        val.inner
-    }
-}
 
 impl TimeDataBuilder {
     pub fn folder(&mut self, folder: Folder) -> &mut Self {
         log::debug!("set time data folder to: {:?}", &folder);
-        fs::create_dir_all(&folder.inner).unwrap();
+        fs::create_dir_all(&folder).unwrap();
         self.folder = folder.into();
         self
     }

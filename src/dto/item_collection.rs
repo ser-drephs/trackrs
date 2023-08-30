@@ -16,17 +16,17 @@ impl ItemCollection {
         self.0.push(elem);
     }
 
-    pub(super) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
     }
 
     #[allow(dead_code)]
-    pub(super) fn first(&self) -> Option<&Item> {
+    pub fn first(&self) -> Option<&Item> {
         self.0.first()
     }
 
     #[allow(dead_code)]
-    pub(super) fn last(&self) -> Option<&Item> {
+    pub fn last(&self) -> Option<&Item> {
         self.0.last()
     }
 }
