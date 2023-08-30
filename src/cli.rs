@@ -85,6 +85,12 @@ pub enum Commands {
         #[clap(short, long, conflicts_with = "list")]
         edit: bool,
     },
+    /// Update
+    ///
+    /// Updates all old files to new structure inside the configured folder.
+    /// This is a one time operation.
+    #[clap(display_order=9)]
+    Update,
 }
 
 pub trait CliExecute {
@@ -102,6 +108,7 @@ impl CliExecute for Cli {
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
             Commands::Start => self.invoke_start(),
+            Commands::Update => self.invoke_update(),
             _ => self.invoke_continue(), // default and Command::Start.
         }
     }
@@ -281,5 +288,13 @@ impl Cli {
             )?
             .write_to_file()?;
         self.invoke_status(&None, &false)
+    }
+
+    fn invoke_update(&self) -> Result<(), TrackerError> {
+        let settings = Settings::new()?;
+        let folder: &str = settings.folder.as_ref();
+
+        log::info!("updating files inside '{}' to new structure", folder);
+        todo!()
     }
 }

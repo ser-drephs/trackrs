@@ -51,7 +51,7 @@ fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
     let s = Cli::from_iter(["trackrs", "start"].iter());
     s.execute().unwrap();
 
-    let f = fs::read_dir(&folder).unwrap();
+    let f = fs::read_dir(folder).unwrap();
     let files = f
         .map(|res| res.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()
@@ -90,7 +90,7 @@ fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
     let s = Cli::from_iter(["trackrs", "start"].iter());
     s.execute().unwrap();
 
-    let f = fs::read_dir(&folder).unwrap();
+    let f = fs::read_dir(folder).unwrap();
     let files = f
         .map(|res| res.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()
@@ -126,7 +126,7 @@ fn takeover_subtracts_from_today(ctx: &mut IntegrationContext) {
     let s = Cli::from_iter(["trackrs", "start"].iter());
     s.execute().unwrap();
 
-    let f = fs::read_dir(&folder).unwrap();
+    let f = fs::read_dir(folder).unwrap();
     let files = f
         .map(|res| res.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()

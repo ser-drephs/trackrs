@@ -70,7 +70,7 @@ impl TakeoverBuilder {
             let mut t = Takeover::default();
             if f.exists() {
                 log::debug!("takeover was requested");
-                let f = File::open(&f)?;
+                let f = File::open(f)?;
                 t = serde_json::from_reader(f)?;
                 if t.minutes.is_none() || t.minutes.as_ref().unwrap() <= &0 {
                     t.minutes = None;

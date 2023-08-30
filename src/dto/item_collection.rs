@@ -20,10 +20,12 @@ impl ItemCollection {
         self.0.len()
     }
 
+    #[allow(dead_code)]
     pub(super) fn first(&self) -> Option<&Item> {
         self.0.first()
     }
 
+    #[allow(dead_code)]
     pub(super) fn last(&self) -> Option<&Item> {
         self.0.last()
     }

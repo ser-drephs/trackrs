@@ -357,7 +357,7 @@ mod tests {
             let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220804.json");
-            let mut file = File::create(&time_file)?;
+            let mut file = File::create(time_file)?;
             file.write_all(file_content.as_bytes())?;
 
             wait();
@@ -411,7 +411,7 @@ mod tests {
             let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-02-02T08:00:53.523332900Z\"}]";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
+            let mut file = File::create(time_file)?;
             file.write_all(file_content.as_bytes())?;
 
             wait();
@@ -533,7 +533,7 @@ mod tests {
             let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"Break\",\"time\":\"2022-08-04T00:30:53.523319900Z\"},{\"id\":3,\"status\":\"Connect\",\"time\":\"2022-08-04T02:15:53.523319900Z\"},{\"id\":4,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}]";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
+            let mut file = File::create(time_file)?;
             file.write_all(file_content.as_bytes())?;
 
             wait();
@@ -582,7 +582,7 @@ mod tests {
             let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}]";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
+            let mut file = File::create(time_file)?;
             file.write_all(file_content.as_bytes())?;
 
             wait();
@@ -606,7 +606,7 @@ mod tests {
             let file_content = "[\n    {\n        \"id\": 1,\n        \"status\": \"Connect\",\n        \"time\": \"2022-08-04T00:00:53.523319900Z\"\n    },\n    {\n        \"id\": 2,\n        \"status\": \"End\",\n        \"time\": \"2022-08-04T04:00:53.523332900Z\"\n    }\n]";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
+            let mut file = File::create(time_file)?;
             file.write_all(file_content.as_bytes())?;
 
             wait();
@@ -630,7 +630,7 @@ mod tests {
             let file_content = "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}]";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220804.json");
-            let mut file = File::create(&time_file)?;
+            let mut file = File::create(time_file)?;
             file.write_all(file_content.as_bytes())?;
 
             wait();
@@ -694,7 +694,7 @@ mod tests {
 
                 let file_content = "{\"minutes\":15}";
                 let takeover_file = ctx.temp_dir.path().join(".trackrs-takeover");
-                let mut file = File::create(&takeover_file)?;
+                let mut file = File::create(takeover_file)?;
                 file.write_all(file_content.as_bytes())?;
 
                 wait();
@@ -740,7 +740,7 @@ mod tests {
 
                 let file_content = "{\"minutes\":15}";
                 let takeover_file = ctx.temp_dir.path().join(".trackrs-takeover");
-                let mut file = File::create(&takeover_file)?;
+                let mut file = File::create(takeover_file)?;
                 file.write_all(file_content.as_bytes())?;
 
                 wait();
@@ -788,7 +788,7 @@ mod tests {
 
                 let file_content = "{\"minutes\":95}";
                 let takeover_file = ctx.temp_dir.path().join(".trackrs-takeover");
-                let mut file = File::create(&takeover_file)?;
+                let mut file = File::create(takeover_file)?;
                 file.write_all(file_content.as_bytes())?;
 
                 wait();
