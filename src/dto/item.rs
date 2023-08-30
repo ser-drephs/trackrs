@@ -1,7 +1,7 @@
 use chrono::NaiveTime;
 use serde::{Deserialize, Serialize};
 
-use crate::{model::Status, Entry};
+use crate::{model::Status, deprecated::Entry};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {

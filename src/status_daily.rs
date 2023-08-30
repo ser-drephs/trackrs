@@ -374,7 +374,7 @@ mod tests {
     use chrono::{DateTime, Duration, Local, TimeZone};
 
     use crate::{
-        BreakLimit, Entry, Settings, model::Status, StatusDaily, StatusTime, TimeData, WorkPerDayInMinutes,
+        BreakLimit, deprecated::Entry, Settings, model::Status, StatusDaily, StatusTime, TimeData, WorkPerDayInMinutes,
     };
 
     use indoc::indoc;

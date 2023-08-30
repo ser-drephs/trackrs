@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{Date, DateTime, Duration, Local};
 
-use crate::{dto::TrackerData, model::Status, Entry, Takeover, TrackerError};
+use crate::{dto::TrackerData, model::Status, deprecated::Entry, Takeover, TrackerError};
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
@@ -289,7 +289,7 @@ mod tests {
 
     use chrono::{Duration, Local, TimeZone, Timelike};
 
-    use crate::{model::Status, Entry, TimeData, TrackerError};
+    use crate::{model::Status, deprecated::Entry, TimeData, TrackerError};
 
     use serial_test::serial;
 

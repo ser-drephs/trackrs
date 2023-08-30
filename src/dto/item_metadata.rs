@@ -1,7 +1,7 @@
 use chrono::{NaiveDate};
 use serde::{Deserialize, Serialize};
 
-use crate::Entry;
+use crate::deprecated::Entry;
 
 use super::item_collection::ItemCollection;
 

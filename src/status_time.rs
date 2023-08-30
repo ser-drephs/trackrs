@@ -2,7 +2,7 @@ use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
 
 use chrono::{DateTime, Duration, Local, Timelike};
 
-use crate::Entry;
+use crate::deprecated::Entry;
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
