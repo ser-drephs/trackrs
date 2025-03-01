@@ -1,7 +1,4 @@
-/*
-Copyright © 2025 ser-drephs
-*/
-package cmd
+package cli
 
 import (
 	"io"

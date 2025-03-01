@@ -1,11 +1,7 @@
-/*
-Copyright © 2025 ser-drephs
-*/
-package cmd
+package cli
 
 import (
-	"fmt"
-
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +11,7 @@ var endCmd = &cobra.Command{
 	Short: "End tracking work",
 	Long:  `End tracking work for today.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("end called")
+		log.Fatal().Msg("Not yet implemented")
 	},
 }
 

@@ -1,11 +1,7 @@
-/*
-Copyright © 2025 ser-drephs
-*/
-package cmd
+package cli
 
 import (
-	"fmt"
-
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +11,7 @@ var statusCmd = &cobra.Command{
 	Short: "Get the status of current tracking",
 	Long:  `Get the status for either a day or a week. Not providing additional options will return status for today.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("status called")
+		log.Fatal().Msg("Not yet implemented")
 	},
 }
 

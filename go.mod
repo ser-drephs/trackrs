@@ -1,4 +1,4 @@
-module cli/tracker-go
+module github.com/ser-drephs/tracker-go
 
 go 1.23.4
 

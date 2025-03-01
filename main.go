@@ -1,10 +1,7 @@
-/*
-Copyright © 2025 ser-drephs
-*/
 package main
 
-import "cli/tracker-go/cmd"
+import "github.com/ser-drephs/tracker-go/cli"
 
 func main() {
-	cmd.Execute()
+	cli.Execute()
 }

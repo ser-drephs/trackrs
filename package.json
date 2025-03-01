@@ -1,5 +1,5 @@
 {
-    "name": "trackrs",
+    "name": "tracker-go",
     "description": "This file is only required for Semantic-Release!",
     "version": "0.1.0"
   }
