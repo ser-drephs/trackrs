@@ -6,8 +6,8 @@ import (
 )
 
 type Entries struct {
-	Data    []Entry
-	Version uint8
+	Data    []Entry `json:"data"`
+	Version uint8   `json:"version"`
 }
 
 func NewEntries() Entries {

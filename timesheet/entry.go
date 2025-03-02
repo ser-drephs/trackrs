@@ -6,8 +6,8 @@ import (
 )
 
 type Entry struct {
-	Timestamp time.Time
-	Action    action
+	Timestamp time.Time `json:"time"`
+	Action    action    `json:"action"`
 }
 
 func NewRawEntry(start time.Time, action action) Entry {
