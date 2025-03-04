@@ -1,8 +1,8 @@
 package storage
 
-import "github.com/ser-drephs/tracker-go/timesheet"
+import "github.com/ser-drephs/tracker-go/model"
 
 type Provider interface {
-	Save(entries timesheet.Entries) error
-	Read(entries *timesheet.Entries) error
+	Save(entries model.Entries) error
+	Read(entries *model.Entries) error
 }

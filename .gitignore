@@ -3,3 +3,6 @@
 /release
 *.log
 .trackrs-takeover
+
+*.out
+*.html

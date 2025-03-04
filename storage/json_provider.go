@@ -8,58 +8,51 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
-	"github.com/ser-drephs/tracker-go/timesheet"
+	"github.com/ser-drephs/tracker-go/model"
 )
 
 type JsonProvider struct {
-	Path string
-}
-
-func NewJsonProvider(path string) JsonProvider {
-	var provider JsonProvider
-	provider.Path = path
-	return provider
+	path string
 }
 
 func (j *JsonProvider) validatePath() {
-	if !strings.Contains(j.Path, ".json") {
-		j.Path = j.Path + ".json"
+	if !strings.Contains(j.path, ".json") {
+		j.path = j.path + ".json"
 	}
 }
 
-func (j JsonProvider) Save(entries timesheet.Entries) error {
+func (j JsonProvider) Save(entries model.Entries) error {
 	j.validatePath()
 	jd, err := json.Marshal(entries)
 	if err != nil {
-		return err
+		return ErrJsonMarshal
 	}
 
-	log.Debug().Msgf("Write entries to: %s", j.Path)
+	log.Debug().Msgf("Write entries to: %s", j.path)
 	log.Trace().Msgf("Entries to write: %s", jd)
 
 	var buffer bytes.Buffer
 	json.Compact(&buffer, jd)
-	err = os.WriteFile(j.Path, buffer.Bytes(), 0644)
+	err = os.WriteFile(j.path, buffer.Bytes(), 0644)
 	if err != nil {
-		return err
+		return ErrJsonEntriesWrite
 	}
 	return nil
 }
 
-func (j JsonProvider) Read(entries *timesheet.Entries) error {
+func (j JsonProvider) Read(entries *model.Entries) error {
 	j.validatePath()
-	file, err := os.ReadFile(j.Path)
+	file, err := os.ReadFile(j.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			log.Debug().Msg("File does not exist.")
 		} else {
-			return err
+			return ErrJsonEntriesRead
 		}
 	} else {
 		err = json.Unmarshal(file, &entries)
 		if err != nil {
-			return err
-			// TODO: test with emptry string and number for action
+			return ErrJsonUnMarshal
 		}
 		log.Debug().Msgf("Found file with version %d", entries.Version)
 	}

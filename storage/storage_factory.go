@@ -17,7 +17,7 @@ func (e *UnsupportedStorageError) Error() string {
 func GetStorage(storageType string) (Provider, error) {
 	switch storageType {
 	case "json":
-		return JsonProvider{Path: time.Now().Format(time.DateOnly) + ".json"}, nil
+		return JsonProvider{path: time.Now().Format(time.DateOnly) + ".json"}, nil
 	}
 	return nil, &UnsupportedStorageError{Err: errors.New(storageType)}
 }

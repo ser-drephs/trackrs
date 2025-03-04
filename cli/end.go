@@ -2,7 +2,7 @@ package cli
 
 import (
 	"github.com/rs/zerolog/log"
-	"github.com/ser-drephs/tracker-go/common"
+	"github.com/ser-drephs/tracker-go/model/action"
 	"github.com/ser-drephs/tracker-go/timesheet"
 	"github.com/spf13/cobra"
 )
@@ -23,17 +23,7 @@ func init() {
 
 func runEnd() {
 	log.Trace().Msg("Execute end")
-	var entry = timesheet.NewEntry(timesheet.End)
-	var entries timesheet.Entries
-
-	if err := common.Storage.Read(&entries); err != nil {
-		log.Error().Msgf("Error on reading entries: %s", err)
-	}
-
-	log.Debug().Msgf("Add entry: %s", entry)
-	entries.Data = append(entries.Data, entry)
-
-	if err := common.Storage.Save(entries); err != nil {
-		log.Error().Msgf("Error on saving entries: %s", err)
+	if err := timesheet.Append(action.End); err != nil {
+		log.Error().Msgf("Error executing end: %s", err)
 	}
 }
