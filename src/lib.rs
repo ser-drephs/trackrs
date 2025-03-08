@@ -1,8 +1,11 @@
 #[macro_use]
 extern crate prettytable;
-mod cli;
-mod entry;
-mod errors;
+pub mod cli;
+pub mod timesheet;
+pub mod models;
+pub mod providers;
+
+// mod errors;
 mod settings;
 mod status_daily;
 mod status_time;
@@ -11,9 +14,7 @@ mod takeover;
 mod time_data;
 mod time_data_weekly;
 
-pub use cli::*;
-pub use entry::*;
-pub use errors::*;
+// pub use errors::*;
 pub use settings::*;
 pub use status_daily::*;
 pub use status_time::*;

@@ -5,8 +5,8 @@ use thiserror::Error;
 pub enum TrackerError {
     #[error("dafuq")]
     Unknown,
-    #[error("parse error")]
-    ParseError(#[from] serde_json::Error),
+    // #[error("parse error")]
+    // ParseError(#[from] serde_json::Error),
     #[error("conversion error")]
     ConverstionError(#[from] std::convert::Infallible),
     #[error("io error")]
