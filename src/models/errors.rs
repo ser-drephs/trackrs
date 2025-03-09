@@ -1,6 +1,8 @@
 use config::ConfigError;
 use thiserror::Error;
 
+use crate::providers;
+
 #[derive(Error, Debug)]
 pub enum TrackerError {
     #[error("dafuq")]
@@ -31,4 +33,7 @@ pub enum TrackerError {
     TakeoverSetError { message: String },
     #[error("get takeover error: {message}")]
     TakeoverGetError { message: String },
+    // interal error conversion
+    #[error("provider error")]
+    ProviderError(#[from] providers::ProviderError)
 }

@@ -1,8 +1,19 @@
 use clap::Command;
 
+use crate::{
+    models::{Action, TrackerError},
+    providers::Provider,
+    timesheet,
+};
 
-pub fn start_cmd() -> Command{
-    return Command::new("start2");
+pub const START_CMD: &str = "start";
+
+pub fn start_cmd() -> Command {
+    Command::new(START_CMD).about("Start tracking work")
+}
+
+pub fn start_action<P: Provider>(provider: &P) -> Result<(), TrackerError> {
+    timesheet::Timesheet::add(provider, Action::Start)
 }
 
 /*#[derive(Subcommand, Debug)]
