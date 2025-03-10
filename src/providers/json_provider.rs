@@ -38,7 +38,7 @@ impl Provider for JsonProvider {
             log::debug!("file found appending data: {:?}", &self.file);
             let f = File::open(&self.file)?;
             entries = serde_json::from_reader(f)?;
-            entries.sort_by();
+            entries.sort();
         } else {
             log::info!("file not yet created: {:?}", &self.file);
             // TODO: invoke takeover- here? or use some prepending logic?
@@ -65,20 +65,25 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn should_generate_file_name_for_today(){
+    fn should_generate_file_name_for_today() {
         let provider = JsonProvider::new_today().unwrap();
-        assert!(provider.file.as_os_str().to_str().unwrap().ends_with("json"))
+        assert!(provider
+            .file
+            .as_os_str()
+            .to_str()
+            .unwrap()
+            .ends_with("json"))
     }
 
     #[test]
-    fn should_append_file_extension(){
+    fn should_append_file_extension() {
         let path = PathBuf::from("sample");
         let provider = JsonProvider::new(path);
         assert_eq!("sample.json", provider.file.as_os_str())
     }
 
     #[test]
-    fn should_not_append_file_extension(){
+    fn should_not_append_file_extension() {
         let path = PathBuf::from("sample2.json");
         let provider = JsonProvider::new(path);
         assert_eq!("sample2.json", provider.file.as_os_str())

@@ -1,9 +1,9 @@
 #[macro_use]
 extern crate prettytable;
 pub mod cli;
-pub mod timesheet;
 pub mod models;
 pub mod providers;
+pub mod timesheet;
 
 // mod errors;
 // mod settings;

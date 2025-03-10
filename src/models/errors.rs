@@ -35,5 +35,5 @@ pub enum TrackerError {
     TakeoverGetError { message: String },
     // interal error conversion
     #[error("provider error")]
-    ProviderError(#[from] providers::ProviderError)
+    ProviderError(#[from] providers::ProviderError),
 }

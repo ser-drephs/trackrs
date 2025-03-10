@@ -9,5 +9,5 @@ pub enum ProviderError {
     #[error("date format error")]
     InvalidFormatDescription(#[from] time::error::InvalidFormatDescription),
     #[error("date format error")]
-    FormatError(#[from] time::error::Format)
+    FormatError(#[from] time::error::Format),
 }
