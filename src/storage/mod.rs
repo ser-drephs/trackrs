@@ -1,5 +1,5 @@
 mod provider;
-pub(crate) use provider::*;
+pub use provider::*;
 
 mod json_provider;
 pub use json_provider::*;

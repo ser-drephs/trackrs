@@ -1,14 +1,14 @@
 use config::ConfigError;
 use thiserror::Error;
 
-use crate::providers;
+use crate::storage;
 
 #[derive(Error, Debug)]
 pub enum TrackerError {
     #[error("dafuq")]
     Unknown,
-    // #[error("parse error")]
-    // ParseError(#[from] serde_json::Error),
+    #[error("parse error")]
+    ParseError(#[from] serde_json::Error),
     #[error("conversion error")]
     ConverstionError(#[from] std::convert::Infallible),
     #[error("io error")]
@@ -35,5 +35,5 @@ pub enum TrackerError {
     TakeoverGetError { message: String },
     // interal error conversion
     #[error("provider error")]
-    ProviderError(#[from] providers::ProviderError),
+    ProviderError(#[from] storage::StorageProviderError),
 }

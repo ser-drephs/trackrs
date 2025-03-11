@@ -71,14 +71,14 @@ mod tests {
 
     #[test]
     fn should_create_entry_for_now() {
-        crate::test::logger();
+        crate::test::setup();
         let entry = Entry::new_now(Action::Start);
         assert_eq!(Action::Start, entry.action)
     }
 
     #[test]
     fn should_create_entry_custom_time() {
-        crate::test::logger();
+        crate::test::setup();
         let time = datetime!(2025-01-01 15:04 UTC);
         let entry = Entry::new(Action::Break, time);
         assert_eq!(Action::Break, entry.action);
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn should_serialize() {
-        crate::test::logger();
+        crate::test::setup();
         let time = datetime!(2022-02-02 15:04:12 UTC);
         let entry = Entry::new(Action::End, time);
         let entry_string = serde_json::to_string(&entry).unwrap();
@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn should_sort_by_time() {
-        crate::test::logger();
+        crate::test::setup();
         let mut entries: Vec<Entry> = vec![
             Entry::new(Action::Start, datetime!(2025-01-01 15:10 UTC)),
             Entry::new(Action::Break, datetime!(2025-01-01 15:02 UTC)),

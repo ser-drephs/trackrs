@@ -7,5 +7,5 @@ pub(crate) use action::*;
 mod errors;
 pub(crate) use errors::*;
 
-mod entries;
-pub(crate) use entries::*;
+mod timesheet;
+pub(crate) use timesheet::*;

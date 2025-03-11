@@ -5,34 +5,34 @@ use std::{
 
 use time::{format_description, OffsetDateTime};
 
-use crate::models::Entries;
+use crate::models::Timesheet;
 
-use super::{Provider, ProviderError};
+use super::{StorageProvider, StorageProviderError};
 
-pub struct JsonProvider {
+pub struct JsonStorageProvider {
     file: PathBuf,
 }
 
-impl JsonProvider {
+impl JsonStorageProvider {
     pub fn new(mut file: PathBuf) -> Self {
         if !file.ends_with(".json") {
             file.set_extension("json");
         }
-        return JsonProvider { file };
+        return JsonStorageProvider { file };
     }
 
-    pub fn new_today() -> Result<Self, ProviderError> {
+    pub fn new_today() -> Result<Self, StorageProviderError> {
         let format = format_description::parse("[year]-[month]-[day]")?;
         let date_str = OffsetDateTime::now_utc().date().format(&format)?;
         let file = PathBuf::from(date_str);
-        Ok(JsonProvider::new(file))
+        Ok(JsonStorageProvider::new(file))
     }
 }
 
-impl Provider for JsonProvider {
-    fn read(&self) -> Result<Entries, ProviderError> {
-        log::debug!("read using json provider");
-        let mut entries = Entries::new();
+impl StorageProvider for JsonStorageProvider {
+    fn read(&self) -> Result<Timesheet, StorageProviderError> {
+        log::debug!("read timesheet using json provider");
+        let mut entries = Timesheet::new();
 
         if self.file.exists() {
             log::debug!("file found appending data: {:?}", &self.file);
@@ -46,8 +46,8 @@ impl Provider for JsonProvider {
         Ok(entries)
     }
 
-    fn write(&self, entries: &Entries) -> Result<(), ProviderError> {
-        log::debug!("write using json provider");
+    fn write(&self, entries: &Timesheet) -> Result<(), StorageProviderError> {
+        log::debug!("write timesheet using json provider");
         let w = OpenOptions::new()
             .create(true)
             .write(true)
@@ -61,12 +61,12 @@ impl Provider for JsonProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::JsonProvider;
+    use super::JsonStorageProvider;
     use std::path::PathBuf;
 
     #[test]
     fn should_generate_file_name_for_today() {
-        let provider = JsonProvider::new_today().unwrap();
+        let provider = JsonStorageProvider::new_today().unwrap();
         assert!(provider
             .file
             .as_os_str()
@@ -78,14 +78,14 @@ mod tests {
     #[test]
     fn should_append_file_extension() {
         let path = PathBuf::from("sample");
-        let provider = JsonProvider::new(path);
+        let provider = JsonStorageProvider::new(path);
         assert_eq!("sample.json", provider.file.as_os_str())
     }
 
     #[test]
     fn should_not_append_file_extension() {
         let path = PathBuf::from("sample2.json");
-        let provider = JsonProvider::new(path);
+        let provider = JsonStorageProvider::new(path);
         assert_eq!("sample2.json", provider.file.as_os_str())
     }
 

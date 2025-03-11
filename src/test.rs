@@ -1,4 +1,6 @@
-pub(crate) fn logger() {
+pub(crate) fn setup() {
     std::env::set_var("RUST_LOG", "debug");
-    let _ = env_logger::builder().is_test(true).try_init();
+    std::env::set_var("RUST_TEST", "true");
+
+    env_logger::builder().is_test(true).try_init().unwrap()
 }

@@ -1,7 +1,12 @@
 use clap::{ arg, command, value_parser, Arg, ArgAction, ArgMatches, Command };
 use log::LevelFilter;
 
-use crate::{ models::{ Action, TrackerError }, providers::Provider, timesheet };
+use crate::{
+    config::ConfigurationProvider,
+    models::{ Action, TrackerError },
+    storage::StorageProvider,
+    Tracker,
+};
 
 const START_CMD: &str = "start";
 const BREAK_CMD: &str = "break";
@@ -56,11 +61,30 @@ pub fn init_logger(matches: &ArgMatches) {
     log::trace!("Logging trace.");
 }
 
-pub fn execute<P: Provider>(matches: &ArgMatches, provider: &P) -> Result<(), TrackerError> {
+pub fn execute<P: StorageProvider, C: ConfigurationProvider>(
+    matches: &ArgMatches,
+    storage: &P,
+    config: &C
+) -> Result<(), TrackerError> {
     match matches.subcommand() {
-        Some((START_CMD, _)) => timesheet::Timesheet::add(provider, Action::Start),
-        Some((BREAK_CMD, _)) => timesheet::Timesheet::add(provider, Action::Break),
-        _ => unreachable!("Exhausted list of subcommands and subcommand_required prevents `None`"),
+        Some((START_CMD, _)) => Tracker::add(storage, Action::Start),
+        Some((BREAK_CMD, _)) => Tracker::add(storage, Action::Break),
+        Some((END_CMD, _)) => Tracker::add(storage, Action::End),
+        Some((STATUS_CMD, _)) => {
+            if matches.contains_id("week") {
+                Tracker::status_week(
+                    storage,
+                    config,
+                    matches.get_one::<u8>("week").unwrap(),
+                    matches.get_flag("table")
+                )
+            } else {
+                Tracker::status(storage, config)
+            }
+        }
+        Some((TAKEOVER_CMD, _)) => todo!(),
+        Some((CONFIG_CMD, _)) => todo!(),
+        _ => unreachable!("Exhausted list of subcommands"),
     }
 }
 
@@ -108,7 +132,7 @@ fn takeover_command() -> Command {
 mod tests {
     use clap::error::ErrorKind;
 
-    use crate::cli::commands::status_command;
+    use crate::cli::commands::{ self, status_command, takeover_command };
 
     use super::config_command;
 
@@ -175,60 +199,50 @@ mod tests {
         assert!(res.is_ok());
         assert!(res.unwrap().get_flag("table"))
     }
-}
 
-/*#[derive(Subcommand, Debug)]
-pub enum Commands {
-    /// Get the status of current tracking
-    ///
-    /// Get the status for either a day or a week. Not providing additional options will return status for today.
-    #[clap(display_order = 1)]
-    Status {
-        /// Week to show the status for
-        ///
-        /// Either enter the correct week of the year or a relative value eg. -1
-        #[clap(short, value_parser, allow_hyphen_values = true)]
-        week: Option<i8>,
+    #[test]
+    fn should_require_takeover_minutes() {
+        let res = takeover_command().try_get_matches_from(vec!["takeover"]);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().kind(), ErrorKind::MissingRequiredArgument)
+    }
 
-        /// Format week status as table.
-        #[clap(short, long)]
-        table: bool,
-    },
-    /// Start tracking work
-    ///
-    /// Starts tracking work for today.
-    #[clap(display_order = 2)]
-    Start,
-    /// Take a break
-    ///
-    /// Breaks current tracking.
-    #[clap(display_order = 3)]
-    Break,
-    /// End tracking work
-    ///
-    /// End tracking work for today.
-    #[clap(display_order = 4)]
-    End,
-    /// Take over time to next day
-    ///
-    /// Takes over defined minutes to next day, whenever next connect is executed.
-    #[clap(display_order = 7)]
-    Takeover {
-        /// Minutes to take over to next day.
-        #[clap()]
-        minutes: u16,
-    },
-    /// Configuration
-    ///
-    /// List or edit configuration
-    #[clap(display_order = 8)]
-    Config {
-        /// List configuration
-        #[clap(short, long, conflicts_with = "edit")]
-        list: bool,
-        /// Open configuration in default editor
-        #[clap(short, long, conflicts_with = "list")]
-        edit: bool,
-    },
+    #[test]
+    fn should_accepts_takeover_minutes_first_arg() {
+        let res = takeover_command().try_get_matches_from(vec!["takeover", "12"]);
+        assert!(res.is_ok());
+        let binding = res.unwrap();
+        let minutes = binding.get_one::<u16>("minutes").expect("could not parse takeover");
+        assert_eq!(minutes, &12);
+    }
+
+    #[test]
+    fn should_panic_takeover_minutes_explicit() {
+        let res = takeover_command().try_get_matches_from(vec!["takeover", "-m", "18"]);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().kind(), ErrorKind::UnknownArgument)
+    }
+
+    #[test]
+    fn should_panic_unknown_subcommand() {
+        let res = commands::commands().try_get_matches_from(vec!["trackrs", "something"]);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().kind(), ErrorKind::InvalidSubcommand)
+    }
+
+    #[test]
+    fn should_parse_multiple_v_flags() {
+        let res = commands::commands().try_get_matches_from(vec!["trackrs", "-vvv", "start"]);
+        assert!(res.is_ok());
+        let verbose = res.unwrap().get_count("verbose");
+        assert_eq!(verbose, 3)
+    }
+
+    #[test]
+    fn should_parse_multiple_v_flags_last() {
+        let res = commands::commands().try_get_matches_from(vec!["trackrs", "start", "-vv"]);
+        assert!(res.is_ok());
+        let verbose = res.unwrap().get_count("verbose");
+        assert_eq!(verbose, 2)
+    }
 }
-*/

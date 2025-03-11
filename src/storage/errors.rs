@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum ProviderError {
+pub enum StorageProviderError {
     #[error("parse error")]
     ParseError(#[from] serde_json::Error),
     #[error("io error")]
