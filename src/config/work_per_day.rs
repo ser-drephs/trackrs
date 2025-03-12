@@ -1,5 +1,6 @@
 use config::{ Map, Value, ValueKind };
 use serde::{ Deserialize, Serialize };
+use time::{ OffsetDateTime, Weekday };
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(unused)]
@@ -69,20 +70,17 @@ impl Default for WorkPerDayInMinutes {
 // }
 
 impl WorkPerDayInMinutes {
-    // fn x(){
-    //     time::Weekday::Monday
-    // }
-    // pub fn from(&self, date: DateTime<Local>) -> &u16 {
-    //     match date.weekday() {
-    //         time::Weekday::Monday => &self.monday,
-    //         chrono::Weekday::Tue => &self.tuesday,
-    //         chrono::Weekday::Wed => &self.wednesday,
-    //         chrono::Weekday::Thu => &self.thursday,
-    //         chrono::Weekday::Fri => &self.friday,
-    //         chrono::Weekday::Sat => &self.saturday,
-    //         chrono::Weekday::Sun => &self.sunday,
-    //     }
-    // }
+    pub fn from(&self, date: Weekday) -> &u16 {
+        match date {
+            Weekday::Monday => &self.monday,
+            Weekday::Tuesday => &self.tuesday,
+            Weekday::Wednesday => &self.wednesday,
+            Weekday::Thursday => &self.thursday,
+            Weekday::Friday => &self.friday,
+            Weekday::Saturday => &self.saturday,
+            Weekday::Sunday => &self.sunday,
+        }
+    }
 
     // pub fn from_date(&self, date: Date<Local>) -> &u16 {
     //     match date.weekday() {

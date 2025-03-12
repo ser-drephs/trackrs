@@ -5,9 +5,9 @@ use time::OffsetDateTime;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Entry {
-    action: Action,
+    pub(crate) action: Action,
     #[serde(with = "time::serde::rfc3339")]
-    time: OffsetDateTime,
+    pub(crate) time: OffsetDateTime,
 }
 
 impl Entry {
@@ -20,10 +20,6 @@ impl Entry {
 
     pub fn new(action: Action, time: OffsetDateTime) -> Self {
         Entry { action, time }
-    }
-
-    pub fn time(&self) -> &OffsetDateTime {
-        &self.time
     }
 }
 
@@ -108,9 +104,9 @@ mod tests {
         ];
         entries.sort();
 
-        assert_eq!((15, 0, 0), entries[0].time().to_hms());
-        assert_eq!((15, 2, 0), entries[1].time().to_hms());
-        assert_eq!((15, 10, 0), entries[2].time().to_hms());
-        assert_eq!((16, 0, 0), entries[3].time().to_hms());
+        assert_eq!((15, 0, 0), entries[0].time.to_hms());
+        assert_eq!((15, 2, 0), entries[1].time.to_hms());
+        assert_eq!((15, 10, 0), entries[2].time.to_hms());
+        assert_eq!((16, 0, 0), entries[3].time.to_hms());
     }
 }

@@ -1,4 +1,4 @@
-use super::Entry;
+use super::{ Action, Entry };
 use serde_derive::{ Deserialize, Serialize };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -23,6 +23,14 @@ impl Timesheet {
     pub fn sort(&mut self) -> &mut Self {
         self.data.sort();
         self
+    }
+
+    pub fn first(&self, action: Action) -> Option<&Entry> {
+        self.data.iter().find(|d| d.action == action)
+    }
+
+    pub fn position(&self, action: Action) -> Option<usize> {
+        self.data.iter().position(|d| d.action == action)
     }
 }
 
@@ -58,9 +66,9 @@ mod tests {
 
         timesheet.sort();
 
-        assert_eq!((15, 0, 0), timesheet.data[0].time().to_hms());
-        assert_eq!((15, 2, 0), timesheet.data[1].time().to_hms());
-        assert_eq!((15, 10, 0), timesheet.data[2].time().to_hms());
-        assert_eq!((16, 0, 0), timesheet.data[3].time().to_hms());
+        assert_eq!((15, 0, 0), timesheet.data[0].time.to_hms());
+        assert_eq!((15, 2, 0), timesheet.data[1].time.to_hms());
+        assert_eq!((15, 10, 0), timesheet.data[2].time.to_hms());
+        assert_eq!((16, 0, 0), timesheet.data[3].time.to_hms());
     }
 }
