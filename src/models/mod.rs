@@ -9,6 +9,3 @@ pub(crate) use errors::*;
 
 mod timesheet;
 pub(crate) use timesheet::*;
-
-mod duration;
-pub(crate) use duration::*;

@@ -52,18 +52,29 @@ impl Timesheet {
         end.time
     }
 
+    pub fn break_time(&self) -> Option<OffsetDateTime> {
+        let break_time = self.first(Action::Break);
+        if break_time.is_some() {
+            log::debug!("first '{}' found at '{}'", Action::Break, break_time.unwrap());
+            Some(break_time.unwrap().time)
+        } else {
+            log::debug!("no break time found yet");
+            None
+        }
+    }
+
     pub fn work_time(&self) -> Duration {
         let start = self.start_time();
         let end = self.end_time();
-        let break_time = self.break_time();
+        let break_time = self.break_duration();
         let work_time = end - start - break_time;
         log::debug!("work time: {}", work_time);
         work_time
     }
 
-    pub fn break_time(&self) -> Duration {
+    pub fn break_duration(&self) -> Duration {
         // TODO: calculate all breaks in timesheet
-        Duration::minutes(0)
+        todo!()
     }
 
     pub fn remaining_time(&self, expected: Duration) -> Duration {

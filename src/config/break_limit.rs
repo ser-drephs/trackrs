@@ -1,7 +1,10 @@
 use config::{ Map, Value, ValueKind };
 use serde::{ Deserialize, Serialize };
+use time::{ Duration, Weekday };
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+use super::Configuration;
+
+#[derive(Debug, Deserialize, Serialize, Default, Clone)]
 pub struct BreakLimit {
     pub start: u16,
     pub minutes: u8,
@@ -19,6 +22,29 @@ impl From<BreakLimit> for config::Value {
             Value::new(Some(&"minutes".to_owned()), ValueKind::U64(l.minutes.into()))
         );
         Value::new(Some(&"limits".to_owned()), ValueKind::Table(m))
+    }
+}
+
+pub trait BreakLimitExtensions {
+    fn limit_by_start(&self, config: &Configuration, start: &Duration) -> Option<BreakLimit>;
+}
+
+impl BreakLimitExtensions for Vec<BreakLimit> {
+    fn limit_by_start(&self, config: &Configuration, start: &Duration) -> Option<BreakLimit> {
+        let mut limits = config.limits.clone();
+        limits.sort_by(|l, r| r.start.partial_cmp(&l.start).unwrap());
+
+        match limits.iter().find(|x| start >= &Duration::minutes(x.start.into())) {
+            Some(res) => {
+                let dur = Duration::minutes(res.minutes.into());
+                log::debug!("should take break of '{}'", dur);
+                Some(res.clone())
+            }
+            None => {
+                log::debug!("should not take break");
+                None
+            }
+        }
     }
 }
 
