@@ -1,5 +1,6 @@
 use super::{ Action, Entry };
 use serde_derive::{ Deserialize, Serialize };
+use time::{ Duration, OffsetDateTime };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Timesheet {
@@ -32,11 +33,51 @@ impl Timesheet {
     pub fn position(&self, action: Action) -> Option<usize> {
         self.data.iter().position(|d| d.action == action)
     }
+
+    pub fn start_time(&self) -> OffsetDateTime {
+        let start = self.first(Action::Start).unwrap();
+        log::debug!("first '{}' entry found at '{}'", Action::Start, start);
+        start.time
+    }
+
+    pub fn end_time(&self) -> OffsetDateTime {
+        let end = match self.first(Action::End) {
+            Some(res) => res,
+            None => {
+                log::debug!("no end found using current datetime");
+                &Entry::new_now(Action::End)
+            }
+        };
+        log::debug!("first '{}' entry found at '{}'", Action::End, end);
+        end.time
+    }
+
+    pub fn work_time(&self) -> Duration {
+        let start = self.start_time();
+        let end = self.end_time();
+        let break_time = self.break_time();
+        let work_time = end - start - break_time;
+        log::debug!("work time: {}", work_time);
+        work_time
+    }
+
+    pub fn break_time(&self) -> Duration {
+        // TODO: calculate all breaks in timesheet
+        Duration::minutes(0)
+    }
+
+    pub fn remaining_time(&self, expected: Duration) -> Duration {
+        let start = self.start_time();
+        let expected_end = start.checked_add(expected).unwrap();
+        let remaining = expected_end - start;
+        log::debug!("remaining time: {}", remaining);
+        remaining
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use time::macros::datetime;
+    use time::{ macros::datetime, Duration, OffsetDateTime };
 
     use crate::models::{ Action, Entry };
 
@@ -70,5 +111,37 @@ mod tests {
         assert_eq!((15, 2, 0), timesheet.data[1].time.to_hms());
         assert_eq!((15, 10, 0), timesheet.data[2].time.to_hms());
         assert_eq!((16, 0, 0), timesheet.data[3].time.to_hms());
+    }
+
+    #[test]
+    fn should_calculate_work_time_with_end() {
+        let mut timesheet = Timesheet {
+            version: 1,
+            data: vec![
+                Entry::new(Action::Start, datetime!(2025-01-01 15:10 UTC)),
+                Entry::new(Action::Break, datetime!(2025-01-01 15:02 UTC)),
+                Entry::new(Action::Start, datetime!(2025-01-01 13:50 UTC)),
+                Entry::new(Action::End, datetime!(2025-01-01 16:00 UTC))
+            ],
+        };
+
+        timesheet.sort();
+        let work_time = timesheet.work_time();
+        assert_eq!(Duration::minutes(130), work_time)
+    }
+
+    #[test]
+    fn should_calculate_work_time_without_end() {
+        let now = OffsetDateTime::now_utc().checked_sub(Duration::minutes(38)).unwrap();
+        let mut timesheet = Timesheet {
+            version: 1,
+            data: vec![Entry::new(Action::Start, now)],
+        };
+
+        timesheet.sort();
+        let work_time = timesheet.work_time();
+        // might be a small difference because of a second - that's why it's a range assert
+        let range = 38..39;
+        assert!(range.contains(&work_time.whole_minutes()))
     }
 }

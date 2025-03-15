@@ -1,6 +1,6 @@
 use config::{ Map, Value, ValueKind };
 use serde::{ Deserialize, Serialize };
-use time::{ OffsetDateTime, Weekday };
+use time::{ Duration, Weekday };
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(unused)]
@@ -63,15 +63,9 @@ impl Default for WorkPerDayInMinutes {
     }
 }
 
-// impl From<time::Weekday> for u16{
-//     fn from(value: time::Weekday) -> Self {
-
-//     }
-// }
-
 impl WorkPerDayInMinutes {
-    pub fn from(&self, date: Weekday) -> &u16 {
-        match date {
+    pub fn into_u16(&self, day: Weekday) -> &u16 {
+        let expected = match day {
             Weekday::Monday => &self.monday,
             Weekday::Tuesday => &self.tuesday,
             Weekday::Wednesday => &self.wednesday,
@@ -79,26 +73,22 @@ impl WorkPerDayInMinutes {
             Weekday::Friday => &self.friday,
             Weekday::Saturday => &self.saturday,
             Weekday::Sunday => &self.sunday,
-        }
+        };
+        log::debug!("work per day for '{}': {} ", day, expected);
+        expected
     }
 
-    // pub fn from_date(&self, date: Date<Local>) -> &u16 {
-    //     match date.weekday() {
-    //         chrono::Weekday::Mon => &self.monday,
-    //         chrono::Weekday::Tue => &self.tuesday,
-    //         chrono::Weekday::Wed => &self.wednesday,
-    //         chrono::Weekday::Thu => &self.thursday,
-    //         chrono::Weekday::Fri => &self.friday,
-    //         chrono::Weekday::Sat => &self.saturday,
-    //         chrono::Weekday::Sun => &self.sunday,
-    //     }
-    // }
+    pub fn into_duration(&self, day: Weekday) -> Duration {
+        let minutes = self.into_u16(day);
+        Duration::minutes((*minutes).into())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use config::{ Config, File, FileFormat };
     use serde::Deserialize;
+    use time::{ macros::date, Duration };
 
     use crate::config::work_per_day::WorkPerDayInMinutes;
 
@@ -140,5 +130,27 @@ mod tests {
         let dummy = res.unwrap();
         assert_eq!(dummy.workperday.monday, 480);
         assert_eq!(dummy.workperday.friday, 480)
+    }
+
+    #[test]
+    fn should_weekday_into_number() {
+        let defaults = WorkPerDayInMinutes::default();
+        let tuesday = date!(2025 - 02 - 18);
+        let for_tuesday = defaults.into_u16(tuesday.weekday());
+        assert_eq!(&480, for_tuesday);
+        let saturday = date!(2025 - 02 - 22);
+        let for_saturday = defaults.into_u16(saturday.weekday());
+        assert_eq!(&0, for_saturday)
+    }
+
+    #[test]
+    fn should_weekday_into_duration() {
+        let defaults = WorkPerDayInMinutes::default();
+        let tuesday = date!(2025 - 02 - 18);
+        let for_tuesday = defaults.into_duration(tuesday.weekday());
+        assert_eq!(Duration::minutes(480), for_tuesday);
+        let saturday = date!(2025 - 02 - 22);
+        let for_saturday = defaults.into_duration(saturday.weekday());
+        assert_eq!(Duration::minutes(0), for_saturday)
     }
 }

@@ -70,7 +70,6 @@ mod tests {
 
     #[test]
     fn should_error_no_file() {
-        crate::test::setup();
         let config = Configuration::new();
         assert!(config.is_err())
     }

@@ -2,9 +2,7 @@ use clap::{ arg, command, value_parser, Arg, ArgAction, ArgMatches, Command };
 use log::LevelFilter;
 
 use crate::{
-    models::{ Action, TrackerError },
-    storage::StorageProvider,
-    Tracker,
+    config::Configuration, models::{ Action, TrackerError }, storage::StorageProvider, Tracker
 };
 
 const START_CMD: &str = "start";
@@ -55,14 +53,15 @@ pub fn init_logger(matches: &ArgMatches) {
         eprintln!("{:?}", err.unwrap_err());
     }
 
-    log::info!("Logging info.");
+    log::info!("logging info.");
     log::debug!("logging debug.");
-    log::trace!("Logging trace.");
+    log::trace!("logging trace.");
 }
 
 pub fn execute<P: StorageProvider>(
     matches: &ArgMatches,
-    storage: &P
+    storage: &P,
+    config: &Configuration
 ) -> Result<(), TrackerError> {
     match matches.subcommand() {
         Some((START_CMD, _)) => Tracker::add(storage, Action::Start),
@@ -72,11 +71,12 @@ pub fn execute<P: StorageProvider>(
             if matches.contains_id("week") {
                 Tracker::status_week(
                     storage,
+                    config,
                     matches.get_one::<u8>("week").unwrap(),
                     matches.get_flag("table")
                 )
             } else {
-                Tracker::status(storage)
+                Tracker::status(storage, config)
             }
         }
         Some((TAKEOVER_CMD, _)) => todo!(),

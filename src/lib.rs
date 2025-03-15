@@ -4,6 +4,7 @@ pub mod cli;
 pub mod models;
 pub mod storage;
 pub mod config;
+pub mod status;
 
 mod tracker;
 

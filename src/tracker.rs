@@ -1,8 +1,7 @@
-use time::{macros::date, OffsetDateTime, Weekday};
+use time::OffsetDateTime;
 
 use crate::{
-    models::{ Action, Entry, TrackerError },
-    storage::StorageProvider,
+    config::Configuration, models::{ Action, Entry, TrackerError }, status::Daily, storage::StorageProvider
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -17,22 +16,27 @@ impl Tracker {
         Ok(provider.write(&entries)?)
     }
 
-    pub fn status<P: StorageProvider>(storage: &P) -> TrackerResult {
+    pub fn status<P: StorageProvider>(storage: &P, config: &Configuration) -> TrackerResult {
         let mut timesheet = storage.read()?;
         timesheet.sort();
-        let config = crate::config::Configuration::new()?;
-        let work_time_today = config.workperday.from(OffsetDateTime::now_utc().weekday());
-        let start = timesheet.first(Action::Start).unwrap();
-        let end = match timesheet.first(Action::End){
-            Some(res) => res,
-            None => &Entry::new_now(Action::End),
+        let expected = config.workperday.into_duration(OffsetDateTime::now_utc().weekday());
+        let daily = Daily{
+            start_time: &timesheet.start_time(),
+            end_time: &timesheet.end_time(),
+            remaining_duration: &timesheet.remaining_time(expected),
+            break_duration: &timesheet.break_time(),
+            work_duration: &timesheet.work_time(),
+            end_expected: todo!(),
+            break_expected: todo!(),
         };
 
+        print!("{}", daily);
         Ok(())
     }
 
     pub fn status_week<P: StorageProvider>(
         provider: &P,
+        config: &Configuration,
         week: &u8,
         as_table: bool
     ) -> TrackerResult {
