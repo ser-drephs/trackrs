@@ -5,6 +5,7 @@ pub mod models;
 pub mod storage;
 pub mod config;
 pub mod status;
+pub mod output;
 
 mod tracker;
 

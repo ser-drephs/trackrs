@@ -1,112 +1,95 @@
-use std::{ cmp::Ordering, fmt::{ Display, Error, Formatter } };
+use std::fmt::{ Display, Error, Formatter };
 
-use colored::Colorize;
 use time::{ Duration, OffsetDateTime };
-use super::{ output::Output, StatusError };
+use crate::config::BreakLimitExtensions;
+use crate::output;
+use crate::{ config::Configuration, models::Timesheet };
 
 pub struct Daily<'a> {
-    pub start_time: &'a OffsetDateTime,
-    pub end_time: &'a OffsetDateTime,
-    pub end_expected: &'a OffsetDateTime,
-    pub break_time: Option<&'a OffsetDateTime>,
-    pub remaining_duration: &'a Duration,
-    pub break_duration: &'a Duration,
-    pub break_expected: &'a Duration,
+    // Duration of work time, breaks are not part of work time
     pub work_duration: &'a Duration,
+    // Remaining work time, takes breaks into account
+    pub remaining_work_duration: &'a Duration,
+    // Online time - which is total time of tracking regardless of breaks
+    pub online_duration: &'a Duration,
+    // Time of "first" break with "end" time of break.
+    pub break_time: Option<&'a OffsetDateTime>,
+    // Cumulation of all breaks which is added to break time end value. Used to ease up reporting.
+    pub break_duration: Option<&'a Duration>,
+    // remaining break time for the expected work time today.
+    pub remaining_break_duration: Option<&'a Duration>,
+    // start time of tracking
+    pub start_time: &'a OffsetDateTime,
+    // end of day time - takes expected work time into account.
+    pub end_time: &'a OffsetDateTime,
+
+    // pub end_expected: &'a OffsetDateTime,
+    // pub break_expected: &'a Duration,
 }
 
 impl Daily<'_> {
-    fn format_work_time(&self) -> Result<String, StatusError> {
-        let remaining = self.remaining_duration.checked_mul(-1).unwrap();
-        let (repr, ordering) = Output::format_duration_to_zero(&remaining)?;
-
-        let diff = match ordering {
-            Ordering::Greater => repr.bright_green(),
-            Ordering::Equal => repr.normal(),
-            Ordering::Less => repr.bright_red(),
-        };
-        Ok(
-            Output::format_line(
-                "Work time:",
-                Output::format_duration(self.work_duration).normal(),
-                Some(diff)
-            )
-        )
-    }
-
-    fn format_online_time(&self) -> Result<String, StatusError> {
-        let online = *self.end_time - *self.start_time;
-        let repr = Output::format_duration(&online);
-        Ok(Output::format_line("Online time:", repr.normal(), None))
-    }
-
-    fn format_break(&self) -> Result<String, StatusError> {
-        let break_diff = self.break_duration.checked_sub(*self.break_expected).unwrap();
-        let (repr, ordering) = Output::format_duration_to_zero(&break_diff)?;
-
-        let diff = match ordering {
-            Ordering::Greater => repr.bright_yellow(),
-            Ordering::Equal => repr.normal(),
-            Ordering::Less => repr.bright_red(),
-        };
-        Ok(
-            Output::format_line(
-                "Break:",
-                Output::format_duration(&self.break_duration).normal(),
-                Some(diff)
-            )
-        )
-    }
-
-    fn format_break_time(&self) -> Result<String, StatusError> {
-        let mut format_break_time = "".to_string();
-        let mut format_break_end = "".to_string();
-
-        if self.break_time.is_some() {
-            let break_time = &self.break_time.unwrap();
-            let break_end = break_time.checked_add(*self.break_duration).unwrap();
-            format_break_time = Output::format_time(&break_time);
-            format_break_end = Output::format_time(&break_end);
+    pub fn build(c: &Configuration, t: &mut Timesheet) -> Self {
+        t.sort();
+        let expected_work_time = c.workperday.into_duration(OffsetDateTime::now_utc().weekday());
+        let expected_break = c.limits.limit_by_start(&c, &expected_work_time);
+        let start_time = &t.start_time();
+        let now = OffsetDateTime::now_utc();
+        let remaining_break = Daily::calculate_remaining_break(
+            t.break_duration().as_ref(),
+            expected_break
+        ).as_ref();
+        Daily {
+            work_duration: &t.work_time(),
+            remaining_work_duration: &t.remaining_work_time(expected_work_time),
+            online_duration: &(now - *start_time),
+            break_time: t.break_time().as_ref(),
+            break_duration: t.break_duration().as_ref(),
+            remaining_break_duration: remaining_break.clone(),
+            start_time: &t.start_time(),
+            end_time: &t.end_time(),
         }
 
-        Ok(
-            Output::format_line(
-                "Break taken:",
-                format!("{} - {}", format_break_time, format_break_end).normal(),
-                None
-            )
-        )
+        // let break_limit = config.limits.limit_by_start();
+        // let daily = Daily{
+        //     start_time: &t.start_time(),
+        //     end_time: &t.end_time(),
+        //     break_time: t.break_time().as_ref(),
+        //     remaining_duration: &t.remaining_time(expected),
+        //     break_duration: &t.break_duration(),
+        //     work_duration: &t.work_time(),
+        //     end_expected: &t.end_time().checked_add(expected).unwrap(),
+        //     break_expected: todo!(),
+        // };
     }
 
-    fn format_start_time(&self) -> Result<String, StatusError> {
-        let repr = Output::format_time(self.start_time);
-        Ok(Output::format_line("Started:", repr.normal(), None))
-    }
-
-    fn format_end_time(&self) -> Result<String, StatusError> {
-        let ended =
-            self.remaining_duration.partial_cmp(&Duration::minutes(0)).unwrap() ==
-            Ordering::Greater;
-        let repr = if ended {
-            Output::format_time(self.end_time).bright_green()
+    fn calculate_remaining_break(
+        break_duration: Option<&Duration>,
+        expected_break_duration: Option<Duration>
+    ) -> Option<Duration> {
+        if break_duration.is_some() && expected_break_duration.is_some() {
+            break_duration.unwrap().checked_sub(*expected_break_duration.unwrap())
         } else {
-            format!("{} (est.)", Output::format_time(self.end_expected)).bright_yellow()
-        };
-        Ok(Output::format_line("End:", repr, None))
+            None
+        }
     }
 }
 
 impl Display for Daily<'_> {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        let remaining_work = self.remaining_work_duration.gt(&Duration::minutes(0));
         write!(
             f,
             "{}\n{}\n{}\n{}\n{}\n{}",
-            self.format_work_time().unwrap(),
-            self.format_online_time().unwrap(),
-            self.format_break().unwrap(),
-            self.format_break_time().unwrap(),
-            self.format_start_time().unwrap(),
-            self.format_end_time().unwrap()
+            output::Daily
+                ::format_work_duration(self.work_duration, self.remaining_work_duration)
+                .unwrap(),
+            output::Daily::format_online_duration(self.online_duration).unwrap(),
+            output::Daily
+                ::format_break_duration(self.break_duration, self.remaining_break_duration)
+                .unwrap(),
+            output::Daily::format_break_time(self.break_time, Some(self.break_duration)).unwrap(),
+            output::Daily::format_start_time(self.start_time).unwrap(),
+            output::Daily::format_end_time(self.end_time, remaining_work).unwrap()
         )
     }
 }
@@ -114,286 +97,22 @@ impl Display for Daily<'_> {
 #[cfg(test)]
 mod tests {
     use colored::control::ShouldColorize;
-    use time::{ macros::datetime, Duration, OffsetDateTime };
+    use time::macros::datetime;
 
-    use crate::test::{ self };
+    use crate::{ config::Configuration, models::{ Action, Entry, Timesheet }, test };
 
     use super::Daily;
 
     #[test]
-    fn should_format_work_time_neutral() {
-        let daily = Daily {
-            start_time: &OffsetDateTime::now_utc(),
-            end_time: &OffsetDateTime::now_utc(),
-            end_expected: &OffsetDateTime::now_utc(),
-            break_time: None,
-            remaining_duration: &Duration::minutes(0),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(45),
-            work_duration: &Duration::minutes(132),
-        };
-        let line = daily.format_work_time().unwrap();
-        assert_eq!("Work time:   02:12 (±00:00)", format!("{}", line));
-    }
+    fn should_format_daily() {
+        let config = Configuration::builder().build().unwrap();
+        let mut timesheet = Timesheet::new();
+        timesheet.add(Entry::new(Action::Start, datetime!(2025-01-01 10:00 UTC)));
+        timesheet.add(Entry::new(Action::Break, datetime!(2025-01-01 12:00 UTC)));
+        timesheet.add(Entry::new(Action::Start, datetime!(2025-01-01 12:40 UTC)));
+        timesheet.add(Entry::new(Action::End, datetime!(2025-01-01 16:00 UTC)));
 
-    #[test]
-    fn should_format_work_time_to_much() {
-        let daily = Daily {
-            start_time: &OffsetDateTime::now_utc(),
-            end_time: &OffsetDateTime::now_utc(),
-            end_expected: &OffsetDateTime::now_utc(),
-            break_time: None,
-            remaining_duration: &Duration::minutes(20),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(40),
-            work_duration: &Duration::minutes(132),
-        };
-        let line = daily.format_work_time().unwrap();
-        let exp_diff = "-00:20";
-        if ShouldColorize::from_env().should_colorize() {
-            assert_eq!(
-                format!(
-                    "Work time:   02:12 ({}{}{})",
-                    test::TERMINAL_GREEN,
-                    exp_diff,
-                    test::TERMINAL_NEUTRAL
-                ),
-                line
-            );
-        } else {
-            assert_eq!(format!("Work time:   02:12 ({})", exp_diff), line);
-        }
-    }
-
-    #[test]
-    fn should_format_work_time_to_less() {
-        let daily = Daily {
-            start_time: &OffsetDateTime::now_utc(),
-            end_time: &OffsetDateTime::now_utc(),
-            end_expected: &OffsetDateTime::now_utc(),
-            break_time: None,
-            remaining_duration: &Duration::minutes(-20),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(50),
-            work_duration: &Duration::minutes(132),
-        };
-        let line = daily.format_work_time().unwrap();
-        let exp_diff = "+00:20";
-        if ShouldColorize::from_env().should_colorize() {
-            assert_eq!(
-                format!(
-                    "Work time:   02:12 ({}{}{})",
-                    test::TERMINAL_RED,
-                    exp_diff,
-                    test::TERMINAL_NEUTRAL
-                ),
-                line
-            );
-        } else {
-            assert_eq!(format!("Work time:   02:12 ({})", exp_diff), line);
-        }
-    }
-
-    #[test]
-    fn should_format_online_time() {
-        let daily = Daily {
-            start_time: &datetime!(2025-02-03 08:00 UTC),
-            end_time: &datetime!(2025-02-03 15:00 UTC),
-            end_expected: &datetime!(2025-02-03 16:00 UTC),
-            break_time: None,
-            remaining_duration: &Duration::minutes(1),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(45),
-            work_duration: &Duration::minutes(1),
-        };
-        let line = daily.format_online_time().unwrap();
-        assert_eq!("Online time: 07:00", line);
-    }
-
-    #[test]
-    fn should_format_break_neutral() {
-        let daily = Daily {
-            start_time: &OffsetDateTime::now_utc(),
-            end_time: &OffsetDateTime::now_utc(),
-            end_expected: &OffsetDateTime::now_utc(),
-            break_time: None,
-            remaining_duration: &Duration::minutes(1),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(45),
-            work_duration: &Duration::minutes(1),
-        };
-        let line = daily.format_break().unwrap();
-        assert_eq!("Break:       00:45 (±00:00)", line);
-    }
-
-    #[test]
-    fn should_format_break_to_much() {
-        let daily = Daily {
-            start_time: &OffsetDateTime::now_utc(),
-            end_time: &OffsetDateTime::now_utc(),
-            end_expected: &OffsetDateTime::now_utc(),
-            break_time: None,
-            remaining_duration: &Duration::minutes(1),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(40),
-            work_duration: &Duration::minutes(1),
-        };
-        let line = daily.format_break().unwrap();
-        let exp_diff = "+00:05";
-        if ShouldColorize::from_env().should_colorize() {
-            assert_eq!(
-                format!(
-                    "Break:       00:45 ({}{}{})",
-                    test::TERMINAL_YELLOW,
-                    exp_diff,
-                    test::TERMINAL_NEUTRAL
-                ),
-                line
-            );
-        } else {
-            assert_eq!(format!("Break:       00:45 ({})", exp_diff), line);
-        }
-    }
-
-    #[test]
-    fn should_format_break_to_less() {
-        let daily = Daily {
-            start_time: &OffsetDateTime::now_utc(),
-            end_time: &OffsetDateTime::now_utc(),
-            end_expected: &OffsetDateTime::now_utc(),
-            break_time: None,
-            remaining_duration: &Duration::minutes(1),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(50),
-            work_duration: &Duration::minutes(1),
-        };
-        let line = daily.format_break().unwrap();
-        let exp_diff = "-00:05";
-        if ShouldColorize::from_env().should_colorize() {
-            assert_eq!(
-                format!(
-                    "Break:       00:45 ({}{}{})",
-                    test::TERMINAL_RED,
-                    exp_diff,
-                    test::TERMINAL_NEUTRAL
-                ),
-                line
-            );
-        } else {
-            assert_eq!(format!("Break:       00:45 ({})", exp_diff), line);
-        }
-    }
-
-    #[test]
-    fn should_format_break_time() {
-        let daily = Daily {
-            start_time: &datetime!(2025-02-03 08:04 UTC),
-            end_time: &datetime!(2025-02-03 15:00 UTC),
-            end_expected: &datetime!(2025-02-03 16:00 UTC),
-            break_time: Some(&datetime!(2025-02-03 12:00 UTC)),
-            remaining_duration: &Duration::minutes(1),
-            break_duration: &Duration::minutes(50),
-            break_expected: &Duration::minutes(45),
-            work_duration: &Duration::minutes(1),
-        };
-        let line = daily.format_break_time().unwrap();
-        assert_eq!("Break taken: 12:00 - 12:50", line);
-    }
-
-    #[test]
-    fn should_format_break_time_no_break() {
-        let daily = Daily {
-            start_time: &datetime!(2025-02-03 08:04 UTC),
-            end_time: &datetime!(2025-02-03 15:00 UTC),
-            end_expected: &datetime!(2025-02-03 16:00 UTC),
-            break_time: None,
-            remaining_duration: &Duration::minutes(1),
-            break_duration: &Duration::minutes(50),
-            break_expected: &Duration::minutes(45),
-            work_duration: &Duration::minutes(1),
-        };
-        let line = daily.format_break_time().unwrap();
-        assert_eq!("Break taken:  - ", line);
-    }
-
-    #[test]
-    fn should_format_start_time() {
-        let daily = Daily {
-            start_time: &datetime!(2025-02-03 08:04 UTC),
-            end_time: &datetime!(2025-02-03 15:00 UTC),
-            end_expected: &datetime!(2025-02-03 16:00 UTC),
-            break_time: None,
-            remaining_duration: &Duration::minutes(1),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(45),
-            work_duration: &Duration::minutes(1),
-        };
-        let line = daily.format_start_time().unwrap();
-        assert_eq!("Started:     08:04", line);
-    }
-
-    #[test]
-    fn should_format_end_time_est() {
-        let daily = Daily {
-            start_time: &datetime!(2025-02-03 08:04 UTC),
-            end_time: &datetime!(2025-02-03 15:00 UTC),
-            end_expected: &datetime!(2025-02-03 16:14 UTC),
-            break_time: None,
-            remaining_duration: &Duration::minutes(-60),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(45),
-            work_duration: &Duration::minutes(1),
-        };
-        let line = daily.format_end_time().unwrap();
-        if ShouldColorize::from_env().should_colorize() {
-            assert_eq!(
-                format!(
-                    "End:         {}16:14 (est.){}",
-                    test::TERMINAL_YELLOW,
-                    test::TERMINAL_NEUTRAL
-                ),
-                line
-            );
-        } else {
-            assert_eq!("End:         16:14 (est.)", line);
-        }
-    }
-
-    #[test]
-    fn should_format_end_time() {
-        let daily = Daily {
-            start_time: &datetime!(2025-02-03 08:04 UTC),
-            end_time: &datetime!(2025-02-03 18:12 UTC),
-            end_expected: &datetime!(2025-02-03 16:14 UTC),
-            break_time: None,
-            remaining_duration: &Duration::minutes(1),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(45),
-            work_duration: &Duration::minutes(1),
-        };
-        let line = daily.format_end_time().unwrap();
-        if ShouldColorize::from_env().should_colorize() {
-            assert_eq!(
-                format!("End:         {}18:12{}", test::TERMINAL_GREEN, test::TERMINAL_NEUTRAL),
-                line
-            );
-        } else {
-            assert_eq!("End:         18:12", line);
-        }
-    }
-
-    #[test]
-    fn should_format_status() {
-        let daily = Daily {
-            start_time: &datetime!(2025-02-03 08:04 UTC),
-            end_time: &datetime!(2025-02-03 18:12 UTC),
-            end_expected: &datetime!(2025-02-03 16:14 UTC),
-            break_time: Some(&datetime!(2025-02-03 12:12 UTC)),
-            remaining_duration: &Duration::minutes(12),
-            break_duration: &Duration::minutes(45),
-            break_expected: &Duration::minutes(45),
-            work_duration: &Duration::minutes(80),
-        };
+        let daily = Daily::build(&config, &mut timesheet);
         if ShouldColorize::from_env().should_colorize() {
             assert_eq!(
                 format!(

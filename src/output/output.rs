@@ -66,7 +66,7 @@ mod tests {
     use colored::{ control::ShouldColorize, Colorize };
     use time::{macros::datetime, Duration};
 
-    use crate::{ status::Output, test };
+    use crate::{ output::Output, test };
 
     #[test]
     fn should_format_duration_minutes() {

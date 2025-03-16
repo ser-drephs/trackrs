@@ -1,5 +1,4 @@
 use std::{ env, fs, io::Write, path::PathBuf };
-
 use super::ConfigurationError;
 
 const CONFIG_FILE: &str = "trackrs.conf";

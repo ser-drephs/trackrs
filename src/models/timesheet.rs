@@ -67,17 +67,17 @@ impl Timesheet {
         let start = self.start_time();
         let end = self.end_time();
         let break_time = self.break_duration();
-        let work_time = end - start - break_time;
+        let work_time = if break_time.is_some() { end - start - break_time.unwrap() } else { end - start };
         log::debug!("work time: {}", work_time);
         work_time
     }
 
-    pub fn break_duration(&self) -> Duration {
+    pub fn break_duration(&self) -> Option<Duration> {
         // TODO: calculate all breaks in timesheet
         todo!()
     }
 
-    pub fn remaining_time(&self, expected: Duration) -> Duration {
+    pub fn remaining_work_time(&self, expected: Duration) -> Duration {
         let start = self.start_time();
         let expected_end = start.checked_add(expected).unwrap();
         let remaining = expected_end - start;

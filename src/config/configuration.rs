@@ -1,12 +1,15 @@
 use std::fs::OpenOptions;
 
-use config::{ Config, FileFormat };
-use nameof::name_of;
 use serde::{ Deserialize, Serialize };
 
 use crate::config::ConfigurationFile;
 
-use super::{ break_limit::BreakLimit, work_per_day::WorkPerDayInMinutes, ConfigurationError };
+use super::{
+    break_limit::BreakLimit,
+    work_per_day::WorkPerDayInMinutes,
+    ConfigurationBuilder,
+    ConfigurationError,
+};
 
 #[derive(Serialize)]
 #[allow(unused)]
@@ -35,20 +38,8 @@ impl Default for Configuration {
 }
 
 impl Configuration {
-    pub fn new() -> Result<Self, ConfigurationError> {
-        let file = ConfigurationFile::file();
-        let defaults = Configuration::default();
-
-        let s = Config::builder()
-            .set_default(name_of!(folder in Configuration), defaults.folder)?
-            .set_default(name_of!(threshold_limits in Configuration), defaults.threshold_limits)?
-            .set_default(name_of!(limits in Configuration), defaults.limits)?
-            .set_default(name_of!(workperday in Configuration), defaults.workperday)?
-            .add_source(config::File::new(file.to_str().unwrap(), FileFormat::Json))
-            .build()?;
-
-        log::debug!("used configuration: {:?}", s);
-        Ok(s.try_deserialize()?)
+    pub fn builder() -> ConfigurationBuilder {
+        ConfigurationBuilder::new().unwrap()
     }
 
     pub fn save(&self) -> Result<(), ConfigurationError> {
@@ -70,20 +61,17 @@ mod tests {
 
     #[test]
     fn should_error_no_file() {
-        let config = Configuration::new();
-        assert!(config.is_err())
+        let config = Configuration::builder().build();
+        assert!(config.is_ok())
     }
 
-    // #[test]
-    // fn should_set_defaults() {
-    //     // TODO: add test context with file exists
-    //     crate::test::setup();
-    //     crate::config::ConfigurationFile::verify().unwrap();
-    //     let defaults = Configuration::default();
-    //     let config = Configuration::new();
-    //     assert!(config.is_ok());
-    //     assert_eq!(config.unwrap().folder, defaults.folder);
-    // }
+    #[test]
+    fn should_set_defaults() {
+        let defaults = Configuration::default();
+        let config = Configuration::builder().build();
+        assert!(config.is_ok());
+        assert_eq!(config.unwrap().folder, defaults.folder);
+    }
 
     //  #[test]
     // fn should_save_defaults() {

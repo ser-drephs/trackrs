@@ -6,5 +6,8 @@
     "rust-analyzer.showUnlinkedFileNotification": false,
     "cSpell.words": [
         "trackrs"
+    ],
+    "editor.rulers": [
+        120
     ]
 }
