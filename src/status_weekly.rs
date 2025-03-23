@@ -131,7 +131,7 @@ impl StatusWeeklyBuilder {
         data.entries.iter().for_each(|d: &TimeData| {
             log::trace!("processing: {:?}", d);
             let mut b = StatusDaily::builder();
-            if !d.entries.is_empty() {
+            if !d.entries.data.is_empty() {
                 let s = b.data(d.to_owned()).settings(settings.clone()).build().unwrap();
                 log::info!("got {} working time and {} overtime", s.worktime, s.overtime);
                 entries.append(&mut [(d.date.unwrap().to_owned(), s.to_owned())].to_vec());
@@ -309,6 +309,8 @@ mod tests {
     mod builder {
         use chrono::Utc;
 
+        use crate::Entries;
+
         use super::*;
 
         fn get_settings() -> Settings {
@@ -323,36 +325,39 @@ mod tests {
             }
         }
 
-        fn get_entries(day: u8, end: u8, end_minutes: u8) -> Vec<Entry> {
-            [
-                Entry {
-                    id: 1,
-                    status: Status::Connect,
-                    time: Utc.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
-                },
-                Entry {
-                    id: 2,
-                    status: Status::Break,
-                    time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap(),
-                },
-                Entry {
-                    id: 3,
-                    status: Status::Connect,
-                    time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
-                },
-                Entry {
-                    id: 4,
-                    status: Status::End,
-                    time: Utc.with_ymd_and_hms(
-                        2022,
-                        3,
-                        day.into(),
-                        end.into(),
-                        end_minutes.into(),
-                        0
-                    ).unwrap(),
-                },
-            ].to_vec()
+        fn get_entries(day: u8, end: u8, end_minutes: u8) -> Entries {
+            Entries {
+                data: [
+                    Entry {
+                        id: 1,
+                        status: Status::Connect,
+                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
+                    },
+                    Entry {
+                        id: 2,
+                        status: Status::Break,
+                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap(),
+                    },
+                    Entry {
+                        id: 3,
+                        status: Status::Connect,
+                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
+                    },
+                    Entry {
+                        id: 4,
+                        status: Status::End,
+                        time: Utc.with_ymd_and_hms(
+                            2022,
+                            3,
+                            day.into(),
+                            end.into(),
+                            end_minutes.into(),
+                            0
+                        ).unwrap(),
+                    },
+                ].to_vec(),
+                ..Default::default()
+            }
         }
 
         fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> Vec<TimeData> {

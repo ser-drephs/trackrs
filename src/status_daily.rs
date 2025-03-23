@@ -38,7 +38,7 @@ impl StatusDaily {
     fn has_connect(&self) -> bool {
         log::debug!("check if any connect entry is present");
         match self.data.as_ref() {
-            Some(d) => d.entries.iter().any(|x| x.status == Status::Connect),
+            Some(d) => d.entries.data.iter().any(|x| x.status == Status::Connect),
             None => false,
         }
     }
@@ -48,7 +48,7 @@ impl StatusDaily {
             self.data
                 .as_ref()
                 .unwrap()
-                .entries.iter()
+                .entries.data.iter()
                 .find(|x| x.status == Status::Connect)
         {
             Some(c) => {
@@ -69,7 +69,7 @@ impl StatusDaily {
             self.data
                 .as_ref()
                 .unwrap()
-                .entries.iter()
+                .entries.data.iter()
                 .find(|x| x.status == Status::End)
         {
             Some(c) => {
@@ -96,23 +96,23 @@ impl StatusDaily {
         // first break set
         let mut f = false;
         let d = self.data.as_ref().unwrap();
-        for n in 0..d.entries.len() {
+        for n in 0..d.entries.data.len() {
             if !b {
                 // get break entry
-                if d.entries[n].status == Status::Break {
+                if d.entries.data[n].status == Status::Break {
                     // temp save time
-                    tb = d.entries[n].time;
+                    tb = d.entries.data[n].time;
                     log::info!("break at: {}", tb.time());
                     b = true;
                     if !f {
-                        let local_f_break: DateTime<Local> = DateTime::from(d.entries[n].time);
+                        let local_f_break: DateTime<Local> = DateTime::from(d.entries.data[n].time);
                         self.f_break = Some(local_f_break);
                         f = true;
                     }
                 }
-            } else if b && d.entries[n].status == Status::Connect {
+            } else if b && d.entries.data[n].status == Status::Connect {
                 // get next connect
-                let tc = d.entries[n].time;
+                let tc = d.entries.data[n].time;
                 log::info!("connect at: {}", tc.time());
                 // caluclate time between both
                 let tbd = tc - tb;
@@ -133,7 +133,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.entries[0].time).to_owned().into());
+            let w = Duration::minutes(s.workperday.from(d.entries.data[0].time).to_owned().into());
 
             self.exp_worktime = Some(StatusTime::from(w));
 
@@ -201,7 +201,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.entries[0].time).to_owned().into());
+            let w = Duration::minutes(s.workperday.from(d.entries.data[0].time).to_owned().into());
 
             let e = if self.r#break.to_owned().unwrap() > self.exp_break.to_owned().unwrap() {
                 w.add(self.r#break.to_owned().unwrap().into())
@@ -241,7 +241,7 @@ impl StatusDailyBuilder {
     }
 
     pub fn build(&self) -> Result<StatusDaily, TrackerError> {
-        if self.inner.data.is_none() || self.inner.data.as_ref().unwrap().entries.is_empty() {
+        if self.inner.data.is_none() || self.inner.data.as_ref().unwrap().entries.data.is_empty() {
             return Err(TrackerError::StatusError {
                 message: "data not added to status".to_owned(),
             });
@@ -380,34 +380,47 @@ mod tests {
     mod display {
         use chrono::Local;
 
+        use crate::Entries;
+
         use super::*;
 
         #[test]
         fn status_daily_with_remaing_worktime_and_break() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 23, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 14, 45, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 23, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 14, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
             let settings = Settings {
@@ -457,28 +470,39 @@ mod tests {
         fn status_daily_with_overtime_and_more_break() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 43, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 17, 45, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 43, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 17, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
             let settings = Settings {
@@ -527,28 +551,39 @@ mod tests {
         fn status_daily_on_point() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 33, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 16, 33, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 33, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 33, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
             let settings = Settings {
@@ -602,13 +637,18 @@ mod tests {
                 local.add(Duration::hours(8).add(Duration::minutes(30)))
             );
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: local.to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: local.to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
             let settings = Settings {
@@ -671,18 +711,27 @@ mod tests {
         fn status_daily_short_day_without_break() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -735,23 +784,34 @@ mod tests {
         fn status_daily_should_ignore_takeover() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::Takeover,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 46, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 4,
+                                status: Status::Takeover,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 46, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -804,23 +864,32 @@ mod tests {
     mod builder {
         use chrono::Local;
 
+        use crate::Entries;
+
         use super::*;
 
         #[test]
         fn should_set_connect() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
             let status = StatusDaily::builder()
@@ -835,38 +904,55 @@ mod tests {
         #[should_panic]
         fn no_connect() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
+
             StatusDaily::builder().data(data).settings(Settings::default()).build().unwrap();
         }
 
         #[test]
         fn should_set_end() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 10, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -883,13 +969,18 @@ mod tests {
         #[test]
         fn should_set_temporary_end() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 2,
-                        status: Status::Connect,
-                        time: DateTime::default(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 2,
+                                status: Status::Connect,
+                                time: DateTime::default(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -907,23 +998,34 @@ mod tests {
         #[test]
         fn should_calculate_break() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -941,58 +1043,83 @@ mod tests {
         #[test]
         fn should_calculate_break_between_mutliple_breaks() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 5).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 5,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 6,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 55).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 7,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 9, 55, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 8,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 55).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 9,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 56).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 10,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 1, 56).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 5)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 4,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 5,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 6,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 55)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 7,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 55, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 8,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 55)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 9,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 56)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 10,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 1, 56)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -1010,18 +1137,25 @@ mod tests {
         #[test]
         fn should_calculate_online_time() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -1035,33 +1169,42 @@ mod tests {
         #[test]
         fn should_calculate_est_end_with_break_fully_taken() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 45, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 5,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 4,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 5,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -1094,33 +1237,44 @@ mod tests {
         #[test]
         fn should_calculate_est_end_with_break_not_fully_taken() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 5,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 4,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 5,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -1155,33 +1309,42 @@ mod tests {
         #[test]
         fn should_calculate_est_end_with_more_break_taken() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 5,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 4,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 5,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -1215,28 +1378,41 @@ mod tests {
         #[test]
         fn should_calculate_est_end_with_no_break_taken() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 13, 15, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 5,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 4,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 15, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 5,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -1272,28 +1448,41 @@ mod tests {
         #[test]
         fn should_calculate_est_end_with_no_break_taken_short_day_and_threshold() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 5,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 4,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 5,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -1329,28 +1518,41 @@ mod tests {
         #[test]
         fn should_calculate_est_end_with_no_break_taken_odd_day() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Disconnect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 5,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 4,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 5,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -1386,18 +1588,27 @@ mod tests {
         #[test]
         fn should_calculate_no_break_on_short_day() {
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
 
@@ -1435,61 +1646,87 @@ mod tests {
     mod logic {
         use chrono::Local;
 
+        use crate::Entries;
+
         use super::*;
 
         #[test]
         fn should_calculate_overtime() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 8, 56, 15).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 25, 57).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 26, 46).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 5,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 28, 7).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 6,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 58, 7).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 7,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 17, 0, 7).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 8,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 17, 15, 7).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 18, 27, 40).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 56, 15)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 25, 57)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 4,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 26, 46)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 5,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 28, 7)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 6,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 58, 7)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 7,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 17, 0, 7)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 8,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 17, 15, 7)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 18, 27, 40)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
+
             let settings = Settings {
                 limits: [
                     BreakLimit {
@@ -1520,20 +1757,30 @@ mod tests {
         fn should_calculate_negative_overtime() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 16, 32).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 16, 32)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
+
             let settings = Settings {
                 limits: [
                     BreakLimit {
@@ -1568,30 +1815,42 @@ mod tests {
         fn should_calculate_worktime_and_expected_break_with_only_30_minutes_break_taken() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 30, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 17, 0, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 30, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 17, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
+
             let settings = Settings {
                 limits: [
                     BreakLimit {
@@ -1631,30 +1890,42 @@ mod tests {
         fn should_calculate_worktime_and_expected_break_with_4_hours_break_taken() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 21, 0, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 21, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
+
             let settings = Settings {
                 limits: [
                     BreakLimit {
@@ -1694,30 +1965,42 @@ mod tests {
         fn should_calculate_worktime_and_expected_break_with_4_hours_break_taken_and_over_10_hours_worktime() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 23, 0, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                            Entry {
+                                id: 3,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 23, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
+
             let settings = Settings {
                 limits: [
                     BreakLimit {
@@ -1757,20 +2040,28 @@ mod tests {
         fn should_calculate_worktime_and_no_expected_break_because_less_than_6_hours_worktime() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 4, 14, 0, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 4, 14, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
+
             let settings = Settings {
                 limits: [
                     BreakLimit {
@@ -1815,20 +2106,28 @@ mod tests {
         fn expected_break_not_displayed_correctly_in_status() {
             logger();
             let data = TimeData {
-                entries: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::End,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 14, 0, 0).unwrap().to_utc(),
-                    },
-                ].to_vec(),
+                entries: {
+                    Entries {
+                        data: [
+                            Entry {
+                                id: 1,
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                            },
+                            Entry {
+                                id: 2,
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 14, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                            },
+                        ].to_vec(),
+                        ..Default::default()
+                    }
+                },
                 ..Default::default()
             };
+
             let settings = Settings {
                 limits: [
                     BreakLimit {

@@ -1,15 +1,15 @@
-use std::{ fs::{ self, File, OpenOptions }, ops::Sub, path::PathBuf, str::FromStr };
+use std::{ fs::{ self, File, OpenOptions }, io::BufReader, ops::Sub, path::PathBuf, str::FromStr };
 
 use chrono::{ DateTime, Duration, Utc };
 
-use crate::{ Entry, Status, Takeover, TrackerError };
+use crate::{ Entries, Entry, Status, Takeover, TrackerError, Upgrade };
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
 
 #[derive(Default, Clone, Debug)]
 pub struct TimeData {
-    pub entries: Vec<Entry>,
+    pub entries: Entries,
     pub(super) file: PathBuf,
     pub(super) build: bool,
     pub date: Option<DateTime<Utc>>,
@@ -32,11 +32,11 @@ impl TimeData {
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         if e_break > a_break {
-            let last_id = match self.entries.last() {
+            let last_id = match self.entries.data.last() {
                 Some(last) => last.id,
                 None => 0,
             };
-            let now = self.entries.last().unwrap().time;
+            let now = self.entries.data.last().unwrap().time;
 
             // calculate time for break assertion start
             let diff_b = e_break - a_break + Duration::minutes(1);
@@ -44,8 +44,8 @@ impl TimeData {
 
             // overwrite end entry
             let last_index = last_id - 1;
-            self.entries[last_index as usize].status = Status::Break;
-            self.entries[last_index as usize].time = time_b;
+            self.entries.data[last_index as usize].status = Status::Break;
+            self.entries.data[last_index as usize].time = time_b;
 
             // calculate time for connect entry afterwards
             let local_c = Duration::minutes(1);
@@ -63,11 +63,11 @@ impl TimeData {
                 .build()?;
             log::debug!(
                 "fill break with {:?} and {:?}",
-                self.entries[last_index as usize],
+                self.entries.data[last_index as usize],
                 entry_c
             );
 
-            self.entries.append(&mut [entry_c, entry_e].to_vec());
+            self.entries.data.append(&mut [entry_c, entry_e].to_vec());
         }
         Ok(self)
     }
@@ -78,14 +78,14 @@ impl TimeData {
         time: DateTime<Utc>
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
-        let last_id = match self.entries.last() {
+        let last_id = match self.entries.data.last() {
             Some(last) => last.id,
             None => 0,
         };
 
         let entry = Entry::builder().id(last_id).status(status).time(time.to_utc()).build()?;
         log::debug!("append time data: {:?}", entry);
-        self.entries.append(&mut [entry].to_vec());
+        self.entries.data.append(&mut [entry].to_vec());
         Ok(self)
     }
 
@@ -99,20 +99,20 @@ impl TimeData {
                 .status(Status::Connect)
                 .time(time.to_utc())
                 .build()?;
-            self.entries.append(&mut [t_entry].to_vec());
+            self.entries.data.append(&mut [t_entry].to_vec());
         }
         Ok(self)
     }
 
     pub fn takeover(&mut self, takeover: Duration) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
-        let end = self.entries.iter().find(|&x| x.status == Status::End);
+        let end = self.entries.data.iter().find(|&x| x.status == Status::End);
         if end.is_none() {
             log::warn!("End first to takeover time!");
         } else {
-            let last_id = self.entries.last().unwrap().id;
+            let last_id = self.entries.data.last().unwrap().id;
             let old_time = Option::unwrap(end).time;
-            self.entries[(last_id - 1) as usize].time = old_time.sub(takeover);
+            self.entries.data[(last_id - 1) as usize].time = old_time.sub(takeover);
 
             let entry = Entry::builder()
                 .id(last_id)
@@ -120,7 +120,7 @@ impl TimeData {
                 .time(old_time)
                 .build()?;
             log::debug!("append takeover: {:?}", entry);
-            self.entries.append(&mut [entry].to_vec());
+            self.entries.data.append(&mut [entry].to_vec());
         }
         Ok(self)
     }
@@ -129,8 +129,17 @@ impl TimeData {
         self.assert_build()?;
         if self.file.exists() {
             let f = File::open(&self.file)?;
-            self.entries = serde_json::from_reader(f)?;
-            self.entries.sort_by(|a, b| a.id.partial_cmp(&b.id).unwrap());
+            match Upgrade::to_v1(BufReader::new(f))? {
+                Some(res) => {
+                    self.entries = res;
+                }
+                None => {
+                    let f = File::open(&self.file)?;
+                    self.entries = serde_json::from_reader(BufReader::new(f))?;
+                }
+            }
+
+            self.entries.data.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
         } else {
             log::info!("file not yet created: {:?}", &self.file);
             // invoke takeover
@@ -275,7 +284,7 @@ mod tests {
     }
 
     mod time_data {
-        use std::process::Command;
+        use std::{ io::Read, process::Command };
 
         use chrono::{ NaiveTime, Utc };
 
@@ -319,7 +328,7 @@ mod tests {
         fn should_read_time_data() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]";
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220804.json");
             let mut file = File::create(&time_file)?;
@@ -333,13 +342,49 @@ mod tests {
                 .build()?;
 
             time_data.read_from_file()?;
-            assert_eq!(2, time_data.entries.len());
-            assert_eq!(2, time_data.entries.last().unwrap().id);
+            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
 
         #[test]
         fn should_read_and_write_time_data() -> Result<(), TrackerError> {
+            logger();
+            let file_content =
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}],\"version\":1}";
+            let temp_dir = tempfile::tempdir()?;
+            let time_file = temp_dir.path().join("20220804.json");
+            let day = Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap();
+            let mut file = File::create(&time_file)?;
+            file.write_all(file_content.as_bytes())?;
+
+            wait();
+
+            let initial_size = fs::metadata(&time_file)?.len();
+
+            let mut time_data = TimeData::builder()
+                .folder(temp_dir.into_path().into())
+                .date(day)
+                .build()?;
+
+            time_data.read_from_file()?;
+            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.data.last().unwrap().id);
+
+            time_data.append(
+                Status::End,
+                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
+            )?;
+            assert_eq!(3, time_data.entries.data.len());
+            assert_eq!(3, time_data.entries.data.last().unwrap().id);
+
+            time_data.write_to_file()?;
+            assert!(fs::metadata(&time_file)?.len() > initial_size);
+            Ok(())
+        }
+
+        #[test]
+        fn should_update_and_write_time_data() -> Result<(), TrackerError> {
             logger();
             let file_content =
                 "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]";
@@ -359,18 +404,27 @@ mod tests {
                 .build()?;
 
             time_data.read_from_file()?;
-            assert_eq!(2, time_data.entries.len());
-            assert_eq!(2, time_data.entries.last().unwrap().id);
+            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.data.last().unwrap().id);
 
             time_data.append(
                 Status::End,
                 day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
             )?;
-            assert_eq!(3, time_data.entries.len());
-            assert_eq!(3, time_data.entries.last().unwrap().id);
+            assert_eq!(3, time_data.entries.data.len());
+            assert_eq!(3, time_data.entries.data.last().unwrap().id);
 
             time_data.write_to_file()?;
             assert!(fs::metadata(&time_file)?.len() > initial_size);
+
+            let file_content_update =
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"id\":3,\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":1}";
+            let mut update_file = File::open(&time_file).unwrap();
+            let mut data = vec![];
+            update_file.read_to_end(&mut data)?;
+            let repr = String::from_utf8(data).unwrap();
+
+            assert_eq!(repr, file_content_update, "text compare");
             Ok(())
         }
 
@@ -378,7 +432,7 @@ mod tests {
         fn should_assert_break() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-02-02T08:00:53.523332900Z\"}]";
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-02-02T08:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
@@ -392,15 +446,15 @@ mod tests {
                 .build()?;
 
             time_data.read_from_file()?.assert_break(Duration::minutes(45), Duration::minutes(15))?;
-            assert_eq!(4, time_data.entries.len());
-            assert_eq!(4, time_data.entries.last().unwrap().id);
+            assert_eq!(4, time_data.entries.data.len());
+            assert_eq!(4, time_data.entries.data.last().unwrap().id);
 
-            let r#break = match time_data.entries.iter().find(|x| x.status == Status::Break) {
+            let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
                 Some(c) => c.into(),
                 None => None,
             };
 
-            let connects = time_data.entries
+            let connects = time_data.entries.data
                 .iter()
                 .filter(|x| x.status == Status::Connect)
                 .cloned()
@@ -422,7 +476,7 @@ mod tests {
         fn should_assert_break_with_order() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}]";
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
@@ -439,13 +493,13 @@ mod tests {
                 .read_from_file()?
                 .assert_break(Duration::minutes(45), Duration::minutes(15))?
                 .write_to_file()?;
-            assert_eq!(4, time_data.entries.len());
-            assert_eq!(4, time_data.entries.last().unwrap().id);
+            assert_eq!(4, time_data.entries.data.len());
+            assert_eq!(4, time_data.entries.data.last().unwrap().id);
 
             // assert order of elements
-            let fill_connect = time_data.entries[1].to_owned();
-            let fill_break = time_data.entries[2].to_owned();
-            let end = time_data.entries[3].to_owned();
+            let fill_connect = time_data.entries.data[1].to_owned();
+            let fill_break = time_data.entries.data[2].to_owned();
+            let end = time_data.entries.data[3].to_owned();
             assert_eq!(
                 (2, Status::Break),
                 (fill_connect.id, fill_connect.status.to_owned()),
@@ -499,7 +553,7 @@ mod tests {
         fn should_assert_long_break_do_nothing() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"Break\",\"time\":\"2022-08-04T00:30:53.523319900Z\"},{\"id\":3,\"status\":\"Connect\",\"time\":\"2022-08-04T02:15:53.523319900Z\"},{\"id\":4,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}]";
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"Break\",\"time\":\"2022-08-04T00:30:53.523319900Z\"},{\"id\":3,\"status\":\"Connect\",\"time\":\"2022-08-04T02:15:53.523319900Z\"},{\"id\":4,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
@@ -518,15 +572,15 @@ mod tests {
                     Duration::minutes(45),
                     Duration::hours(1).add(Duration::minutes(15))
                 )?;
-            assert_eq!(4, time_data.entries.len());
-            assert_eq!(4, time_data.entries.last().unwrap().id);
+            assert_eq!(4, time_data.entries.data.len());
+            assert_eq!(4, time_data.entries.data.last().unwrap().id);
 
-            let r#break = match time_data.entries.iter().find(|x| x.status == Status::Break) {
+            let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
                 Some(c) => c.into(),
                 None => None,
             };
 
-            let connects = time_data.entries
+            let connects = time_data.entries.data
                 .iter()
                 .filter(|x| x.status == Status::Connect)
                 .cloned()
@@ -546,7 +600,7 @@ mod tests {
         fn should_assert_break_and_do_nothing() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}]";
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
@@ -560,8 +614,8 @@ mod tests {
                 .build()?;
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
-            assert_eq!(2, time_data.entries.len());
-            assert_eq!(2, time_data.entries.last().unwrap().id);
+            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
 
@@ -569,7 +623,7 @@ mod tests {
         fn should_read_from_pretty_json() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "[\n    {\n        \"id\": 1,\n        \"status\": \"Connect\",\n        \"time\": \"2022-08-04T00:00:53.523319900Z\"\n    },\n    {\n        \"id\": 2,\n        \"status\": \"End\",\n        \"time\": \"2022-08-04T04:00:53.523332900Z\"\n    }\n]";
+                "{\"data\":[\n    {\n        \"id\": 1,\n        \"status\": \"Connect\",\n        \"time\": \"2022-08-04T00:00:53.523319900Z\"\n    },\n    {\n        \"id\": 2,\n        \"status\": \"End\",\n        \"time\": \"2022-08-04T04:00:53.523332900Z\"\n    }\n], \"version\":1 \n}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
@@ -583,8 +637,31 @@ mod tests {
                 .build()?;
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
-            assert_eq!(2, time_data.entries.len());
-            assert_eq!(2, time_data.entries.last().unwrap().id);
+            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.data.last().unwrap().id);
+            Ok(())
+        }
+
+        #[test]
+        fn should_read_from_pretty_json_carriage_return() -> Result<(), TrackerError> {
+            logger();
+            let file_content =
+                "{\r\n    \"data\": [\r\n        {\r\n            \"id\": 1,\r\n            \"status\": \"Connect\",\r\n            \"time\": \"2022-08-04T00:00:53.523319900Z\"\r\n        },\r\n        {\r\n            \"id\": 2,\r\n            \"status\": \"End\",\r\n            \"time\": \"2022-08-04T04:00:53.523332900Z\"\r\n        }\r\n    ],\r\n    \"version\": 1\r\n}";
+            let temp_dir = tempfile::tempdir()?;
+            let time_file = temp_dir.path().join("20220202.json");
+            let mut file = File::create(&time_file)?;
+            file.write_all(file_content.as_bytes())?;
+
+            wait();
+
+            let mut time_data = TimeData::builder()
+                .folder(temp_dir.into_path().into())
+                .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
+                .build()?;
+
+            time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
+            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
 
@@ -592,7 +669,7 @@ mod tests {
         fn should_create_takeover_entry() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}]";
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220804.json");
             let mut file = File::create(&time_file)?;
@@ -606,14 +683,14 @@ mod tests {
                 .build()?;
 
             time_data.read_from_file()?.takeover(Duration::minutes(20))?;
-            assert_eq!(3, time_data.entries.len());
+            assert_eq!(3, time_data.entries.data.len());
 
-            let end = time_data.entries[1].to_owned();
+            let end = time_data.entries.data[1].to_owned();
             assert_eq!(2, end.id);
             assert_eq!(Status::End, end.status);
             assert_eq!((3, 40, 53), (end.time.hour(), end.time.minute(), end.time.second()));
 
-            let last = time_data.entries.last().unwrap();
+            let last = time_data.entries.data.last().unwrap();
             assert_eq!(3, last.id);
             assert_eq!(Status::Takeover, last.status);
             assert_eq!((4, 0, 53), (last.time.hour(), last.time.minute(), last.time.second()));
@@ -677,8 +754,8 @@ mod tests {
                     .write_to_file()?;
                 assert!(&time_file.exists(), "time file should exist");
 
-                let takeover_time = time_data.entries[0].to_owned();
-                let first_connect = time_data.entries[1].to_owned();
+                let takeover_time = time_data.entries.data[0].to_owned();
+                let first_connect = time_data.entries.data[1].to_owned();
                 let diff = first_connect.time - takeover_time.time;
 
                 assert_eq!(
@@ -793,8 +870,8 @@ mod tests {
                     .write_to_file()?;
                 assert!(&time_file.exists());
 
-                let takeover_time = time_data.entries[0].to_owned();
-                let first_connect = time_data.entries[1].to_owned();
+                let takeover_time = time_data.entries.data[0].to_owned();
+                let first_connect = time_data.entries.data[1].to_owned();
                 let diff = first_connect.time - takeover_time.time;
 
                 assert_eq!(
