@@ -15,22 +15,22 @@ path = "src/bin/cli_executable.rs"
 
 [dependencies]
 chrono = { version = "^0.4", features = ["serde", "clock"] }
-thiserror = "^1.0"
+thiserror = "^2.0"
 log = "^0.4"
-env_logger = "^0.10"
-clap = { version = "^3.2", features = ["derive"] }
-clap-verbosity-flag = "^1.0"
+env_logger = "^0.11"
+clap = { version = "^4.5", features = ["derive"] }
+clap-verbosity-flag = "^3.0"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
 serde_derive = "^1.0"
-config = "^0.13"
-dirs = "^4.0"
-indoc = "^1.0"
-colored = "^2.0"
-open = "^3.0"
+config = "^0.15"
+dirs = "^6.0"
+indoc = "^2.0"
+colored = "^3.0"
+open = "^5.3"
 prettytable-rs = "^0.10"
 
 [dev-dependencies]
-tempfile = "^3.3"
-serial_test = "0.9.0"
-test-context = "^0.1"
+tempfile = "^3.18"
+serial_test = "^3.2"
+test-context = "^0.4"
