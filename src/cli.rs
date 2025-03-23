@@ -140,8 +140,8 @@ impl Cli {
         let now = Local::now();
         time_data
             .read_from_file()?
-            .assert_takeover(now)?
-            .append(Status::Connect, now)?
+            .assert_takeover(now.to_utc())?
+            .append(Status::Connect, now.to_utc())?
             .write_to_file()
     }
 
@@ -155,7 +155,7 @@ impl Cli {
         let now = Local::now();
         time_data
             .read_from_file()?
-            .append(Status::Connect, now)?
+            .append(Status::Connect, now.to_utc())?
             .write_to_file()
     }
 
@@ -169,7 +169,7 @@ impl Cli {
         let now = Local::now();
         time_data
             .read_from_file()?
-            .append(Status::Break, now)?
+            .append(Status::Break, now.to_utc())?
             .write_to_file()
     }
 
@@ -185,7 +185,7 @@ impl Cli {
             .build()?;
         let now = Local::now();
         time_data
-            .append(Status::End, now)?
+            .append(Status::End, now.to_utc())?
             .assert_break(
                 status.exp_break.unwrap().duration,
                 status.r#break.unwrap().duration,
@@ -204,7 +204,7 @@ impl Cli {
         let now = Local::now();
         time_data
             .read_from_file()?
-            .append(Status::Disconnect, now)?
+            .append(Status::Disconnect, now.to_utc())?
             .write_to_file()
     }
 
@@ -274,7 +274,7 @@ impl Cli {
             .build()?;
         let now = Local::now();
         time_data
-            .append(Status::End, now)?
+            .append(Status::End, now.to_utc())?
             .assert_break(
                 status.exp_break.unwrap().duration,
                 status.r#break.unwrap().duration,

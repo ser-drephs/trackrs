@@ -1,6 +1,6 @@
 use std::{ env, fs::OpenOptions, path::Path };
 
-use chrono::{ DateTime, Datelike, Local };
+use chrono::{ DateTime, Datelike, Utc };
 use config::{ Config, ConfigError, File, FileFormat, Map, Value, ValueKind };
 use serde::Serialize;
 use serde_derive::Deserialize;
@@ -164,7 +164,7 @@ impl Settings {
 }
 
 impl WorkPerDayInMinutes {
-    pub fn from(&self, date: DateTime<Local>) -> &u16 {
+    pub fn from(&self, date: DateTime<Utc>) -> &u16 {
         match date.weekday() {
             chrono::Weekday::Mon => &self.monday,
             chrono::Weekday::Tue => &self.tuesday,
@@ -176,7 +176,7 @@ impl WorkPerDayInMinutes {
         }
     }
 
-    pub fn from_date(&self, date: DateTime<Local>) -> &u16 {
+    pub fn from_date(&self, date: DateTime<Utc>) -> &u16 {
         match date.weekday() {
             chrono::Weekday::Mon => &self.monday,
             chrono::Weekday::Tue => &self.tuesday,

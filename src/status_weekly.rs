@@ -1,6 +1,6 @@
 use std::{ env, fmt::Display, ops::Mul };
 
-use chrono::{ DateTime, Duration, Local };
+use chrono::{ DateTime, Duration, Utc };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
@@ -12,7 +12,7 @@ pub struct StatusWeekly {
     total: StatusTime,
     overtime: StatusTime,
     decimal: f64,
-    entries: Vec<(DateTime<Local>, StatusDaily)>,
+    entries: Vec<(DateTime<Utc>, StatusDaily)>,
 }
 
 impl StatusWeekly {
@@ -123,7 +123,7 @@ impl StatusWeeklyBuilder {
             }
         };
 
-        let mut entries: Vec<(DateTime<Local>, StatusDaily)> = Vec::new();
+        let mut entries: Vec<(DateTime<Utc>, StatusDaily)> = Vec::new();
 
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
@@ -219,7 +219,7 @@ mod tests {
 
     use std::ops::Add;
 
-    use chrono::{ Local, TimeZone };
+    use chrono::TimeZone;
 
     use crate::{ BreakLimit, Entry, Status };
 
@@ -307,6 +307,8 @@ mod tests {
     }
 
     mod builder {
+        use chrono::Utc;
+
         use super::*;
 
         fn get_settings() -> Settings {
@@ -326,22 +328,22 @@ mod tests {
                 Entry {
                     id: 1,
                     status: Status::Connect,
-                    time: Local.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
+                    time: Utc.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
                 },
                 Entry {
                     id: 2,
                     status: Status::Break,
-                    time: Local.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap(),
+                    time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap(),
                 },
                 Entry {
                     id: 3,
                     status: Status::Connect,
-                    time: Local.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
+                    time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
                 },
                 Entry {
                     id: 4,
                     status: Status::End,
-                    time: Local.with_ymd_and_hms(
+                    time: Utc.with_ymd_and_hms(
                         2022,
                         3,
                         day.into(),
@@ -356,36 +358,36 @@ mod tests {
         fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> Vec<TimeData> {
             [
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap()),
                     entries: get_entries(7, 8, 30),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap()),
                     entries: get_entries(8, 8, 30),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap()),
                     entries: get_entries(9, one_day_end, 30),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap()),
                     entries: get_entries(10, 8, one_day_minute_off),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap()),
                     entries: get_entries(11, 8, 30),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
             ].to_vec()
@@ -477,35 +479,35 @@ mod tests {
             logger();
             let time_data = [
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap()),
                     entries: get_entries(7, 8, 45),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap()),
                     entries: get_entries(8, 8, 45),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap()),
                     entries: get_entries(9, 8, 45),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap()),
                     entries: get_entries(10, 10, 45),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
+                    date: Some(Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
             ].to_vec();
