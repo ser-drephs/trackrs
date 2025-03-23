@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::TrackerError;
@@ -11,7 +11,7 @@ pub struct Entry {
 
     pub(crate) status: Status,
 
-    pub(crate) time: DateTime<Local>,
+    pub(crate) time: DateTime<Utc>,
 }
 
 impl Default for Entry {
@@ -88,7 +88,7 @@ impl EntryBuilder {
         }
     }
 
-    pub fn time(&mut self, time: DateTime<Local>) -> &mut Self {
+    pub fn time(&mut self, time: DateTime<Utc>) -> &mut Self {
         self.inner.time = time;
         self.time_set = true;
         self
@@ -151,10 +151,10 @@ mod tests {
 
         #[test]
         fn should_deserialize() {
-            let expected = chrono::Local
+            let expected = chrono::Utc
                 .with_ymd_and_hms(2022, 2, 4,5, 27, 41).unwrap();
             let data =
-                "{\"id\":2,\"status\":\"Disconnect\",\"time\":\"2022-02-04T04:27:41.000000000+00:00\"}";
+                "{\"id\":2,\"status\":\"Disconnect\",\"time\":\"2022-02-04T05:27:41.000000000+00:00\"}";
             let entry = Entry::from_str(data).unwrap();
 
             assert_eq!(2, entry.id);

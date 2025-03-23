@@ -1,4 +1,4 @@
-use chrono::{ DateTime, Datelike, IsoWeek, Local, NaiveDate, TimeZone, Weekday };
+use chrono::{ DateTime, Datelike, IsoWeek, NaiveDate, TimeZone, Utc, Weekday };
 
 use crate::{ Folder, TimeData, TrackerError };
 
@@ -20,7 +20,7 @@ pub struct TimeDataWeeklyBuilder {
     folder: Option<Folder>,
     week: Option<i8>,
     year: Option<u16>,
-    dates: Option<Vec<DateTime<Local>>>,
+    dates: Option<Vec<DateTime<Utc>>>,
 }
 
 impl TimeDataWeeklyBuilder {
@@ -76,7 +76,7 @@ impl TimeDataWeeklyBuilder {
             let new_year = self.year.unwrap() - 1;
             self.week(
                 &week,
-                Local.with_ymd_and_hms(new_year.into(), 12, 31, 0, 0, 0).unwrap().iso_week()
+                Utc.with_ymd_and_hms(new_year.into(), 12, 31, 0, 0, 0).unwrap().iso_week()
             );
             self.year(new_year);
             self.assert_relative_week();
@@ -114,7 +114,7 @@ impl TimeDataWeeklyBuilder {
         let week = self.week.unwrap().try_into()?;
 
         let mut weekday = Weekday::Mon;
-        let mut dates: Vec<DateTime<Local>> = Default::default();
+        let mut dates: Vec<DateTime<Utc>> = Default::default();
 
         loop {
             let dt = NaiveDate::from_isoywd_opt(current_year, week, weekday)
@@ -122,7 +122,7 @@ impl TimeDataWeeklyBuilder {
                 .and_hms_opt(0, 0, 0)
                 .unwrap();
 
-            let d = Local.from_local_datetime(&dt).unwrap();
+            let d = Utc.from_utc_datetime(&dt);
             log::debug!("add {:?} {:?} to dates", weekday, d);
             let mut v = [d].to_vec();
             dates.append(v.as_mut());
@@ -154,7 +154,7 @@ mod tests {
 
         #[test]
         fn should_set() {
-            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder.year(2022).week(&2, d.iso_week());
 
@@ -164,7 +164,7 @@ mod tests {
 
         #[test]
         fn should_set_week_by_sub() {
-            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder.year(2022).week(&-2, d.iso_week());
 
@@ -174,7 +174,7 @@ mod tests {
 
         #[test]
         fn should_set_negative_week_by_sub() {
-            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder.year(2022).week(&-10, d.iso_week());
 
@@ -184,7 +184,7 @@ mod tests {
 
         #[test]
         fn should_set_current_week() {
-            let d = Local::now(); // required for test
+            let d = Utc::now(); // required for test
             let w: i8 = d.iso_week().week().try_into().unwrap();
 
             let mut builder = TimeDataWeekly::builder();
@@ -212,7 +212,7 @@ mod tests {
 
         #[test]
         fn negative_week() -> Result<(), TrackerError> {
-            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder.year(2022).week(&-60, d.iso_week()).assert_relative_week().set_dates()?;
             let dates = builder.dates.unwrap();
@@ -227,7 +227,7 @@ mod tests {
         #[test]
         fn should_set_dates() -> Result<(), TrackerError> {
             logger();
-            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder.year(2022).week(&-2, d.iso_week()).set_dates()?;
             assert!(builder.dates.is_some());
@@ -241,7 +241,7 @@ mod tests {
 
         #[test]
         fn no_folder() {
-            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             let res = builder.year(2012).week(&-2, d.iso_week()).build();
             assert!(res.is_err());
@@ -259,7 +259,7 @@ mod tests {
         #[test]
         fn should_set_files() -> Result<(), TrackerError> {
             logger();
-            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder
                 .folder(Folder::default())
@@ -280,7 +280,7 @@ mod tests {
         #[test]
         fn should_build() -> Result<(), TrackerError> {
             logger();
-            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             let t = builder.folder(Folder::default()).year(2022).week(&-2, d.iso_week()).build()?;
             assert_eq!(7, t.entries.len());

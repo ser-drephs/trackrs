@@ -1,6 +1,6 @@
-use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
+use std::ops::{ Add, AddAssign, Mul, Sub, SubAssign };
 
-use chrono::{DateTime, Duration, Local, Timelike};
+use chrono::{ DateTime, Duration, Local, Timelike, Utc };
 
 use crate::Entry;
 
@@ -47,12 +47,25 @@ impl std::fmt::Display for StatusTime {
 
 impl From<&Entry> for StatusTime {
     fn from(e: &Entry) -> Self {
-        let d = Duration::seconds(e.time.num_seconds_from_midnight().into());
+        let time = DateTime::<Local>::from(e.time);
+        let d = Duration::seconds(time.num_seconds_from_midnight().into());
         StatusTime {
             duration: d,
             minutes: d.num_minutes() % 60,
             hours: d.num_hours(),
             inner: Some(e.clone()),
+        }
+    }
+}
+
+impl From<DateTime<Utc>> for StatusTime {
+    fn from(time: DateTime<Utc>) -> Self {
+        let duration = Duration::seconds(time.num_seconds_from_midnight().into());
+        StatusTime {
+            duration,
+            minutes: duration.num_minutes() % 60,
+            hours: duration.num_hours(),
+            inner: None,
         }
     }
 }
@@ -152,7 +165,6 @@ impl Mul<i32> for StatusTime {
 
 #[cfg(test)]
 mod tests {
-
     use chrono::TimeZone;
 
     use crate::Status;
@@ -160,7 +172,6 @@ mod tests {
     use super::*;
 
     mod format {
-
         use super::*;
 
         #[test]
@@ -168,7 +179,7 @@ mod tests {
             let data = Entry {
                 id: 1,
                 status: Status::Connect,
-                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
+                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
             };
             let status = StatusTime::from(&data);
             assert_eq!("08:03", format!("{}", status));
@@ -176,21 +187,22 @@ mod tests {
     }
 
     mod from {
+        use chrono::Utc;
 
         use super::*;
 
         #[test]
         fn should_create_from_entry() {
             let d = Duration::seconds(
-                Local
-                    .with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap()
+                Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0)
+                    .unwrap()
                     .num_seconds_from_midnight()
-                    .into(),
+                    .into()
             );
             let entry = Entry {
                 id: 2,
                 status: Status::Disconnect,
-                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
+                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
             };
             let status = StatusTime::from(&entry);
             assert!(
@@ -212,7 +224,7 @@ mod tests {
 
         #[test]
         fn should_create_from_datetime() {
-            let l = DateTime::default();
+            let l = DateTime::<Utc>::default();
             let d = Duration::seconds(l.num_seconds_from_midnight().into());
             let status = StatusTime::from(l);
             assert!(status.duration.ge(&d));
@@ -231,7 +243,6 @@ mod tests {
     }
 
     mod ops {
-
         use std::cmp::Ordering;
 
         use super::*;
