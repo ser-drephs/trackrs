@@ -1,6 +1,5 @@
 use trackrs::TrackerError;
 
-#[cfg(not(tarpaulin_include))]
 fn main() -> Result<(), TrackerError> {
     use clap::Parser;
     use trackrs::{Cli, CliExecute};

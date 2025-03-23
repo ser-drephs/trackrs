@@ -1,7 +1,7 @@
-use std::{env, fs::OpenOptions, path::Path};
+use std::{ env, fs::OpenOptions, path::Path };
 
-use chrono::{Date, DateTime, Datelike, Local};
-use config::{Config, ConfigError, File, FileFormat, Map, Value, ValueKind};
+use chrono::{ DateTime, Datelike, Local };
+use config::{ Config, ConfigError, File, FileFormat, Map, Value, ValueKind };
 use serde::Serialize;
 use serde_derive::Deserialize;
 
@@ -35,14 +35,11 @@ impl From<BreakLimit> for config::Value {
         let mut m = Map::new();
         m.insert(
             "start".to_owned(),
-            Value::new(Some(&"start".to_owned()), ValueKind::U64(l.start.into())),
+            Value::new(Some(&"start".to_owned()), ValueKind::U64(l.start.into()))
         );
         m.insert(
             "minutes".to_owned(),
-            Value::new(
-                Some(&"minutes".to_owned()),
-                ValueKind::U64(l.minutes.into()),
-            ),
+            Value::new(Some(&"minutes".to_owned()), ValueKind::U64(l.minutes.into()))
         );
         Value::new(Some(&"BreakLimit".to_string()), ValueKind::Table(m))
     }
@@ -65,43 +62,31 @@ impl From<WorkPerDayInMinutes> for config::Value {
         let mut m = Map::new();
         m.insert(
             "monday".to_owned(),
-            Value::new(Some(&"monday".to_owned()), ValueKind::U64(w.monday.into())),
+            Value::new(Some(&"monday".to_owned()), ValueKind::U64(w.monday.into()))
         );
         m.insert(
             "tuesday".to_owned(),
-            Value::new(
-                Some(&"tuesday".to_owned()),
-                ValueKind::U64(w.tuesday.into()),
-            ),
+            Value::new(Some(&"tuesday".to_owned()), ValueKind::U64(w.tuesday.into()))
         );
         m.insert(
             "wednesday".to_owned(),
-            Value::new(
-                Some(&"wednesday".to_owned()),
-                ValueKind::U64(w.wednesday.into()),
-            ),
+            Value::new(Some(&"wednesday".to_owned()), ValueKind::U64(w.wednesday.into()))
         );
         m.insert(
             "thursday".to_owned(),
-            Value::new(
-                Some(&"thursday".to_owned()),
-                ValueKind::U64(w.thursday.into()),
-            ),
+            Value::new(Some(&"thursday".to_owned()), ValueKind::U64(w.thursday.into()))
         );
         m.insert(
             "friday".to_owned(),
-            Value::new(Some(&"friday".to_owned()), ValueKind::U64(w.friday.into())),
+            Value::new(Some(&"friday".to_owned()), ValueKind::U64(w.friday.into()))
         );
         m.insert(
             "saturday".to_owned(),
-            Value::new(
-                Some(&"saturday".to_owned()),
-                ValueKind::U64(w.saturday.into()),
-            ),
+            Value::new(Some(&"saturday".to_owned()), ValueKind::U64(w.saturday.into()))
         );
         m.insert(
             "sunday".to_owned(),
-            Value::new(Some(&"sunday".to_owned()), ValueKind::U64(w.sunday.into())),
+            Value::new(Some(&"sunday".to_owned()), ValueKind::U64(w.sunday.into()))
         );
         Value::new(Some(&"workperday".to_string()), ValueKind::Table(m))
     }
@@ -191,7 +176,7 @@ impl WorkPerDayInMinutes {
         }
     }
 
-    pub fn from_date(&self, date: Date<Local>) -> &u16 {
+    pub fn from_date(&self, date: DateTime<Local>) -> &u16 {
         match date.weekday() {
             chrono::Weekday::Mon => &self.monday,
             chrono::Weekday::Tue => &self.tuesday,
@@ -208,10 +193,9 @@ impl WorkPerDayInMinutes {
 mod tests {
     use std::fs::OpenOptions;
 
-    use crate::{BreakLimit, Settings, TrackerError, WorkPerDayInMinutes};
+    use crate::{ BreakLimit, Settings, TrackerError, WorkPerDayInMinutes };
 
     mod settings {
-
         use super::*;
 
         #[test]
@@ -243,8 +227,7 @@ mod tests {
                         start: 2 * 60,
                         minutes: 15,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     monday: 6 * 60,
                     tuesday: 7 * 60,
@@ -271,10 +254,7 @@ mod tests {
 
             assert_eq!(expected_settings.folder, settings.folder);
             assert_eq!(expected_settings.limits.len(), settings.limits.len());
-            assert_eq!(
-                expected_settings.threshold_limits,
-                settings.threshold_limits
-            );
+            assert_eq!(expected_settings.threshold_limits, settings.threshold_limits);
             assert!(settings.limits.contains(&expected_settings.limits[0]));
             assert!(settings.limits.contains(&expected_settings.limits[1]));
             Ok(())

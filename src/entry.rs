@@ -152,10 +152,9 @@ mod tests {
         #[test]
         fn should_deserialize() {
             let expected = chrono::Local
-                .ymd(2022, 2, 4)
-                .and_hms_nano(5, 27, 41, 200000000);
+                .with_ymd_and_hms(2022, 2, 4,5, 27, 41).unwrap();
             let data =
-                "{\"id\":2,\"status\":\"Disconnect\",\"time\":\"2022-02-04T05:27:41.200000000+00:00\"}";
+                "{\"id\":2,\"status\":\"Disconnect\",\"time\":\"2022-02-04T04:27:41.000000000+00:00\"}";
             let entry = Entry::from_str(data).unwrap();
 
             assert_eq!(2, entry.id);
