@@ -1,10 +1,10 @@
-use std::{env, fmt::Display, ops::Mul};
+use std::{ env, fmt::Display, ops::Mul };
 
-use chrono::{Date, Duration, Local};
+use chrono::{ DateTime, Duration, Local };
 use colored::Colorize;
-use prettytable::{format, Table};
+use prettytable::{ format, Table };
 
-use crate::{Settings, StatusDaily, StatusTime, TimeData, TimeDataWeekly, TrackerError};
+use crate::{ Settings, StatusDaily, StatusTime, TimeData, TimeDataWeekly, TrackerError };
 
 #[derive(Clone, Default, Debug)]
 pub struct StatusWeekly {
@@ -12,7 +12,7 @@ pub struct StatusWeekly {
     total: StatusTime,
     overtime: StatusTime,
     decimal: f64,
-    entries: Vec<(Date<Local>, StatusDaily)>,
+    entries: Vec<(DateTime<Local>, StatusDaily)>,
 }
 
 impl StatusWeekly {
@@ -32,14 +32,16 @@ impl StatusWeekly {
 
         log::trace!("set table titels");
 
-        table.set_titles(row![
-            format!("{:width$}", "Date"),
-            format!("{:width$}", "Start"),
-            format!("{:width$}", "End"),
-            format!("{:width$}", "Break"),
-            format!("{:width$}", "Worktime"),
-            format!("{:width$}", "Overtime"),
-        ]);
+        table.set_titles(
+            row![
+                format!("{:width$}", "Date"),
+                format!("{:width$}", "Start"),
+                format!("{:width$}", "End"),
+                format!("{:width$}", "Break"),
+                format!("{:width$}", "Worktime"),
+                format!("{:width$}", "Overtime")
+            ]
+        );
 
         fn status_unwrap(status: Option<StatusTime>) -> StatusTime {
             match status {
@@ -51,28 +53,32 @@ impl StatusWeekly {
         log::trace!("iterate over entries");
 
         self.entries.iter().for_each(|(date, status)| {
-            table.add_row(row![
-                date.to_owned().format("%a %d %b"),
-                format!("{}", status_unwrap(status.start.to_owned())),
-                format!("{}", status_unwrap(status.end.to_owned())),
-                format!("{}", status_unwrap(status.r#break.to_owned())),
-                format!("{}", status.worktime),
-                format!("{}", status.overtime),
-            ]);
+            table.add_row(
+                row![
+                    date.to_owned().format("%a %d %b"),
+                    format!("{}", status_unwrap(status.start.to_owned())),
+                    format!("{}", status_unwrap(status.end.to_owned())),
+                    format!("{}", status_unwrap(status.r#break.to_owned())),
+                    format!("{}", status.worktime),
+                    format!("{}", status.overtime)
+                ]
+            );
         });
 
         table.add_empty_row();
 
         log::trace!("add summary row");
 
-        table.add_row(row![
-            format!("Total week {}", self.week),
-            "",
-            "",
-            self.decimal,
-            self.total,
-            self.overtime
-        ]);
+        table.add_row(
+            row![
+                format!("Total week {}", self.week),
+                "",
+                "",
+                self.decimal,
+                self.total,
+                self.overtime
+            ]
+        );
 
         if env::var("RUST_TEST").is_err() {
             log::trace!("print table to std");
@@ -104,7 +110,7 @@ impl StatusWeeklyBuilder {
             None => {
                 return Err(TrackerError::StatusWeeklyError {
                     message: "settings not defined".to_owned(),
-                })
+                });
             }
         };
 
@@ -113,11 +119,11 @@ impl StatusWeeklyBuilder {
             None => {
                 return Err(TrackerError::StatusWeeklyError {
                     message: "data not defined".to_owned(),
-                })
+                });
             }
         };
 
-        let mut entries: Vec<(Date<Local>, StatusDaily)> = Vec::new();
+        let mut entries: Vec<(DateTime<Local>, StatusDaily)> = Vec::new();
 
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
@@ -126,31 +132,22 @@ impl StatusWeeklyBuilder {
             log::trace!("processing: {:?}", d);
             let mut b = StatusDaily::builder();
             if !d.entries.is_empty() {
-                let s = b
-                    .data(d.to_owned())
-                    .settings(settings.clone())
-                    .build()
-                    .unwrap();
-                log::info!(
-                    "got {} working time and {} overtime",
-                    s.worktime,
-                    s.overtime
-                );
+                let s = b.data(d.to_owned()).settings(settings.clone()).build().unwrap();
+                log::info!("got {} working time and {} overtime", s.worktime, s.overtime);
                 entries.append(&mut [(d.date.unwrap().to_owned(), s.to_owned())].to_vec());
                 total += s.worktime;
                 overtime += s.overtime;
             } else {
-                let expected = self
-                    .settings
+                let expected = self.settings
                     .as_ref()
                     .unwrap()
-                    .workperday
-                    .from_date(d.date.unwrap());
+                    .workperday.from_date(d.date.unwrap());
                 if expected >= &0 {
                     let exh = expected.to_owned() as i64;
                     overtime -= StatusTime::from(Duration::minutes(exh));
-                    let missing_status =
-                        StatusDaily::builder().empty_with_overtime(overtime.to_owned());
+                    let missing_status = StatusDaily::builder().empty_with_overtime(
+                        overtime.to_owned()
+                    );
                     entries.append(&mut [(d.date.unwrap().to_owned(), missing_status)].to_vec());
                 }
             }
@@ -189,12 +186,12 @@ impl Display for StatusWeekly {
 
         let line1 = format!(
             " {:width$} | {:width$} | {:width$} | {:width$}",
-            "Week", "Work time", "Overtime", "Decimal",
+            "Week",
+            "Work time",
+            "Overtime",
+            "Decimal"
         );
-        let line2 = format!(
-            " {0:->width$} | {0:->width$} | {0:->width$} | {0:->width$}",
-            "",
-        );
+        let line2 = format!(" {0:->width$} | {0:->width$} | {0:->width$} | {0:->width$}", "");
 
         let ot_fmt = match overtime.partial_cmp(&zero_dr.into()).unwrap() {
             std::cmp::Ordering::Less => format!("-{}", overtime.mul(-1)).bright_red(),
@@ -207,7 +204,10 @@ impl Display for StatusWeekly {
 
         let line3 = format!(
             " {0:width$} | {1: >width$} | {2: >width$} | {3: >width$}",
-            self.week, t_fmt, ot_fmt, dc_fmt,
+            self.week,
+            t_fmt,
+            ot_fmt,
+            dc_fmt
         );
         write!(f, "{}\n{}\n{}\n", line1, line2, line3)
     }
@@ -215,14 +215,13 @@ impl Display for StatusWeekly {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     use std::ops::Add;
 
-    use chrono::{Local, TimeZone};
+    use chrono::{ Local, TimeZone };
 
-    use crate::{BreakLimit, Entry, Status};
+    use crate::{ BreakLimit, Entry, Status };
 
     fn logger() {
         // std::env::set_var("RUST_LOG", "trace");
@@ -234,7 +233,6 @@ mod tests {
     }
 
     mod format {
-
         use colored::control::ShouldColorize;
 
         use super::*;
@@ -253,14 +251,14 @@ mod tests {
 
             if ShouldColorize::from_env().should_colorize() {
                 assert_eq!(
-                " Week       | Work time  | Overtime   | Decimal   \n ---------- | ---------- | ---------- | ----------\n         23 |      41:22 | \u{1b}[93m    +01:22\u{1b}[0m |      42.50\n",
-                format!("{}", s)
-            );
+                    " Week       | Work time  | Overtime   | Decimal   \n ---------- | ---------- | ---------- | ----------\n         23 |      41:22 | \u{1b}[93m    +01:22\u{1b}[0m |      42.50\n",
+                    format!("{}", s)
+                );
             } else {
                 assert_eq!(
-                " Week       | Work time  | Overtime   | Decimal   \n ---------- | ---------- | ---------- | ----------\n         23 |      41:22 |     +01:22 |      42.50\n",
-                format!("{}", s)
-            );
+                    " Week       | Work time  | Overtime   | Decimal   \n ---------- | ---------- | ---------- | ----------\n         23 |      41:22 |     +01:22 |      42.50\n",
+                    format!("{}", s)
+                );
             }
         }
 
@@ -296,29 +294,29 @@ mod tests {
 
             if ShouldColorize::from_env().should_colorize() {
                 assert_eq!(
-                " Week       | Work time  | Overtime   | Decimal   \n ---------- | ---------- | ---------- | ----------\n         23 |      38:22 | \u{1b}[91m    -01:38\u{1b}[0m |      38.30\n",
-                format!("{}", s)
-            );
+                    " Week       | Work time  | Overtime   | Decimal   \n ---------- | ---------- | ---------- | ----------\n         23 |      38:22 | \u{1b}[91m    -01:38\u{1b}[0m |      38.30\n",
+                    format!("{}", s)
+                );
             } else {
                 assert_eq!(
-                " Week       | Work time  | Overtime   | Decimal   \n ---------- | ---------- | ---------- | ----------\n         23 |      38:22 |     -01:38 |      38.30\n",
-                format!("{}", s)
-            );
+                    " Week       | Work time  | Overtime   | Decimal   \n ---------- | ---------- | ---------- | ----------\n         23 |      38:22 |     -01:38 |      38.30\n",
+                    format!("{}", s)
+                );
             }
         }
     }
 
     mod builder {
-
         use super::*;
 
         fn get_settings() -> Settings {
             Settings {
-                limits: [BreakLimit {
-                    start: 8 * 60,
-                    minutes: 45,
-                }]
-                .to_vec(),
+                limits: [
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                ].to_vec(),
                 ..Default::default()
             }
         }
@@ -328,80 +326,83 @@ mod tests {
                 Entry {
                     id: 1,
                     status: Status::Connect,
-                    time: Local.ymd(2022, 3, day.into()).and_hms(0, 0, 0),
+                    time: Local.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
                 },
                 Entry {
                     id: 2,
                     status: Status::Break,
-                    time: Local.ymd(2022, 3, day.into()).and_hms(4, 0, 0),
+                    time: Local.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap(),
                 },
                 Entry {
                     id: 3,
                     status: Status::Connect,
-                    time: Local.ymd(2022, 3, day.into()).and_hms(4, 30, 0),
+                    time: Local.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
                 },
                 Entry {
                     id: 4,
                     status: Status::End,
-                    time: Local
-                        .ymd(2022, 3, day.into())
-                        .and_hms(end.into(), end_minutes.into(), 0),
+                    time: Local.with_ymd_and_hms(
+                        2022,
+                        3,
+                        day.into(),
+                        end.into(),
+                        end_minutes.into(),
+                        0
+                    ).unwrap(),
                 },
-            ]
-            .to_vec()
+            ].to_vec()
         }
 
         fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> Vec<TimeData> {
             [
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 7)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap()),
                     entries: get_entries(7, 8, 30),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 8)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap()),
                     entries: get_entries(8, 8, 30),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 9)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap()),
                     entries: get_entries(9, one_day_end, 30),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 10)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap()),
                     entries: get_entries(10, 8, one_day_minute_off),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 11)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap()),
                     entries: get_entries(11, 8, 30),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 12)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 13)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
-            ]
-            .to_vec()
+            ].to_vec()
         }
 
         #[test]
         fn should_calculate_overtime() -> Result<(), TrackerError> {
             logger();
-            let timedata = get_time_data(10, 42);
+            let time_data = get_time_data(10, 42);
             let settings = get_settings();
-            let timedata_weekly = TimeDataWeekly {
-                entries: timedata,
+            let time_data_weekly = TimeDataWeekly {
+                entries: time_data,
                 week: 10,
             };
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(timedata_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build()?;
 
             log::debug!("{}", s);
 
@@ -420,15 +421,15 @@ mod tests {
         #[test]
         fn should_calculate_on_point() -> Result<(), TrackerError> {
             logger();
-            let timedata = get_time_data(9, 45);
+            let time_data = get_time_data(9, 45);
             let settings = get_settings();
-            let timedata_weekly = TimeDataWeekly {
-                entries: timedata,
+            let time_data_weekly = TimeDataWeekly {
+                entries: time_data,
                 week: 10,
             };
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(timedata_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build()?;
 
             log::debug!("{}", s);
 
@@ -447,15 +448,15 @@ mod tests {
         #[test]
         fn should_calculate_less() -> Result<(), TrackerError> {
             logger();
-            let timedata = get_time_data(6, 17);
+            let time_data = get_time_data(6, 17);
             let settings = get_settings();
-            let timedata_weekly = TimeDataWeekly {
-                entries: timedata,
+            let time_data_weekly = TimeDataWeekly {
+                entries: time_data,
                 week: 10,
             };
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(timedata_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build()?;
 
             log::debug!("{}", s);
 
@@ -474,49 +475,48 @@ mod tests {
         #[test]
         fn should_calculate_with_missing_day() -> Result<(), TrackerError> {
             logger();
-            let timedata = [
+            let time_data = [
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 7)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap()),
                     entries: get_entries(7, 8, 45),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 8)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap()),
                     entries: get_entries(8, 8, 45),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 9)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap()),
                     entries: get_entries(9, 8, 45),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 10)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap()),
                     entries: get_entries(10, 10, 45),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 11)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 12)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
                 TimeData {
-                    date: Some(Local.ymd(2022, 3, 13)),
+                    date: Some(Local.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
-            ]
-            .to_vec();
+            ].to_vec();
             let settings = get_settings();
-            let timedata_weekly = TimeDataWeekly {
-                entries: timedata,
+            let time_data_weekly = TimeDataWeekly {
+                entries: time_data,
                 week: 10,
             };
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(timedata_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build()?;
 
             log::debug!("{}", s);
 
@@ -536,15 +536,15 @@ mod tests {
         fn should_not_crash_on_format_table() -> Result<(), TrackerError> {
             logger();
             test_env();
-            let timedata = get_time_data(10, 42);
+            let time_data = get_time_data(10, 42);
             let settings = get_settings();
-            let timedata_weekly = TimeDataWeekly {
-                entries: timedata,
+            let time_data_weekly = TimeDataWeekly {
+                entries: time_data,
                 week: 10,
             };
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(timedata_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build()?;
             s.format_table();
             Ok(())
         }

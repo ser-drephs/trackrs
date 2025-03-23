@@ -48,7 +48,7 @@ impl test_context::TestContext for IntegrationContext {
 fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
     let folder = ctx.temp_dir.path().join("trackrs");
 
-    let s = Cli::from_iter(["trackrs", "start"].iter());
+    let s = Cli::parse_from(["trackrs", "start"].iter());
     s.execute().unwrap();
 
     let f = fs::read_dir(&folder).unwrap();
@@ -58,13 +58,13 @@ fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
         .unwrap();
     assert_eq!(&1, &files.len());
 
-    let b = Cli::from_iter(["trackrs", "break"].iter());
+    let b = Cli::parse_from(["trackrs", "break"].iter());
     b.execute().unwrap();
 
-    let c = Cli::from_iter(["trackrs", "continue"].iter());
+    let c = Cli::parse_from(["trackrs", "continue"].iter());
     c.execute().unwrap();
 
-    let e = Cli::from_iter(["trackrs", "end"].iter());
+    let e = Cli::parse_from(["trackrs", "end"].iter());
     e.execute().unwrap();
 
     let file = files.first().unwrap();
@@ -87,7 +87,7 @@ fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
 fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
     let folder = ctx.temp_dir.path().join("trackrs");
 
-    let s = Cli::from_iter(["trackrs", "start"].iter());
+    let s = Cli::parse_from(["trackrs", "start"].iter());
     s.execute().unwrap();
 
     let f = fs::read_dir(&folder).unwrap();
@@ -97,10 +97,10 @@ fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
         .unwrap();
     assert_eq!(&1, &files.len());
 
-    let b = Cli::from_iter(["trackrs", "break"].iter());
+    let b = Cli::parse_from(["trackrs", "break"].iter());
     b.execute().unwrap();
 
-    let c = Cli::from_iter(["trackrs", "continue"].iter());
+    let c = Cli::parse_from(["trackrs", "continue"].iter());
     c.execute().unwrap();
 
     let file = files.first().unwrap();
@@ -123,7 +123,7 @@ fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
 fn takeover_subtracts_from_today(ctx: &mut IntegrationContext) {
     let folder = ctx.temp_dir.path().join("trackrs");
 
-    let s = Cli::from_iter(["trackrs", "start"].iter());
+    let s = Cli::parse_from(["trackrs", "start"].iter());
     s.execute().unwrap();
 
     let f = fs::read_dir(&folder).unwrap();
@@ -133,10 +133,10 @@ fn takeover_subtracts_from_today(ctx: &mut IntegrationContext) {
         .unwrap();
     assert_eq!(&1, &files.len());
 
-    let b = Cli::from_iter(["trackrs", "break"].iter());
+    let b = Cli::parse_from(["trackrs", "break"].iter());
     b.execute().unwrap();
 
-    let c = Cli::from_iter(["trackrs", "continue"].iter());
+    let c = Cli::parse_from(["trackrs", "continue"].iter());
     c.execute().unwrap();
 
     let file = files.first().unwrap();

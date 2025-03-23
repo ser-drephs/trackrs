@@ -168,7 +168,7 @@ mod tests {
             let data = Entry {
                 id: 1,
                 status: Status::Connect,
-                time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
+                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
             };
             let status = StatusTime::from(&data);
             assert_eq!("08:03", format!("{}", status));
@@ -183,15 +183,14 @@ mod tests {
         fn should_create_from_entry() {
             let d = Duration::seconds(
                 Local
-                    .ymd(2022, 2, 2)
-                    .and_hms(8, 3, 0)
+                    .with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap()
                     .num_seconds_from_midnight()
                     .into(),
             );
             let entry = Entry {
                 id: 2,
                 status: Status::Disconnect,
-                time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
+                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
             };
             let status = StatusTime::from(&entry);
             assert!(

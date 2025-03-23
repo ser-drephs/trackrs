@@ -1,9 +1,9 @@
-use std::ops::{Add, Mul};
+use std::ops::{ Add, Mul };
 
-use chrono::{DateTime, Duration, Local};
+use chrono::{ DateTime, Duration, Local };
 use colored::Colorize;
 
-use crate::{Settings, Status, StatusTime, TimeData, TrackerError};
+use crate::{ Settings, Status, StatusTime, TimeData, TrackerError };
 
 #[derive(Default, Clone, Debug)]
 pub struct StatusDaily {
@@ -44,13 +44,12 @@ impl StatusDaily {
     }
 
     fn set_start(&mut self) -> &mut Self {
-        self.start = match self
-            .data
-            .as_ref()
-            .unwrap()
-            .entries
-            .iter()
-            .find(|x| x.status == Status::Connect)
+        self.start = match
+            self.data
+                .as_ref()
+                .unwrap()
+                .entries.iter()
+                .find(|x| x.status == Status::Connect)
         {
             Some(c) => {
                 log::info!("connect at: {}", c.time.time());
@@ -66,24 +65,23 @@ impl StatusDaily {
 
     fn set_end(&mut self) -> &mut Self {
         // set end time
-        match self
-            .data
-            .as_ref()
-            .unwrap()
-            .entries
-            .iter()
-            .find(|x| x.status == Status::End)
+        match
+            self.data
+                .as_ref()
+                .unwrap()
+                .entries.iter()
+                .find(|x| x.status == Status::End)
         {
             Some(c) => {
                 log::info!("end at: {}", c.time.time());
-                log::info!("finished reading time data for {}", c.time.date());
+                log::info!("finished reading time data for {}", c.time.date_naive());
                 self.end = Some(c.into());
             }
             None => {
                 log::debug!("no end entry found threrefore create a temporary one");
-                self.temp_end = Some(StatusTime::now())
+                self.temp_end = Some(StatusTime::now());
             }
-        };
+        }
         self
     }
 
@@ -142,10 +140,7 @@ impl StatusDaily {
 
             // get whatever time is heigher, either expected working time for the day or the online time.
             let (tft, t) = if o >= &StatusTime::from(w) {
-                (
-                    o.to_owned().duration,
-                    Duration::minutes(s.threshold_limits.to_owned().into()),
-                )
+                (o.to_owned().duration, Duration::minutes(s.threshold_limits.to_owned().into()))
             } else {
                 (w, Duration::seconds(0))
             };
@@ -153,9 +148,8 @@ impl StatusDaily {
             let mut bl = s.limits.to_owned();
             bl.sort_by(|x, y| y.start.partial_cmp(&x.start).unwrap());
 
-            self.exp_break = match bl
-                .iter_mut()
-                .find(|x| tft - t >= Duration::minutes(x.start.to_owned().into()))
+            self.exp_break = match
+                bl.iter_mut().find(|x| tft - t >= Duration::minutes(x.start.to_owned().into()))
             {
                 Some(eb) => {
                     log::debug!("should take a break of {}", eb.minutes);
@@ -318,9 +312,7 @@ impl std::fmt::Display for StatusDaily {
 
             if f_break.is_some() {
                 let e_break = StatusTime::from(
-                    self.f_break
-                        .unwrap()
-                        .add(self.r#break.to_owned().unwrap().duration),
+                    self.f_break.unwrap().add(self.r#break.to_owned().unwrap().duration)
                 );
                 fmt_break_report = format!(
                     "\n{:width$}{} - {}",
@@ -328,8 +320,8 @@ impl std::fmt::Display for StatusDaily {
                     f_break.unwrap(),
                     e_break,
                     width = 13
-                )
-            };
+                );
+            }
 
             format!("{}", end.unwrap()).bright_green()
         } else if temp_end.is_some() && temp_end.as_ref().unwrap() >= &self.est_end {
@@ -341,13 +333,7 @@ impl std::fmt::Display for StatusDaily {
             format!("{:0>2}:{:0>2} (est.)", hours, self.est_end.minutes).bright_yellow()
         };
 
-        let line1 = format!(
-            "{:width$}{} ({})",
-            "Work time:",
-            worktime,
-            rm_fmt,
-            width = 13
-        );
+        let line1 = format!("{:width$}{} ({})", "Work time:", worktime, rm_fmt, width = 13);
         let line2 = format!(
             "{:width$}{}",
             "Online time:",
@@ -358,23 +344,25 @@ impl std::fmt::Display for StatusDaily {
         let line4 = fmt_break_report;
         let line5 = format!("{:width$}{}", "Started:", start, width = 13);
         let line6 = format!("{:width$}{}", "End:", end_fmt, width = 13);
-        write!(
-            f,
-            "{}\n{}\n{}\n{}\n{}\n{}",
-            line1, line2, line3, line4, line5, line6
-        )
+        write!(f, "{}\n{}\n{}\n{}\n{}\n{}", line1, line2, line3, line4, line5, line6)
     }
 }
 
 #[cfg(test)]
 mod tests {
-
     use std::ops::Add;
 
-    use chrono::{DateTime, Duration, Local, TimeZone};
+    use chrono::{ DateTime, Duration, Local, TimeZone };
 
     use crate::{
-        BreakLimit, Entry, Settings, Status, StatusDaily, StatusTime, TimeData, WorkPerDayInMinutes,
+        BreakLimit,
+        Entry,
+        Settings,
+        Status,
+        StatusDaily,
+        StatusTime,
+        TimeData,
+        WorkPerDayInMinutes,
     };
 
     use indoc::indoc;
@@ -389,7 +377,6 @@ mod tests {
     }
 
     mod display {
-
         use super::*;
 
         #[test]
@@ -400,41 +387,37 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 3, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 23, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 23, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(14, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 14, 45, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
-                limits: [BreakLimit {
-                    start: 6 * 60,
-                    minutes: 30,
-                }]
-                .to_vec(),
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                ].to_vec(),
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
 
@@ -475,40 +458,36 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 3, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 43, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 43, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(17, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 17, 45, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
-                limits: [BreakLimit {
-                    start: 6 * 60,
-                    minutes: 30,
-                }]
-                .to_vec(),
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                ].to_vec(),
                 ..Default::default()
             };
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
 
@@ -549,41 +528,37 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 3, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 33, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 33, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(16, 33, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 16, 33, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
-                limits: [BreakLimit {
-                    start: 6 * 60,
-                    minutes: 30,
-                }]
-                .to_vec(),
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                ].to_vec(),
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
 
@@ -620,23 +595,26 @@ mod tests {
         fn status_daily_temp_end() {
             logger();
             let local = chrono::Local::now().sub(Duration::minutes(35));
-            let est_end =
-                StatusTime::from(local.add(Duration::hours(8).add(Duration::minutes(30))));
+            let est_end = StatusTime::from(
+                local.add(Duration::hours(8).add(Duration::minutes(30)))
+            );
             let data = TimeData {
-                entries: [Entry {
-                    id: 1,
-                    status: Status::Connect,
-                    time: local,
-                }]
-                .to_vec(),
+                entries: [
+                    Entry {
+                        id: 1,
+                        status: Status::Connect,
+                        time: local,
+                    },
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
-                limits: [BreakLimit {
-                    start: 6 * 60,
-                    minutes: 30,
-                }]
-                .to_vec(),
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     saturday: 8 * 60,
                     sunday: 8 * 60,
@@ -645,11 +623,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
 
@@ -665,10 +639,9 @@ mod tests {
                 assert_eq!("Break:       00:00 (\u{1b}[91m-00:30\u{1b}[0m)", lines[2]);
 
                 assert!(
-                    format!("{}", status).contains(&format!(
-                        "End:         \u{1b}[93m{} (est.)\u{1b}[0m",
-                        est_end
-                    )),
+                    format!("{}", status).contains(
+                        &format!("End:         \u{1b}[93m{} (est.)\u{1b}[0m", est_end)
+                    ),
                     "Expected 'estimated end' to be: {}, but found: {}",
                     est_end,
                     status.est_end
@@ -699,24 +672,24 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 22, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 16, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
             let settings = Settings {
-                limits: [BreakLimit {
-                    start: 8 * 60,
-                    minutes: 45,
-                }]
-                .to_vec(),
+                limits: [
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     wednesday: 6 * 60,
                     ..Default::default()
@@ -724,11 +697,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
 
@@ -767,29 +736,29 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 22, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 16, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0).unwrap(),
                     },
                     Entry {
                         id: 4,
                         status: Status::Takeover,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 46, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 46, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
             let settings = Settings {
-                limits: [BreakLimit {
-                    start: 8 * 60,
-                    minutes: 45,
-                }]
-                .to_vec(),
+                limits: [
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     wednesday: 6 * 60,
                     ..Default::default()
@@ -797,11 +766,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
 
@@ -834,7 +799,6 @@ mod tests {
     }
 
     mod builder {
-
         use super::*;
 
         #[test]
@@ -844,15 +808,14 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(15, 6, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let status = StatusDaily::builder()
@@ -867,19 +830,16 @@ mod tests {
         #[should_panic]
         fn no_connect() {
             let data = TimeData {
-                entries: [Entry {
-                    id: 1,
-                    status: Status::Disconnect,
-                    time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
-                }]
-                .to_vec(),
+                entries: [
+                    Entry {
+                        id: 1,
+                        status: Status::Disconnect,
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
+                    },
+                ].to_vec(),
                 ..Default::default()
             };
-            StatusDaily::builder()
-                .data(data)
-                .settings(Settings::default())
-                .build()
-                .unwrap();
+            StatusDaily::builder().data(data).settings(Settings::default()).build().unwrap();
         }
 
         #[test]
@@ -889,20 +849,19 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 10, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 10, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(10, 10, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 10, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -919,12 +878,13 @@ mod tests {
         #[test]
         fn should_set_temporary_end() {
             let data = TimeData {
-                entries: [Entry {
-                    id: 2,
-                    status: Status::Connect,
-                    time: DateTime::default(),
-                }]
-                .to_vec(),
+                entries: [
+                    Entry {
+                        id: 2,
+                        status: Status::Connect,
+                        time: DateTime::default(),
+                    },
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -946,20 +906,19 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 10, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 40, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -981,55 +940,54 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 10, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 40, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 40, 5),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 5).unwrap(),
                     },
                     Entry {
                         id: 4,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0).unwrap(),
                     },
                     Entry {
                         id: 5,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(9, 40, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 0).unwrap(),
                     },
                     Entry {
                         id: 6,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(9, 40, 55),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 55).unwrap(),
                     },
                     Entry {
                         id: 7,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(9, 55, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 9, 55, 0).unwrap(),
                     },
                     Entry {
                         id: 8,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(10, 0, 55),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 55).unwrap(),
                     },
                     Entry {
                         id: 9,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(10, 0, 56),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 56).unwrap(),
                     },
                     Entry {
                         id: 10,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(10, 1, 56),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 10, 1, 56).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -1051,24 +1009,19 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 3, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(15, 6, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
             let settings = Settings::default();
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             assert_eq!(7, status.online.as_ref().unwrap().hours);
             assert_eq!(3, status.online.as_ref().unwrap().minutes);
@@ -1081,30 +1034,29 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(0, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 0, 1),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap(),
                     },
                     Entry {
                         id: 4,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 45, 0).unwrap(),
                     },
                     Entry {
                         id: 5,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(5, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -1122,19 +1074,14 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     wednesday: 8 * 60,
                     ..Default::default()
                 },
                 ..Default::default()
             };
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
             let expected_end = Duration::hours(8).add(Duration::minutes(45));
             assert_eq!(expected_end, status.est_end.duration);
         }
@@ -1146,30 +1093,29 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(0, 00, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 0, 1),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap(),
                     },
                     Entry {
                         id: 4,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 15, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0).unwrap(),
                     },
                     Entry {
                         id: 5,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(5, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -1187,8 +1133,7 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     wednesday: 8 * 60,
                     ..Default::default()
@@ -1196,11 +1141,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             let expected_end = Duration::hours(8).add(Duration::minutes(45));
             assert_eq!(expected_end, status.est_end.duration);
@@ -1213,30 +1154,29 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(0, 00, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 0, 1),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap(),
                     },
                     Entry {
                         id: 4,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(4, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 5,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(5, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -1254,8 +1194,7 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     wednesday: 8 * 60,
                     ..Default::default()
@@ -1263,11 +1202,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
             let expected_end = Duration::hours(9);
             assert_eq!(expected_end, status.est_end.duration);
         }
@@ -1279,25 +1214,24 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(0, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 0, 1),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap(),
                     },
                     Entry {
                         id: 4,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 15, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0).unwrap(),
                     },
                     Entry {
                         id: 5,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(5, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -1315,8 +1249,7 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     wednesday: 8 * 60,
                     ..Default::default()
@@ -1324,11 +1257,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
             let expected_end = Duration::hours(8).add(Duration::minutes(45));
             assert_eq!(expected_end, status.est_end.duration);
         }
@@ -1340,25 +1269,24 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(0, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 0, 1),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap(),
                     },
                     Entry {
                         id: 4,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 20, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 20, 0).unwrap(),
                     },
                     Entry {
                         id: 5,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(5, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -1372,8 +1300,7 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     wednesday: 6 * 60,
                     ..Default::default()
@@ -1382,14 +1309,11 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
             let expected_end = Duration::hours(6);
             assert_eq!(
-                expected_end, status.est_end.duration,
+                expected_end,
+                status.est_end.duration,
                 "expected end at 6:00 but got {}",
                 status.est_end
             );
@@ -1402,25 +1326,24 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(0, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Disconnect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 0, 1),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap(),
                     },
                     Entry {
                         id: 4,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(3, 20, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 3, 20, 0).unwrap(),
                     },
                     Entry {
                         id: 5,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(5, 45, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
@@ -1438,8 +1361,7 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     wednesday: 7 * 60,
                     ..Default::default()
@@ -1447,11 +1369,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
             let expected_end = Duration::hours(7).add(Duration::minutes(30));
             assert_eq!(expected_end, status.est_end.duration);
         }
@@ -1463,24 +1381,24 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 22, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 16, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
             let settings = Settings {
-                limits: [BreakLimit {
-                    start: 8 * 60,
-                    minutes: 45,
-                }]
-                .to_vec(),
+                limits: [
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     wednesday: 6 * 60,
                     ..Default::default()
@@ -1488,14 +1406,11 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
             let expected_end = Duration::hours(14).add(Duration::minutes(22));
             assert_eq!(
-                expected_end, status.est_end.duration,
+                expected_end,
+                status.est_end.duration,
                 "expected to end at 14:22 but got {}",
                 status.est_end
             );
@@ -1509,7 +1424,6 @@ mod tests {
     }
 
     mod logic {
-
         use super::*;
 
         #[test]
@@ -1520,58 +1434,58 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 7).and_hms(8, 55, 46),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 7).and_hms(8, 56, 15),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 8, 56, 15).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 7).and_hms(12, 25, 57),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 25, 57).unwrap(),
                     },
                     Entry {
                         id: 4,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 7).and_hms(12, 26, 46),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 26, 46).unwrap(),
                     },
                     Entry {
                         id: 5,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 7).and_hms(12, 28, 7),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 28, 7).unwrap(),
                     },
                     Entry {
                         id: 6,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 7).and_hms(12, 58, 7),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 58, 7).unwrap(),
                     },
                     Entry {
                         id: 7,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 7).and_hms(17, 0, 7),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 17, 0, 7).unwrap(),
                     },
                     Entry {
                         id: 8,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 7).and_hms(17, 15, 7),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 17, 15, 7).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 7).and_hms(18, 27, 40),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 18, 27, 40).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
-                limits: [BreakLimit {
-                    start: 8 * 60,
-                    minutes: 30,
-                }]
-                .to_vec(),
+                limits: [
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 30,
+                    },
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     monday: 510,
                     ..Default::default()
@@ -1579,11 +1493,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
 
@@ -1603,15 +1513,14 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 7).and_hms(8, 22, 11),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 7).and_hms(12, 16, 32),
+                        time: Local.with_ymd_and_hms(2022, 2, 7, 12, 16, 32).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
@@ -1624,8 +1533,7 @@ mod tests {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     monday: 360,
                     ..Default::default()
@@ -1633,11 +1541,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
 
@@ -1650,32 +1554,31 @@ mod tests {
         }
 
         #[test]
-        fn should_calculate_workktime_and_expected_break_with_only_30_minutes_break_taken() {
+        fn should_calculate_worktime_and_expected_break_with_only_30_minutes_break_taken() {
             logger();
             let data = TimeData {
                 entries: [
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 30, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 30, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(17, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 17, 0, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
@@ -1692,16 +1595,11 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
             assert_eq!(
@@ -1719,32 +1617,31 @@ mod tests {
         }
 
         #[test]
-        fn should_calculate_workktime_and_expected_break_with_4_hours_break_taken() {
+        fn should_calculate_worktime_and_expected_break_with_4_hours_break_taken() {
             logger();
             let data = TimeData {
                 entries: [
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(16, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(21, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 21, 0, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
@@ -1761,16 +1658,11 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
             assert_eq!(
@@ -1788,33 +1680,31 @@ mod tests {
         }
 
         #[test]
-        fn should_calculate_workktime_and_expected_break_with_4_hours_break_taken_and_over_10_hours_worktime(
-        ) {
+        fn should_calculate_worktime_and_expected_break_with_4_hours_break_taken_and_over_10_hours_worktime() {
             logger();
             let data = TimeData {
                 entries: [
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::Break,
-                        time: Local.ymd(2022, 2, 2).and_hms(12, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(16, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 3,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(23, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 23, 0, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
@@ -1831,16 +1721,11 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
             assert_eq!(
@@ -1858,22 +1743,21 @@ mod tests {
         }
 
         #[test]
-        fn should_calculate_workktime_and_no_expected_break_because_less_than_6_hours_worktime() {
+        fn should_calculate_worktime_and_no_expected_break_because_less_than_6_hours_worktime() {
             logger();
             let data = TimeData {
                 entries: [
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 4).and_hms(8, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 4).and_hms(14, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 4, 14, 0, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
@@ -1890,8 +1774,7 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     friday: 6 * 60,
                     ..Default::default()
@@ -1900,11 +1783,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
             assert_eq!(
@@ -1929,15 +1808,14 @@ mod tests {
                     Entry {
                         id: 1,
                         status: Status::Connect,
-                        time: Local.ymd(2022, 2, 2).and_hms(8, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap(),
                     },
                     Entry {
                         id: 2,
                         status: Status::End,
-                        time: Local.ymd(2022, 2, 2).and_hms(14, 0, 0),
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 14, 0, 0).unwrap(),
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 ..Default::default()
             };
             let settings = Settings {
@@ -1954,8 +1832,7 @@ mod tests {
                         start: 10 * 60,
                         minutes: 60,
                     },
-                ]
-                .to_vec(),
+                ].to_vec(),
                 workperday: WorkPerDayInMinutes {
                     friday: 6 * 60,
                     ..Default::default()
@@ -1964,11 +1841,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let status = StatusDaily::builder()
-                .data(data)
-                .settings(settings)
-                .build()
-                .unwrap();
+            let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             log::debug!("{}", status);
             assert_eq!(

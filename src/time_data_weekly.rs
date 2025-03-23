@@ -1,6 +1,6 @@
-use chrono::{Date, Datelike, IsoWeek, Local, TimeZone, Weekday};
+use chrono::{ DateTime, Datelike, IsoWeek, Local, NaiveDate, TimeZone, Weekday };
 
-use crate::{Folder, TimeData, TrackerError};
+use crate::{ Folder, TimeData, TrackerError };
 
 #[derive(Default, Clone)]
 pub struct TimeDataWeekly {
@@ -20,7 +20,7 @@ pub struct TimeDataWeeklyBuilder {
     folder: Option<Folder>,
     week: Option<i8>,
     year: Option<u16>,
-    dates: Option<Vec<Date<Local>>>,
+    dates: Option<Vec<DateTime<Local>>>,
 }
 
 impl TimeDataWeeklyBuilder {
@@ -54,7 +54,7 @@ impl TimeDataWeeklyBuilder {
             return Err(TrackerError::TimeDataError {
                 message: "year not defined".to_owned(),
             });
-        };
+        }
         if self.week.is_none() {
             return Err(TrackerError::TimeDataError {
                 message: "week not defined".to_owned(),
@@ -74,7 +74,10 @@ impl TimeDataWeeklyBuilder {
         let week = self.week.unwrap();
         if week < 0 {
             let new_year = self.year.unwrap() - 1;
-            self.week(&week, Local.ymd(new_year.into(), 12, 31).iso_week());
+            self.week(
+                &week,
+                Local.with_ymd_and_hms(new_year.into(), 12, 31, 0, 0, 0).unwrap().iso_week()
+            );
             self.year(new_year);
             self.assert_relative_week();
         }
@@ -87,7 +90,7 @@ impl TimeDataWeeklyBuilder {
             None => {
                 return Err(TrackerError::TimeDataError {
                     message: "dates are not defined".to_owned(),
-                })
+                });
             }
         };
 
@@ -111,10 +114,15 @@ impl TimeDataWeeklyBuilder {
         let week = self.week.unwrap().try_into()?;
 
         let mut weekday = Weekday::Mon;
-        let mut dates: Vec<Date<Local>> = Default::default();
+        let mut dates: Vec<DateTime<Local>> = Default::default();
 
         loop {
-            let d = Local.isoywd(current_year, week, weekday);
+            let dt = NaiveDate::from_isoywd_opt(current_year, week, weekday)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap();
+
+            let d = Local.from_local_datetime(&dt).unwrap();
             log::debug!("add {:?} {:?} to dates", weekday, d);
             let mut v = [d].to_vec();
             dates.append(v.as_mut());
@@ -132,7 +140,6 @@ impl TimeDataWeeklyBuilder {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     fn logger() {
@@ -141,14 +148,13 @@ mod tests {
     }
 
     mod builder {
-
         use chrono::Datelike;
 
         use super::*;
 
         #[test]
         fn should_set() {
-            let d = Local.ymd(2022, 2, 2);
+            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder.year(2022).week(&2, d.iso_week());
 
@@ -158,7 +164,7 @@ mod tests {
 
         #[test]
         fn should_set_week_by_sub() {
-            let d = Local.ymd(2022, 2, 2);
+            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder.year(2022).week(&-2, d.iso_week());
 
@@ -168,7 +174,7 @@ mod tests {
 
         #[test]
         fn should_set_negative_week_by_sub() {
-            let d = Local.ymd(2022, 2, 2);
+            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder.year(2022).week(&-10, d.iso_week());
 
@@ -182,9 +188,7 @@ mod tests {
             let w: i8 = d.iso_week().week().try_into().unwrap();
 
             let mut builder = TimeDataWeekly::builder();
-            builder
-                .year(d.year().try_into().unwrap())
-                .week(&0, d.iso_week());
+            builder.year(d.year().try_into().unwrap()).week(&0, d.iso_week());
 
             assert!(builder.week.is_some());
             assert_eq!(w, builder.week.unwrap());
@@ -195,10 +199,7 @@ mod tests {
             let mut builder = TimeDataWeekly::builder();
             let res = builder.build();
             assert!(res.is_err());
-            assert_eq!(
-                "time data error: year not defined",
-                res.err().unwrap().to_string()
-            );
+            assert_eq!("time data error: year not defined", res.err().unwrap().to_string());
         }
 
         #[test]
@@ -206,21 +207,14 @@ mod tests {
             let mut builder = TimeDataWeekly::builder();
             let res = builder.year(2022).build();
             assert!(res.is_err());
-            assert_eq!(
-                "time data error: week not defined",
-                res.err().unwrap().to_string()
-            );
+            assert_eq!("time data error: week not defined", res.err().unwrap().to_string());
         }
 
         #[test]
         fn negative_week() -> Result<(), TrackerError> {
-            let d = Local.ymd(2022, 2, 2);
+            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
-            builder
-                .year(2022)
-                .week(&-60, d.iso_week())
-                .assert_relative_week()
-                .set_dates()?;
+            builder.year(2022).week(&-60, d.iso_week()).assert_relative_week().set_dates()?;
             let dates = builder.dates.unwrap();
             assert_eq!(7, dates.len());
             assert_eq!(7, dates.first().unwrap().day());
@@ -233,7 +227,7 @@ mod tests {
         #[test]
         fn should_set_dates() -> Result<(), TrackerError> {
             logger();
-            let d = Local.ymd(2022, 2, 2);
+            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder.year(2022).week(&-2, d.iso_week()).set_dates()?;
             assert!(builder.dates.is_some());
@@ -247,14 +241,11 @@ mod tests {
 
         #[test]
         fn no_folder() {
-            let d = Local.ymd(2022, 2, 2);
+            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             let res = builder.year(2012).week(&-2, d.iso_week()).build();
             assert!(res.is_err());
-            assert_eq!(
-                "time data error: folder is not defined",
-                res.err().unwrap().to_string()
-            );
+            assert_eq!("time data error: folder is not defined", res.err().unwrap().to_string());
         }
 
         #[test]
@@ -262,16 +253,13 @@ mod tests {
             let mut builder = TimeDataWeekly::builder();
             let res = builder.folder(Folder::default()).set_files();
             assert!(res.is_err());
-            assert_eq!(
-                "time data error: dates are not defined",
-                res.err().unwrap().to_string()
-            );
+            assert_eq!("time data error: dates are not defined", res.err().unwrap().to_string());
         }
 
         #[test]
         fn should_set_files() -> Result<(), TrackerError> {
             logger();
-            let d = Local.ymd(2022, 2, 2);
+            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             builder
                 .folder(Folder::default())
@@ -292,13 +280,9 @@ mod tests {
         #[test]
         fn should_build() -> Result<(), TrackerError> {
             logger();
-            let d = Local.ymd(2022, 2, 2);
+            let d = Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
-            let t = builder
-                .folder(Folder::default())
-                .year(2022)
-                .week(&-2, d.iso_week())
-                .build()?;
+            let t = builder.folder(Folder::default()).year(2022).week(&-2, d.iso_week()).build()?;
             assert_eq!(7, t.entries.len());
 
             let first = t.entries.first().unwrap();

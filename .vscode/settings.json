@@ -1,3 +1,20 @@
 {
-    "testExplorer.useNativeTesting": true
+    "testExplorer.useNativeTesting": true,
+    "cSpell.words": [
+        "chrono",
+        "friday",
+        "indoc",
+        "monday",
+        "prettytable",
+        "saturday",
+        "serde",
+        "sunday",
+        "thiserror",
+        "thursday",
+        "trackrs",
+        "tuesday",
+        "wednesday",
+        "workperday",
+        "worktime"
+    ]
 }
