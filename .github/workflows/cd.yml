@@ -13,12 +13,12 @@ jobs:
 
     steps:
     - name: checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         persist-credentials: false
 
     - name: restore cargo cache
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       env:
         cache-name: ci
       with:
@@ -66,7 +66,7 @@ jobs:
     # #   run: make build-release-mac
 
     - name: publish release
-      uses: cycjimmy/semantic-release-action@v2
+      uses: cycjimmy/semantic-release-action@v4
       if: success()
       with:
         semantic_version: 18
