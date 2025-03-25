@@ -15,6 +15,7 @@
         "refactor",
         "style",
         "test",
-        "chore"
+        "chore",
+        "wip"
     ]
 }

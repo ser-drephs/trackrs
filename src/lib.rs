@@ -22,8 +22,9 @@ pub use takeover::*;
 pub use time_data::*;
 pub use time_data_weekly::*;
 
-mod entries;
-pub(crate) use entries::*;
 
 mod models;
 pub(crate) use models::*;
+
+mod storage;
+pub(crate) use storage::*;

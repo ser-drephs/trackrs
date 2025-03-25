@@ -33,5 +33,5 @@ pub enum TrackerError {
     TakeoverGetError { message: String },
     // own
     #[error("file upgrade error")]
-    UpgradeError(#[from] crate::models::UpgradeError)
+    UpgradeError(#[from] crate::storage::UpgradeError)
 }

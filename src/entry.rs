@@ -3,28 +3,11 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::TrackerError;
+use crate::{Entry, TrackerError};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Entry {
-    pub(crate) id: u8,
 
-    pub(crate) status: Status,
-
-    pub(crate) time: DateTime<Utc>,
-}
-
-impl Default for Entry {
-    fn default() -> Self {
-        Self {
-            id: 0,
-            status: Status::Connect,
-            time: DateTime::default(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Copy)]
+#[deprecated = "use crate::models::Action instead"]
 pub enum Status {
     Connect,
     Disconnect,
@@ -36,7 +19,7 @@ pub enum Status {
 impl Entry {
     pub fn builder() -> EntryBuilder {
         EntryBuilder {
-            inner: Default::default(),
+            inner: Entry::new_now(crate::Action::Start),
             time_set: false,
         }
     }
@@ -48,12 +31,6 @@ impl FromStr for Entry {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let entry: Entry = serde_json::from_str(s)?;
         Ok(entry)
-    }
-}
-
-impl ToString for Entry {
-    fn to_string(&self) -> String {
-        serde_json::to_string(&self).unwrap()
     }
 }
 

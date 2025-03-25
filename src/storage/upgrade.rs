@@ -11,7 +11,7 @@ impl Upgrade {
         let vec_entries: Result<Vec<Entry>, serde_json::Error> = serde_json::from_reader(reader);
         if vec_entries.is_err() {
             let err = vec_entries.unwrap_err();
-            if err.is_data() || err.is_eof() {
+            if err.is_data() {
                 return Ok(None);
             }
             return Err(UpgradeError::UpgradeV1Error(err));
@@ -37,7 +37,7 @@ mod tests {
         assert!(opt.is_some());
         let ent = opt.unwrap();
         assert_eq!(ent.data.len(), 2);
-        assert_eq!(ent.version, 1)
+        assert_eq!(ent.version(), 1)
     }
 
     #[test]

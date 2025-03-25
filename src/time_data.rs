@@ -2,7 +2,7 @@ use std::{ fs::{ self, File, OpenOptions }, io::BufReader, ops::Sub, path::PathB
 
 use chrono::{ DateTime, Duration, Utc };
 
-use crate::{ Entries, Entry, Status, Takeover, TrackerError, Upgrade };
+use crate::{ Entries, Entry, Status, Takeover, TrackerError, Upgrade, };
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;

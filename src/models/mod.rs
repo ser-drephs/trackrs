@@ -1,5 +1,12 @@
-mod upgrade;
-pub(crate) use upgrade::*;
+mod entry;
+pub(crate) use entry::*;
 
-mod upgrade_error;
-pub(crate) use upgrade_error::*;
+mod action;
+pub(crate) use action::*;
+
+//TODO: remove because deprecated
+mod entries;
+pub(crate) use entries::*;
+
+mod timesheet;
+pub(crate) use timesheet::*;

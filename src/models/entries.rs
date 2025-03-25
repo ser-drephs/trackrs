@@ -25,4 +25,8 @@ impl Entries {
         self.data.append(entry);
         self
     }
+
+    pub fn version(&self) -> u8 {
+        self.version
+    }
 }
