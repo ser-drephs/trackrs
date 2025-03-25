@@ -1,10 +1,11 @@
 name: CI
 
 on:
-  push:
-    branches: [ dev ]
   pull_request:
-    branches: [ main, test ]
+    branches: [ main ]
+    paths:
+      - src/**
+      - tests/**
 
 env:
   CARGO_TERM_COLOR: always
