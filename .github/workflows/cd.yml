@@ -2,7 +2,7 @@ name: CD
 
 on:
   push:
-    branches: [  main, test ]
+    branches: [ main, develop ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -69,7 +69,6 @@ jobs:
       uses: cycjimmy/semantic-release-action@v4
       if: success()
       with:
-        semantic_version: 18
         dry_run: false
         extra_plugins: |
           @semantic-release/changelog@6
