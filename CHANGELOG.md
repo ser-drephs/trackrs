@@ -1,3 +1,20 @@
+## [2.0.0](https://github.com/ser-drephs/trackrs/compare/v1.4.1...v2.0.0) (2025-03-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* add version to model
+* use utc time
+
+### Features
+
+* add version to model ([7d60167](https://github.com/ser-drephs/trackrs/commit/7d60167936189a53f56551c193acd55e9bf0811e))
+
+
+### Code Refactoring
+
+* use utc time ([eb36d5d](https://github.com/ser-drephs/trackrs/commit/eb36d5dde09cb1b3d3f5cb9abe360a35c85ca807))
+
 ### [1.4.1](https://github.com/ser-drephs/trackrs/compare/v1.4.0...v1.4.1) (2023-05-19)
 
 
