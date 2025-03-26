@@ -15,6 +15,7 @@ pub struct ReqSettings {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[allow(unused)]
+#[deprecated="use crate::config::Configuration instead"]
 pub struct Settings {
     pub file: String,
     pub folder: String,
@@ -25,6 +26,7 @@ pub struct Settings {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[allow(unused)]
+#[deprecated="use crate::config::BreakThreshold instead"]
 pub struct BreakLimit {
     pub start: u16,
     pub minutes: u8,
@@ -47,6 +49,7 @@ impl From<BreakLimit> for config::Value {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(unused)]
+#[deprecated="use crate::config::WorktimePerDay instead"]
 pub struct WorkPerDayInMinutes {
     pub monday: u16,
     pub tuesday: u16,

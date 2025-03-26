@@ -29,6 +29,7 @@ indoc = "^2.0"
 colored = "^3.0"
 open = "^5.3"
 prettytable-rs = "^0.10"
+nameof = "^1.2"
 
 [dev-dependencies]
 tempfile = "^3.18"

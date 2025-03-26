@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 use crate::{
-    entry::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
+    entry::Status, Configuration, Settings, StatusDaily, StatusWeekly, StorageProvider, TimeData, TimeDataWeekly, TrackerError
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -88,12 +88,12 @@ pub enum Commands {
 }
 
 pub trait CliExecute {
-    fn execute(&self) -> TrackerResult;
+    fn execute<P: StorageProvider>(&self, storage_provider: P, configuration: Configuration) -> TrackerResult;
     fn init_logger(&self) -> TrackerResult;
 }
 
 impl CliExecute for Cli {
-    fn execute(&self) -> TrackerResult {
+    fn execute<P: StorageProvider>(&self, storage_provider: P, configuration: Configuration) -> TrackerResult {
         match &self.command {
             Commands::Break => self.invoke_break(),
             Commands::End => self.invoke_end(),
@@ -101,7 +101,7 @@ impl CliExecute for Cli {
             Commands::Status { week, table } => self.invoke_status(week, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
-            Commands::Start => self.invoke_start(),
+            Commands::Start => self.invoke_start(storage_provider, configuration),
             _ => self.invoke_continue(), // default and Command::Start.
         }
     }
@@ -130,7 +130,7 @@ impl CliExecute for Cli {
 }
 
 impl Cli {
-    fn invoke_start(&self) -> TrackerResult {
+    fn invoke_start<P: StorageProvider>(&self, storage_provider: P, configuration: Configuration) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
         let mut time_data = TimeData::builder()
@@ -138,6 +138,9 @@ impl Cli {
             .today()
             .build()?;
         let now = Local::now();
+
+        let timesheet = storage_provider.read()?;
+
         time_data
             .read_from_file()?
             .assert_takeover(now.to_utc())?

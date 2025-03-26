@@ -1,13 +1,10 @@
-use std::{
-    fs::{File, OpenOptions},
-    path::PathBuf,
-};
+use std::{ fs::{ File, OpenOptions }, path::PathBuf };
 
-// use time::{format_description, OffsetDateTime};
+use chrono::Utc;
 
 use crate::models::Timesheet;
 
-use super::{StorageProvider, StorageProviderError};
+use super::{ StorageProvider, StorageProviderError };
 
 pub struct JsonStorageProvider {
     file: PathBuf,
@@ -21,10 +18,10 @@ impl JsonStorageProvider {
         return JsonStorageProvider { file };
     }
 
-    pub fn new_today() -> Result<Self, StorageProviderError> {
-        let format = format_description::parse("[year]-[month]-[day]")?;
-        let date_str = OffsetDateTime::now_utc().date().format(&format)?;
-        let file = PathBuf::from(date_str);
+    pub fn new_today(folder: PathBuf) -> Result<Self, StorageProviderError> {
+        let now = Utc::now();
+        let date_str = format!("{}", now.format("%Y-%m-%d"));
+        let file = folder.join(date_str);
         Ok(JsonStorageProvider::new(file))
     }
 }
@@ -66,13 +63,8 @@ mod tests {
 
     #[test]
     fn should_generate_file_name_for_today() {
-        let provider = JsonStorageProvider::new_today().unwrap();
-        assert!(provider
-            .file
-            .as_os_str()
-            .to_str()
-            .unwrap()
-            .ends_with("json"))
+        let provider = JsonStorageProvider::new_today("".into()).unwrap();
+        assert!(provider.file.as_os_str().to_str().unwrap().ends_with("json"))
     }
 
     #[test]
