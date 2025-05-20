@@ -1,8 +1,9 @@
-use std::{ fs::{ File, OpenOptions }, path::PathBuf };
+use core::time;
+use std::{ fs::{ File, OpenOptions }, io::BufReader, path::PathBuf };
 
 use chrono::Utc;
 
-use crate::models::Timesheet;
+use crate::{models::Timesheet, Upgrade};
 
 use super::{ StorageProvider, StorageProviderError };
 
@@ -29,18 +30,27 @@ impl JsonStorageProvider {
 impl StorageProvider for JsonStorageProvider {
     fn read(&self) -> Result<Timesheet, StorageProviderError> {
         log::debug!("read timesheet using json provider");
-        let mut entries = Timesheet::new();
+        let mut timesheet = Timesheet::new();
 
         if self.file.exists() {
             log::debug!("file found appending data: {:?}", &self.file);
             let f = File::open(&self.file)?;
-            entries = serde_json::from_reader(f)?;
-            entries.sort();
+
+            match Upgrade::upgrade(BufReader::new(f))? {
+                Some(res) => {
+                    timesheet = res;
+                }
+                None => {
+                    let f = File::open(&self.file)?;
+                    timesheet = serde_json::from_reader(BufReader::new(f))?;
+                }
+            }
+            timesheet.sort();
         } else {
             log::info!("file not yet created: {:?}", &self.file);
             // TODO: invoke takeover- here? or use some prepending logic?
         }
-        Ok(entries)
+        Ok(timesheet)
     }
 
     fn write(&self, entries: &Timesheet) -> Result<(), StorageProviderError> {

@@ -6,6 +6,8 @@ pub enum StorageProviderError {
     ParseError(#[from] serde_json::Error),
     #[error("io error")]
     IoError(#[from] std::io::Error),
+    #[error("model upgrade error")]
+    UpgradeError(#[from] UpgradeError)
     // #[error("date format error")]
     // InvalidFormatDescription(#[from] time::error::InvalidFormatDescription),
     // #[error("date format error")]

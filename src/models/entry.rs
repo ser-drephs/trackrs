@@ -1,31 +1,22 @@
-use chrono::{ DateTime, Duration, Local, Utc };
+use chrono::{ DateTime, Duration, Utc };
 use serde::{ Deserialize, Serialize };
 
-use crate::Status;
-
-use super::Action;
-use std::{ cmp::Ordering, fmt, ops::{ Add, Sub }, str::FromStr };
+use super::{ action, Action };
+use std::{ cmp::Ordering, fmt, ops::Add };
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Copy)]
 pub struct Entry {
-    #[deprecated = "id is not used anymore"]
-    pub(crate) id: u8,
-
-    #[deprecated = "use action instead"]
-    pub(crate) status: Status,
-
     action: Action,
-
-    pub(crate) time: DateTime<Utc>,
+    time: DateTime<Utc>,
 }
 
 impl Entry {
-    pub fn new(action: Action, time: DateTime<Local>) -> Self {
-        Entry { action, time: time.to_utc(), id: 1, status: Status::Break }
+    pub fn new(action: Action, time: DateTime<Utc>) -> Self {
+        Entry { action, time: time }
     }
 
     pub fn new_now(action: Action) -> Self {
-        Entry::new(action, Local::now())
+        Entry::new(action, Utc::now())
     }
 
     pub fn add(&mut self, duration: Duration) -> Self {
@@ -36,6 +27,14 @@ impl Entry {
     pub fn add_minutes(&mut self, duration: u16) -> Self {
         let dur = Duration::minutes(duration.into());
         self.add(dur)
+    }
+
+    pub fn is_action(&self, action: Action) -> bool {
+        self.action == action
+    }
+
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        self.time
     }
 }
 

@@ -2,14 +2,14 @@ use std::{ fs::{ self, File, OpenOptions }, io::BufReader, ops::Sub, path::PathB
 
 use chrono::{ DateTime, Duration, Utc };
 
-use crate::{ Entries, Entry, Status, Takeover, TrackerError, Upgrade, };
+use crate::{ Entry, EntryV1, Status, Takeover, Timesheet, TrackerError, Upgrade };
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
 
 #[derive(Default, Clone, Debug)]
 pub struct TimeData {
-    pub entries: Entries,
+    pub entries: Timesheet,
     pub(super) file: PathBuf,
     pub(super) build: bool,
     pub date: Option<DateTime<Utc>>,
@@ -50,13 +50,13 @@ impl TimeData {
             // calculate time for connect entry afterwards
             let local_c = Duration::minutes(1);
             let time_c = now - local_c;
-            let entry_c = Entry::builder()
+            let entry_c = EntryV1::builder()
                 .id(last_id)
                 .status(Status::Connect)
                 .time(time_c)
                 .build()?;
 
-            let entry_e = Entry::builder()
+            let entry_e = EntryV1::builder()
                 .id(last_id + 1)
                 .status(Status::End)
                 .time(now)
@@ -83,7 +83,7 @@ impl TimeData {
             None => 0,
         };
 
-        let entry = Entry::builder().id(last_id).status(status).time(time.to_utc()).build()?;
+        let entry = EntryV1::builder().id(last_id).status(status).time(DateTime::from(time)).build()?;
         log::debug!("append time data: {:?}", entry);
         self.entries.data.append(&mut [entry].to_vec());
         Ok(self)
@@ -94,10 +94,10 @@ impl TimeData {
         if self.takeover.is_some() {
             let m = self.takeover.as_ref().unwrap();
             let time = time.sub(Duration::minutes(m.minutes.unwrap().try_into()?));
-            let t_entry = Entry::builder()
+            let t_entry = EntryV1::builder()
                 .id(0)
                 .status(Status::Connect)
-                .time(time.to_utc())
+                .time(Datetime::from(time))
                 .build()?;
             self.entries.data.append(&mut [t_entry].to_vec());
         }
@@ -114,7 +114,7 @@ impl TimeData {
             let old_time = Option::unwrap(end).time;
             self.entries.data[(last_id - 1) as usize].time = old_time.sub(takeover);
 
-            let entry = Entry::builder()
+            let entry = EntryV1::builder()
                 .id(last_id)
                 .status(Status::Takeover)
                 .time(old_time)
@@ -129,7 +129,7 @@ impl TimeData {
         self.assert_build()?;
         if self.file.exists() {
             let f = File::open(&self.file)?;
-            match Upgrade::to_v1(BufReader::new(f))? {
+            match Upgrade::upgrade(BufReader::new(f))? {
                 Some(res) => {
                     self.entries = res;
                 }

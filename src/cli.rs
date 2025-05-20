@@ -2,8 +2,7 @@ use chrono::{Datelike, IsoWeek, Local};
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
-use crate::{
-    entry::Status, Configuration, Settings, StatusDaily, StatusWeekly, StorageProvider, TimeData, TimeDataWeekly, TrackerError
+use crate::{ Configuration, Settings, Status, StatusDaily, StatusWeekly, StorageProvider, TimeData, TimeDataWeekly, TrackerError
 };
 
 type TrackerResult = Result<(), TrackerError>;

@@ -47,7 +47,7 @@ impl std::fmt::Display for StatusTime {
 
 impl From<&Entry> for StatusTime {
     fn from(e: &Entry) -> Self {
-        let time = DateTime::<Local>::from(e.time);
+        let time = DateTime::<Local>::from(e.timestamp());
         let d = Duration::seconds(time.num_seconds_from_midnight().into());
         StatusTime {
             duration: d,

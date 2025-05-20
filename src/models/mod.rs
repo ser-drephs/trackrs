@@ -1,12 +1,10 @@
 mod entry;
 pub(crate) use entry::*;
+mod entry_v1;
+pub(crate) use entry_v1::*;
 
 mod action;
 pub(crate) use action::*;
-
-//TODO: remove because deprecated
-mod entries;
-pub(crate) use entries::*;
 
 mod timesheet;
 pub(crate) use timesheet::*;
