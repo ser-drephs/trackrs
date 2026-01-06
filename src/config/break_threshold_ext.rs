@@ -3,15 +3,15 @@ use chrono::Duration;
 use super::BreakThreshold;
 
 pub trait BreakThresholdExtensions {
-    fn limit_by_start(&self, start: &Duration) -> Option<Duration>;
+    fn limit_by_duration(&self, start: &Duration) -> Option<Duration>;
 }
 
 impl BreakThresholdExtensions for Vec<BreakThreshold> {
-    fn limit_by_start(&self, start: &Duration) -> Option<Duration> {
+    fn limit_by_duration(&self, duration: &Duration) -> Option<Duration> {
         let mut limits = self.clone();
         limits.sort_by(|l, r| r.start.partial_cmp(&l.start).unwrap());
 
-        match limits.iter().find(|x| start >= &Duration::minutes(x.start.into())) {
+        match limits.iter().find(|x| duration >= &Duration::minutes(x.start.into())) {
             Some(res) => {
                 log::debug!("should take break of '{}' minutes", res.minutes);
                 Some(Duration::minutes(res.minutes.into()))
@@ -39,8 +39,8 @@ mod tests {
             BreakThreshold { start: 480, minutes: 20 },
             BreakThreshold { start: 120, minutes: 5 }
         ];
-        assert_eq!(None, limits.limit_by_start(&Duration::minutes(20)), "no break yet");
-        assert_eq!(Some(Duration::minutes(5)), limits.limit_by_start(&Duration::minutes(120)), "exactly 120 minutes - 5 minute break");
-        assert_eq!(Some(Duration::minutes(20)), limits.limit_by_start(&Duration::minutes(500)), "more than 480 minutes - 20 minute break");
+        assert_eq!(None, limits.limit_by_duration(&Duration::minutes(20)), "no break yet");
+        assert_eq!(Some(Duration::minutes(5)), limits.limit_by_duration(&Duration::minutes(120)), "exactly 120 minutes - 5 minute break");
+        assert_eq!(Some(Duration::minutes(20)), limits.limit_by_duration(&Duration::minutes(500)), "more than 480 minutes - 20 minute break");
     }
 }

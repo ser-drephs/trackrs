@@ -52,7 +52,7 @@ mod tests {
         let opt = res.unwrap();
         assert!(opt.is_some());
         let ent = opt.unwrap();
-        assert_eq!(ent.data.len(), 2);
+        assert_eq!(ent.data().len(), 2);
         assert_eq!(ent.version(), 1)
     }
 

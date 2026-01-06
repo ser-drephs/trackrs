@@ -2,7 +2,7 @@ use chrono::{ DateTime, Duration, Utc };
 use serde::{ Deserialize, Serialize };
 
 use super::{ action, Action };
-use std::{ cmp::Ordering, fmt, ops::Add };
+use std::{ cmp::Ordering, fmt, ops::{Add, Sub} };
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Copy)]
 pub struct Entry {
@@ -47,6 +47,14 @@ impl PartialOrd for Entry {
 impl Ord for Entry {
     fn cmp(&self, other: &Self) -> Ordering {
         self.time.cmp(&other.time)
+    }
+}
+
+impl Sub for Entry {
+    type Output = Duration;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.time - rhs.time
     }
 }
 

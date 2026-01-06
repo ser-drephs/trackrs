@@ -6,6 +6,7 @@ use crate::Entry;
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
+#[deprecated]
 pub struct StatusTime {
     inner: Option<Entry>,
     pub duration: Duration,
