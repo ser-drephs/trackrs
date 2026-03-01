@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+tasks:
+  default:
+    desc: list all tasks
+    cmds:
+      - task --list
+    silent: true
+
+  setup:
+    desc: setup the project
+    cmds:
+      - |
+        if [ ! -f .git/hooks/commit-msg ]; then
+          curl -sS -o- https://raw.githubusercontent.com/craicoverflow/sailr/master/scripts/install.sh | bash
+        fi
+      - cargo install --path "." --offline
+
+  build:
+    desc: build the project
+    cmds:
+      - cargo build
+
+  test:
+    desc: run tests
+    cmds:
+      - cargo test --workspace
+
+  fmt:
+    desc: check code formatting
+    cmds:
+      - cargo fmt -- --check
+
+  clippy:
+    desc: run clippy linter
+    cmds:
+      - cargo clippy --workspace --all-features
+
+  deny:
+    desc: run cargo deny
+    cmds:
+      - cargo deny check
