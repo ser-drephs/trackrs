@@ -3,7 +3,7 @@ use std::ops::{ Add, Mul };
 use chrono::{ DateTime, Duration, Local, Utc };
 use colored::Colorize;
 
-use crate::{ Settings, Status, StatusTime, TimeData, TrackerError };
+use crate::{ Settings, models::Action, StatusTime, TimeData, TrackerError };
 
 #[derive(Default, Clone, Debug)]
 pub struct StatusDaily {
@@ -36,9 +36,9 @@ impl StatusDaily {
     }
 
     fn has_connect(&self) -> bool {
-        log::debug!("check if any connect entry is present");
+        log::debug!("check if any connect Entry is present");
         match self.data.as_ref() {
-            Some(d) => d.entries.data.iter().any(|x| x.status == Status::Connect),
+            Some(d) => d.entries.data.iter().any(|x| x.is_action(Action::Start)),
             None => false,
         }
     }
@@ -49,14 +49,14 @@ impl StatusDaily {
                 .as_ref()
                 .unwrap()
                 .entries.data.iter()
-                .find(|x| x.status == Status::Connect)
+                .find(|x| x.is_action(Action::Start))
         {
             Some(c) => {
-                log::info!("connect at: {}", c.time.time());
+                log::info!("connect at: {}", c.timestamp());
                 Some(c.into())
             }
             None => {
-                log::error!("connect entry not found in time data");
+                log::error!("connect Entry not found in time data");
                 None
             }
         };
@@ -70,15 +70,15 @@ impl StatusDaily {
                 .as_ref()
                 .unwrap()
                 .entries.data.iter()
-                .find(|x| x.status == Status::End)
+                .find(|x| x.is_action(Action::End))
         {
             Some(c) => {
-                log::info!("end at: {}", c.time.time());
-                log::info!("finished reading time data for {}", c.time.date_naive());
+                log::info!("end at: {}", c.timestamp());
+                log::info!("finished reading time data for {}", c.timestamp().date_naive());
                 self.end = Some(c.into());
             }
             None => {
-                log::debug!("no end entry found threrefore create a temporary one");
+                log::debug!("no end Entry found threrefore create a temporary one");
                 self.temp_end = Some(StatusTime::now());
             }
         }
@@ -98,21 +98,23 @@ impl StatusDaily {
         let d = self.data.as_ref().unwrap();
         for n in 0..d.entries.data.len() {
             if !b {
-                // get break entry
-                if d.entries.data[n].status == Status::Break {
+                // get break Entry
+                if d.entries.data[n].is_action(Action::Break) {
                     // temp save time
-                    tb = d.entries.data[n].time;
+                    tb = d.entries.data[n].timestamp();
                     log::info!("break at: {}", tb.time());
                     b = true;
                     if !f {
-                        let local_f_break: DateTime<Local> = DateTime::from(d.entries.data[n].time);
+                        let local_f_break: DateTime<Local> = DateTime::from(
+                            d.entries.data[n].timestamp()
+                        );
                         self.f_break = Some(local_f_break);
                         f = true;
                     }
                 }
-            } else if b && d.entries.data[n].status == Status::Connect {
+            } else if b && d.entries.data[n].is_action(Action::Start) {
                 // get next connect
-                let tc = d.entries.data[n].time;
+                let tc = d.entries.data[n].timestamp();
                 log::info!("connect at: {}", tc.time());
                 // caluclate time between both
                 let tbd = tc - tb;
@@ -132,8 +134,10 @@ impl StatusDaily {
         } else {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
-            // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.entries.data[0].time).to_owned().into());
+            // get work per day as based on the first Entry of time data
+            let w = Duration::minutes(
+                s.workperday.from(d.entries.data[0].timestamp()).to_owned().into()
+            );
 
             self.exp_worktime = Some(StatusTime::from(w));
 
@@ -200,8 +204,10 @@ impl StatusDaily {
             // set expected end time
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
-            // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.entries.data[0].time).to_owned().into());
+            // get work per day as based on the first Entry of time data
+            let w = Duration::minutes(
+                s.workperday.from(d.entries.data[0].timestamp()).to_owned().into()
+            );
 
             let e = if self.r#break.to_owned().unwrap() > self.exp_break.to_owned().unwrap() {
                 w.add(self.r#break.to_owned().unwrap().into())
@@ -357,9 +363,10 @@ mod tests {
 
     use crate::{
         BreakLimit,
-        Entry,
+        models::Entry,
         Settings,
-        Status,
+        models::Action,
+        models::Action,
         StatusDaily,
         StatusTime,
         TimeData,
@@ -391,32 +398,22 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 23, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 14, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(
+                                Action::Start,
+                                Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc()
+                            ),
+                            Entry::new(
+                                Action::Break,
+                                Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0).unwrap().to_utc()
+                            ),
+                            Entry::new(
+                                Action::Start,
+                                Local.with_ymd_and_hms(2022, 2, 2, 12, 23, 0).unwrap().to_utc()
+                            ),
+                            Entry::new(
+                                Action::End,
+                                Local.with_ymd_and_hms(2022, 2, 2, 14, 45, 0).unwrap().to_utc()
+                            ),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -473,32 +470,20 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
+                            Entry::new(Action::Start,Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                    ),
+                            Entry::new(Action::Break,Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
                                     .unwrap()
                                     .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 43, 0)
+                ),
+                            Entry::new(Action::Start,Local.with_ymd_and_hms(2022, 2, 2, 12, 43, 0)
                                     .unwrap()
                                     .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 17, 45, 0)
+            ),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 17, 45, 0)
                                     .unwrap()
                                     .to_utc(),
-                            },
+        ),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -554,32 +539,23 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
+                            Entry::new(Action::Start, Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                    ),
+                            Entry::new(Action::Break,
+                                 Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
                                     .unwrap()
                                     .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 33, 0)
+                            ),
+                            Entry::new(Action::Start,
+                                 Local.with_ymd_and_hms(2022, 2, 2, 12, 33, 0)
                                     .unwrap()
                                     .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 33, 0)
+                            ),
+                            Entry::new(Action::End,
+                                 Local.with_ymd_and_hms(2022, 2, 2, 16, 33, 0)
                                     .unwrap()
                                     .to_utc(),
-                            },
+                            ),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -640,11 +616,9 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: local.to_utc(),
-                            },
+                            Entry::new(Action::Connect,
+                                local.to_utc(),
+                            ),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -714,20 +688,16 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
+                            Entry::new(Action::Start,
+                                Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
                                     .unwrap()
                                     .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
+                            ),
+                            Entry::new(Action::End,
+                                Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
                                     .unwrap()
                                     .to_utc(),
-                            },
+                            ),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -787,27 +757,9 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 4,
-                                status: Status::Takeover,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 46, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0).unwrap().to_utc()),
+                            Entry::new(Action::Takeover, Local.with_ymd_and_hms(2022, 2, 2, 12, 46, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -874,18 +826,8 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -907,11 +849,7 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                            },
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -928,27 +866,9 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 10, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 10, 10, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -972,11 +892,7 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 2,
-                                status: Status::Connect,
-                                time: DateTime::default(),
-                            },
+                            Entry::new(Action::Connect, DateTime::default()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1001,27 +917,9 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1046,76 +944,16 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 5)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 4,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 5,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 6,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 55)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 7,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 55, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 8,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 55)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 9,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 56)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 10,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 1, 56)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 5).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 0).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 55).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 9, 55, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 55).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 56).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 10, 1, 56).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1140,18 +978,8 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1172,35 +1000,11 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 4,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 5,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 3, 45, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1240,37 +1044,11 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 4,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 5,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1312,35 +1090,11 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 4,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 5,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1381,34 +1135,10 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 4,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 15, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 5,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 13, 15, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1451,34 +1181,10 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 4,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 5,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1521,34 +1227,10 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 4,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 5,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Disconnect, Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1591,20 +1273,8 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1657,69 +1327,15 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 56, 15)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 25, 57)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 4,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 26, 46)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 5,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 28, 7)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 6,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 58, 7)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 7,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 17, 0, 7)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 8,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 17, 15, 7)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 18, 27, 40)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 7, 8, 56, 15).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 7, 12, 25, 57).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 7, 12, 26, 46).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 7, 12, 28, 7).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 7, 12, 58, 7).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 7, 17, 0, 7).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 7, 17, 15, 7).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 7, 18, 27, 40).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1760,20 +1376,8 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 16, 32)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 7, 12, 16, 32).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1818,32 +1422,10 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 30, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 17, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 12, 30, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 17, 0, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1893,32 +1475,10 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 21, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 21, 0, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -1968,32 +1528,10 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
-                            Entry {
-                                id: 3,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 23, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Break, Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 23, 0, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -2043,18 +1581,8 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 4, 14, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 4, 14, 0, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }
@@ -2109,18 +1637,8 @@ mod tests {
                 entries: {
                     Entries {
                         data: [
-                            Entry {
-                                id: 1,
-                                status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
-                            },
-                            Entry {
-                                id: 2,
-                                status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 14, 0, 0)
-                                    .unwrap()
-                                    .to_utc(),
-                            },
+                            Entry::new(Action::Connect, Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc()),
+                            Entry::new(Action::End, Local.with_ymd_and_hms(2022, 2, 2, 14, 0, 0).unwrap().to_utc()),
                         ].to_vec(),
                         ..Default::default()
                     }

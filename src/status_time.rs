@@ -2,7 +2,7 @@ use std::ops::{ Add, AddAssign, Mul, Sub, SubAssign };
 
 use chrono::{ DateTime, Duration, Local, Timelike, Utc };
 
-use crate::Entry;
+use crate::models::Entry;
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
@@ -47,7 +47,7 @@ impl std::fmt::Display for StatusTime {
 
 impl From<&Entry> for StatusTime {
     fn from(e: &Entry) -> Self {
-        let time = DateTime::<Local>::from(e.time);
+        let time = DateTime::<Local>::from(e.timestamp());
         let d = Duration::seconds(time.num_seconds_from_midnight().into());
         StatusTime {
             duration: d,
@@ -167,7 +167,7 @@ impl Mul<i32> for StatusTime {
 mod tests {
     use chrono::TimeZone;
 
-    use crate::Status;
+    use crate::models::Status;
 
     use super::*;
 
@@ -176,11 +176,10 @@ mod tests {
 
         #[test]
         fn should_format_status_time() {
-            let data = Entry {
-                id: 1,
-                status: Status::Connect,
-                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
-            };
+            let data = Entry::new(
+                crate::models::Action::Start,
+                Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc()
+            );
             let status = StatusTime::from(&data);
             assert_eq!("08:03", format!("{}", status));
         }
@@ -199,11 +198,10 @@ mod tests {
                     .num_seconds_from_midnight()
                     .into()
             );
-            let entry = Entry {
-                id: 2,
-                status: Status::Disconnect,
-                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
-            };
+            let entry = Entry::new(
+                crate::models::Action::Break,
+                Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap()
+            );
             let status = StatusTime::from(&entry);
             assert!(
                 status.duration.ge(&d),

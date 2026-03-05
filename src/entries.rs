@@ -1,6 +1,7 @@
 use serde::{ Deserialize, Serialize };
 
-use crate::Entry;
+use crate::models::Entry;
+use crate::models::Timesheet;
 
 const CURRENT_VERSION: u8 = 1;
 
@@ -24,5 +25,21 @@ impl Entries {
     pub fn append(&mut self, entry: &mut Vec<Entry>) -> &mut Self {
         self.data.append(entry);
         self
+    }
+}
+
+impl Into<Timesheet> for Entries {
+    fn into(self) -> Timesheet {
+        let mut timesheet = Timesheet::new();
+        timesheet.append(&mut self.data.clone().into_iter().map(|f| f.into()).collect());
+        timesheet
+    }
+}
+
+impl From<Timesheet> for Entries {
+    fn from(timesheet: Timesheet) -> Entries {
+        let mut entries = Entries::new();
+        entries.append(&mut timesheet.data().clone().into_iter().map(|f| f.into()).collect());
+        entries
     }
 }

@@ -2,7 +2,7 @@ use std::{ fs::{ self, File, OpenOptions }, io::BufReader, ops::Sub, path::PathB
 
 use chrono::{ DateTime, Duration, Utc };
 
-use crate::{ Entries, Entry, Status, Takeover, TrackerError, Upgrade };
+use crate::{ Entries, models::Entry, models::Action, Takeover, TrackerError, Upgrade };
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
@@ -32,35 +32,43 @@ impl TimeData {
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         if e_break > a_break {
-            let last_id = match self.entries.data.last() {
-                Some(last) => last.id,
-                None => 0,
+            let last_entry = match self.entries.data.last() {
+                Some(entry) => entry,
+                None => {
+                    return Ok(self);
+                }
             };
-            let now = self.entries.data.last().unwrap().time;
+
+            let now = last_entry.timestamp();
 
             // calculate time for break assertion start
             let diff_b = e_break - a_break + Duration::minutes(1);
-            let time_b = now - diff_b;
+            // let time_b = now - diff_b;
 
-            // overwrite end entry
-            let last_index = last_id - 1;
-            self.entries.data[last_index as usize].status = Status::Break;
-            self.entries.data[last_index as usize].time = time_b;
+            // overwrite end EntryV1
+            let last_index = self.entries.data.len() - 1;
+            #[allow(deprecated)]
+            self.entries.data[last_index as usize].set_action(Action::Break);
+            self.entries.data[last_index as usize].add(diff_b);
 
-            // calculate time for connect entry afterwards
+            // calculate time for connect EntryV1 afterwards
             let local_c = Duration::minutes(1);
             let time_c = now - local_c;
-            let entry_c = Entry::builder()
-                .id(last_id)
-                .status(Status::Connect)
-                .time(time_c)
-                .build()?;
+            let entry_c = Entry::new(Action::Start, time_c);
 
-            let entry_e = Entry::builder()
-                .id(last_id + 1)
-                .status(Status::End)
-                .time(now)
-                .build()?;
+            // EntryV1::builder()
+            //     .id(last_id)
+            //     .status(Action::Start)
+            //     .time(time_c)
+            //     .build()?;
+
+            let entry_e = Entry::new(Action::End, now);
+            // EntryV1::builder()
+            //     .id(last_id + 1)
+            //     .status(Action::End)
+            //     .time(now)
+            //     .build()?;
+
             log::debug!(
                 "fill break with {:?} and {:?}",
                 self.entries.data[last_index as usize],
@@ -74,18 +82,19 @@ impl TimeData {
 
     pub fn append(
         &mut self,
-        status: Status,
+        status: Action,
         time: DateTime<Utc>
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
-        let last_id = match self.entries.data.last() {
-            Some(last) => last.id,
-            None => 0,
-        };
+        // let last_entry = match self.entries.data.last() {
+        //     Some(last) => last,
+        //     None => return Ok(self),
+        // };
 
-        let entry = Entry::builder().id(last_id).status(status).time(time.to_utc()).build()?;
-        log::debug!("append time data: {:?}", entry);
-        self.entries.data.append(&mut [entry].to_vec());
+        let entry_v1 = Entry::new(status, time.to_utc());
+        // EntryV1::builder().id(last_id).status(status).time(time.to_utc()).build()?;
+        log::debug!("append time data: {:?}", entry_v1);
+        self.entries.data.append(&mut [entry_v1].to_vec());
         Ok(self)
     }
 
@@ -94,11 +103,12 @@ impl TimeData {
         if self.takeover.is_some() {
             let m = self.takeover.as_ref().unwrap();
             let time = time.sub(Duration::minutes(m.minutes.unwrap().try_into()?));
-            let t_entry = Entry::builder()
-                .id(0)
-                .status(Status::Connect)
-                .time(time.to_utc())
-                .build()?;
+            let t_entry = Entry::new(Action::Start, time.to_utc());
+            // EntryV1::builder()
+            //     .id(0)
+            //     .status(Action::Start)
+            //     .time(time.to_utc())
+            //     .build()?;
             self.entries.data.append(&mut [t_entry].to_vec());
         }
         Ok(self)
@@ -106,21 +116,28 @@ impl TimeData {
 
     pub fn takeover(&mut self, takeover: Duration) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
-        let end = self.entries.data.iter().find(|&x| x.status == Status::End);
+        let end = self.entries.data.iter().find(|&x| x.is_action(Action::End));
         if end.is_none() {
             log::warn!("End first to takeover time!");
         } else {
-            let last_id = self.entries.data.last().unwrap().id;
-            let old_time = Option::unwrap(end).time;
-            self.entries.data[(last_id - 1) as usize].time = old_time.sub(takeover);
+            let last_entry = self.entries.data.last().unwrap();
+            let last_index = self.entries.data.len();
+            let old_time = Option::unwrap(end).timestamp();
+            let dur = old_time.sub(takeover);
 
-            let entry = Entry::builder()
-                .id(last_id)
-                .status(Status::Takeover)
-                .time(old_time)
-                .build()?;
-            log::debug!("append takeover: {:?}", entry);
-            self.entries.data.append(&mut [entry].to_vec());
+            let mut entry = self.entries.data[(last_index - 1) as usize];
+            entry.add(dur.sub(last_entry.timestamp()));
+            self.entries.data[(last_index - 1) as usize] = entry;
+
+            let entry_v1 = Entry::new(Action::Takeover, old_time);
+
+            // EntryV1::builder()
+            //     .id(last_id)
+            //     .status(Action::Takeover)
+            //     .time(old_time)
+            //     .build()?;
+            log::debug!("append takeover: {:?}", entry_v1);
+            self.entries.data.append(&mut [entry_v1].to_vec());
         }
         Ok(self)
     }
@@ -129,9 +146,9 @@ impl TimeData {
         self.assert_build()?;
         if self.file.exists() {
             let f = File::open(&self.file)?;
-            match Upgrade::to_v1(BufReader::new(f))? {
+            match Upgrade::upgrade(BufReader::new(f))? {
                 Some(res) => {
-                    self.entries = res;
+                    self.entries = res.into();
                 }
                 None => {
                     let f = File::open(&self.file)?;
@@ -139,7 +156,7 @@ impl TimeData {
                 }
             }
 
-            self.entries.data.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+            self.entries.data.sort_by(|a, b| a.timestamp().partial_cmp(&b.timestamp()).unwrap());
         } else {
             log::info!("file not yet created: {:?}", &self.file);
             // invoke takeover
@@ -256,7 +273,7 @@ mod tests {
 
     use chrono::{ Duration, TimeZone, Timelike };
 
-    use crate::{ Entry, Status, TimeData, TrackerError };
+    use crate::{ EntryV1, Action, TimeData, TrackerError };
 
     use serial_test::serial;
 
@@ -308,11 +325,11 @@ mod tests {
             time_data
                 .read_from_file()?
                 .append(
-                    Status::Connect,
+                    Action::Connect,
                     day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap()).unwrap()
                 )?
                 .append(
-                    Status::End,
+                    Action::End,
                     day.with_time(NaiveTime::from_hms_opt(4, 1, 0).unwrap()).unwrap()
                 )?
                 .write_to_file()?;
@@ -372,7 +389,7 @@ mod tests {
             assert_eq!(2, time_data.entries.data.last().unwrap().id);
 
             time_data.append(
-                Status::End,
+                Action::End,
                 day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
             )?;
             assert_eq!(3, time_data.entries.data.len());
@@ -408,7 +425,7 @@ mod tests {
             assert_eq!(2, time_data.entries.data.last().unwrap().id);
 
             time_data.append(
-                Status::End,
+                Action::End,
                 day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
             )?;
             assert_eq!(3, time_data.entries.data.len());
@@ -449,16 +466,16 @@ mod tests {
             assert_eq!(4, time_data.entries.data.len());
             assert_eq!(4, time_data.entries.data.last().unwrap().id);
 
-            let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
+            let r#break = match time_data.entries.data.iter().find(|x| x.status == Action::Break) {
                 Some(c) => c.into(),
                 None => None,
             };
 
             let connects = time_data.entries.data
                 .iter()
-                .filter(|x| x.status == Status::Connect)
+                .filter(|x| x.status == Action::Connect)
                 .cloned()
-                .collect::<Vec<Entry>>();
+                .collect::<Vec<EntryV1>>();
             let connect = connects.last();
 
             assert!(r#break.is_some());
@@ -466,8 +483,8 @@ mod tests {
 
             assert_eq!(r#break.unwrap().id + 1, connect.unwrap().id);
 
-            let duration_b = r#break.unwrap().time.num_seconds_from_midnight();
-            let duration_c = connect.unwrap().time.num_seconds_from_midnight();
+            let duration_b = r#break.unwrap().timestamp().num_seconds_from_midnight();
+            let duration_c = connect.unwrap().timestamp().num_seconds_from_midnight();
             assert_eq!(1800, duration_c - duration_b);
             Ok(())
         }
@@ -501,23 +518,23 @@ mod tests {
             let fill_break = time_data.entries.data[2].to_owned();
             let end = time_data.entries.data[3].to_owned();
             assert_eq!(
-                (2, Status::Break),
+                (2, Action::Break),
                 (fill_connect.id, fill_connect.status.to_owned()),
-                "expected filler connect entry to be 2 and status Break but got {} {:?}",
+                "expected filler connect EntryV1 to be 2 and status Break but got {} {:?}",
                 fill_connect.id,
                 fill_connect.status
             );
             assert_eq!(
-                (3, Status::Connect),
+                (3, Action::Connect),
                 (fill_break.id, fill_break.status.to_owned()),
-                "expected filler break entry to be 3 and status Connect but got {} {:?}",
+                "expected filler break EntryV1 to be 3 and status Connect but got {} {:?}",
                 fill_break.id,
                 fill_break.status
             );
             assert_eq!(
-                (4, Status::End),
+                (4, Action::End),
                 (end.id, end.status.to_owned()),
-                "expected end entry to be 4 and status End but got {} {:?}",
+                "expected end EntryV1 to be 4 and status End but got {} {:?}",
                 end.id,
                 end.status
             );
@@ -575,23 +592,23 @@ mod tests {
             assert_eq!(4, time_data.entries.data.len());
             assert_eq!(4, time_data.entries.data.last().unwrap().id);
 
-            let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
+            let r#break = match time_data.entries.data.iter().find(|x| x.is_action(Action::Break)) {
                 Some(c) => c.into(),
                 None => None,
             };
 
             let connects = time_data.entries.data
                 .iter()
-                .filter(|x| x.status == Status::Connect)
+                .filter(|x| x.is_action(Action::Connect))
                 .cloned()
-                .collect::<Vec<Entry>>();
+                .collect::<Vec<EntryV1>>();
             let connect = connects.last();
 
             assert!(r#break.is_some(), "break should be set");
             assert!(connect.is_some(), "connect should be set");
 
-            let duration_b = r#break.unwrap().time.num_seconds_from_midnight();
-            let duration_c = connect.unwrap().time.num_seconds_from_midnight();
+            let duration_b = r#break.unwrap().timestamp().num_seconds_from_midnight();
+            let duration_c = connect.unwrap().timestamp().num_seconds_from_midnight();
             assert_eq!(6300, duration_c - duration_b, "total break duration should be 30 minutes");
             Ok(())
         }
@@ -687,13 +704,19 @@ mod tests {
 
             let end = time_data.entries.data[1].to_owned();
             assert_eq!(2, end.id);
-            assert_eq!(Status::End, end.status);
-            assert_eq!((3, 40, 53), (end.time.hour(), end.time.minute(), end.time.second()));
+            assert!(end.is_action(Action::End));
+            assert_eq!(
+                (3, 40, 53),
+                (end.timestamp().hour(), end.timestamp().minute(), end.timestamp().second())
+            );
 
             let last = time_data.entries.data.last().unwrap();
             assert_eq!(3, last.id);
-            assert_eq!(Status::Takeover, last.status);
-            assert_eq!((4, 0, 53), (last.time.hour(), last.time.minute(), last.time.second()));
+            assert!(last.is_action(Action::Takeover));
+            assert_eq!(
+                (4, 0, 53),
+                (last.timestamp().hour(), last.timestamp().minute(), last.timestamp().second())
+            );
             Ok(())
         }
 
@@ -744,11 +767,11 @@ mod tests {
                         day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap()).unwrap()
                     )?
                     .append(
-                        Status::Connect,
+                        Action::Connect,
                         day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap()).unwrap()
                     )?
                     .append(
-                        Status::End,
+                        Action::End,
                         day.with_time(NaiveTime::from_hms_opt(5, 0, 0).unwrap()).unwrap()
                     )?
                     .write_to_file()?;
@@ -756,7 +779,7 @@ mod tests {
 
                 let takeover_time = time_data.entries.data[0].to_owned();
                 let first_connect = time_data.entries.data[1].to_owned();
-                let diff = first_connect.time - takeover_time.time;
+                let diff = first_connect.timestamp() - takeover_time.timestamp();
 
                 assert_eq!(
                     Duration::minutes(15).num_seconds(),
@@ -766,7 +789,7 @@ mod tests {
                 );
                 assert_eq!(
                     day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap()).unwrap(),
-                    takeover_time.time,
+                    takeover_time.timestamp(),
                     "takeover time doesnt match"
                 );
                 Ok(())
@@ -800,13 +823,13 @@ mod tests {
                         )
                     )?
                     .append(
-                        Status::Connect,
+                        Action::Connect,
                         DateTime::from(
                             day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
                         )
                     )?
                     .append(
-                        Status::End,
+                        Action::End,
                         DateTime::from(
                             day.with_time(NaiveTime::from_hms_opt(2, 45, 0).unwrap()).unwrap()
                         )
@@ -860,11 +883,11 @@ mod tests {
                         day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
                     )?
                     .append(
-                        Status::Connect,
+                        Action::Connect,
                         day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
                     )?
                     .append(
-                        Status::End,
+                        Action::End,
                         day.with_time(NaiveTime::from_hms_opt(4, 14, 0).unwrap()).unwrap()
                     )?
                     .write_to_file()?;
@@ -872,7 +895,7 @@ mod tests {
 
                 let takeover_time = time_data.entries.data[0].to_owned();
                 let first_connect = time_data.entries.data[1].to_owned();
-                let diff = first_connect.time - takeover_time.time;
+                let diff = first_connect.timestamp() - takeover_time.timestamp();
 
                 assert_eq!(
                     Duration::minutes(95).num_seconds(),

@@ -10,9 +10,7 @@
             "group": {
                 "kind": "build"
             },
-            "problemMatcher": [
-                "$rustc"
-            ]
+            "problemMatcher": ["$rustc"]
         },
         {
             "label": "Coverage (HTML)",
@@ -21,9 +19,7 @@
             "group": {
                 "kind": "build"
             },
-            "problemMatcher": [
-                "$rustc"
-            ]
+            "problemMatcher": ["$rustc"]
         },
         {
             "label": "Build",
@@ -33,46 +29,44 @@
                 "kind": "build",
                 "isDefault": true
             },
-            "problemMatcher": [
-                "$rustc"
-            ]
+            "problemMatcher": ["$rustc"]
         },
         {
             "label": "Rebuild",
             "type": "shell",
             "command": "cargo clean && cargo build",
             "group": "build",
-            "problemMatcher": [
-                "$rustc"
-            ]
+            "problemMatcher": ["$rustc"]
         },
         {
             "label": "Test",
             "type": "shell",
             "command": "cargo test",
-            "problemMatcher": [
-                "$rustc"
-            ],
+            "problemMatcher": ["$rustc"],
             "group": {
                 "kind": "test",
-                "isDefault": true,
+                "isDefault": true
             }
         },
         {
             "label": "Publish (Windows)",
             "type": "shell",
             "command": "eng/publish.sh --windows",
-            "problemMatcher": [
-                "$rustc"
-            ]
+            "problemMatcher": ["$rustc"]
         },
         {
             "label": "Publish (Linux)",
             "type": "shell",
             "command": "eng/publish.sh",
-            "problemMatcher": [
-                "$rustc"
-            ]
+            "problemMatcher": ["$rustc"]
+        },
+        {
+            "label": "Watch",
+            "group": "build",
+            "type": "shell",
+            "command": "cargo watch",
+            "problemMatcher": "$rustc-watch",
+            "isBackground": true
         }
     ]
 }

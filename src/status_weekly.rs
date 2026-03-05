@@ -221,7 +221,7 @@ mod tests {
 
     use chrono::TimeZone;
 
-    use crate::{ BreakLimit, Entry, Status };
+    use crate::{ BreakLimit, Entry, Status, models::Action };
 
     fn logger() {
         // std::env::set_var("RUST_LOG", "trace");
@@ -327,26 +327,22 @@ mod tests {
 
         fn get_entries(day: u8, end: u8, end_minutes: u8) -> Entries {
             Entries {
-                data: [
-                    Entry {
-                        id: 1,
-                        status: Status::Connect,
-                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
-                    },
-                    Entry {
-                        id: 2,
-                        status: Status::Break,
-                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap(),
-                    },
-                    Entry {
-                        id: 3,
-                        status: Status::Connect,
-                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
-                    },
-                    Entry {
-                        id: 4,
-                        status: Status::End,
-                        time: Utc.with_ymd_and_hms(
+                data: vec![
+                    Entry::new(
+                        Action::Connect,
+                        Utc.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
+                    ),
+                    Entry::new(
+                        Action::Break,
+                        Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap(),
+                    ),
+                    Entry::new(
+                        Action::Connect,
+                        Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
+                    ),
+                    Entry::new(
+                        Action::End,
+                        Utc.with_ymd_and_hms(
                             2022,
                             3,
                             day.into(),
@@ -354,8 +350,8 @@ mod tests {
                             end_minutes.into(),
                             0
                         ).unwrap(),
-                    },
-                ].to_vec(),
+                    ),
+                ],
                 ..Default::default()
             }
         }

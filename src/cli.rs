@@ -1,9 +1,15 @@
-use chrono::{Datelike, IsoWeek, Local};
-use clap::{Parser, Subcommand};
+use chrono::{ Datelike, IsoWeek, Local };
+use clap::{ Parser, Subcommand };
 use log::LevelFilter;
 
 use crate::{
-    entry::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
+    models::Action,
+    Settings,
+    StatusDaily,
+    StatusWeekly,
+    TimeData,
+    TimeDataWeekly,
+    TrackerError,
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -133,44 +139,29 @@ impl Cli {
     fn invoke_start(&self) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
-            .today()
-            .build()?;
+        let mut time_data = TimeData::builder().folder(settings.folder.into()).today().build()?;
         let now = Local::now();
         time_data
             .read_from_file()?
             .assert_takeover(now.to_utc())?
-            .append(Status::Connect, now.to_utc())?
+            .append(Action::Start, now.to_utc())?
             .write_to_file()
     }
 
     fn invoke_continue(&self) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
-            .today()
-            .build()?;
+        let mut time_data = TimeData::builder().folder(settings.folder.into()).today().build()?;
         let now = Local::now();
-        time_data
-            .read_from_file()?
-            .append(Status::Connect, now.to_utc())?
-            .write_to_file()
+        time_data.read_from_file()?.append(Action::Start, now.to_utc())?.write_to_file()
     }
 
     fn invoke_break(&self) -> TrackerResult {
         log::info!("break executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
-            .today()
-            .build()?;
+        let mut time_data = TimeData::builder().folder(settings.folder.into()).today().build()?;
         let now = Local::now();
-        time_data
-            .read_from_file()?
-            .append(Status::Break, now.to_utc())?
-            .write_to_file()
+        time_data.read_from_file()?.append(Action::Break, now.to_utc())?.write_to_file()
     }
 
     fn invoke_end(&self) -> TrackerResult {
@@ -179,17 +170,11 @@ impl Cli {
         let folder: &str = settings.folder.as_ref();
         let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
         time_data.read_from_file()?;
-        let status = StatusDaily::builder()
-            .data(time_data.clone())
-            .settings(settings)
-            .build()?;
+        let status = StatusDaily::builder().data(time_data.clone()).settings(settings).build()?;
         let now = Local::now();
         time_data
-            .append(Status::End, now.to_utc())?
-            .assert_break(
-                status.exp_break.unwrap().duration,
-                status.r#break.unwrap().duration,
-            )?
+            .append(Action::End, now.to_utc())?
+            .assert_break(status.exp_break.unwrap().duration, status.r#break.unwrap().duration)?
             .write_to_file()?;
         self.invoke_status(&None, &false)
     }
@@ -197,15 +182,9 @@ impl Cli {
     fn invoke_disconnect(&self) -> TrackerResult {
         log::info!("disconnect executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
-            .today()
-            .build()?;
+        let mut time_data = TimeData::builder().folder(settings.folder.into()).today().build()?;
         let now = Local::now();
-        time_data
-            .read_from_file()?
-            .append(Status::Disconnect, now.to_utc())?
-            .write_to_file()
+        time_data.read_from_file()?.append(Action::Break, now.to_utc())?.write_to_file()
     }
 
     fn invoke_status(&self, week: &Option<i8>, table: &bool) -> TrackerResult {
@@ -222,10 +201,7 @@ impl Cli {
                     .week(w, cur_week)
                     .build()?;
 
-                let status = StatusWeekly::builder()
-                    .data(time_data)
-                    .settings(settings)
-                    .build()?;
+                let status = StatusWeekly::builder().data(time_data).settings(settings).build()?;
 
                 if *table {
                     status.format_table();
@@ -239,10 +215,7 @@ impl Cli {
                     .today()
                     .build()?;
                 time_data.read_from_file()?;
-                let status = StatusDaily::builder()
-                    .data(time_data)
-                    .settings(settings)
-                    .build()?;
+                let status = StatusDaily::builder().data(time_data).settings(settings).build()?;
                 println!("{}", status);
             }
         }
@@ -255,7 +228,7 @@ impl Cli {
 
         if *edit {
             log::debug!("invoke default editor with config");
-            open::that(settings.file)?
+            open::that(settings.file)?;
         } else {
             println!("{:#?}", settings);
         }
@@ -268,17 +241,11 @@ impl Cli {
         let folder: &str = settings.folder.as_ref();
         let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
         time_data.read_from_file()?;
-        let status = StatusDaily::builder()
-            .data(time_data.clone())
-            .settings(settings)
-            .build()?;
+        let status = StatusDaily::builder().data(time_data.clone()).settings(settings).build()?;
         let now = Local::now();
         time_data
-            .append(Status::End, now.to_utc())?
-            .assert_break(
-                status.exp_break.unwrap().duration,
-                status.r#break.unwrap().duration,
-            )?
+            .append(Action::End, now.to_utc())?
+            .assert_break(status.exp_break.unwrap().duration, status.r#break.unwrap().duration)?
             .write_to_file()?;
         self.invoke_status(&None, &false)
     }

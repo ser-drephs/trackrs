@@ -16,5 +16,6 @@
         "wednesday",
         "workperday",
         "worktime"
-    ]
+    ],
+    "rust-analyzer.checkOnSave": false,
 }

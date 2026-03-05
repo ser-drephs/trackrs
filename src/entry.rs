@@ -1,165 +1,181 @@
-use std::str::FromStr;
+// use std::str::FromStr;
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+// use chrono::{DateTime, Utc};
+// use serde::{Deserialize, Serialize};
 
-use crate::TrackerError;
+// use crate::TrackerError;
+// use crate::models;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Entry {
-    pub(crate) id: u8,
+// #[derive(Clone, Debug, Serialize, Deserialize)]
+// pub struct Entry {
+//     pub(crate) id: u8,
 
-    pub(crate) status: Status,
+//     pub(crate) status: Status,
 
-    pub(crate) time: DateTime<Utc>,
-}
+//     pub(crate) time: DateTime<Utc>,
+// }
 
-impl Default for Entry {
-    fn default() -> Self {
-        Self {
-            id: 0,
-            status: Status::Connect,
-            time: DateTime::default(),
-        }
-    }
-}
+// impl Default for Entry {
+//     fn default() -> Self {
+//         Self {
+//             id: 0,
+//             status: Status::Connect,
+//             time: DateTime::default(),
+//         }
+//     }
+// }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum Status {
-    Connect,
-    Disconnect,
-    Break,
-    End,
-    Takeover
-}
+// #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+// pub enum Status {
+//     Connect,
+//     Disconnect,
+//     Break,
+//     End,
+//     Takeover
+// }
 
-impl Entry {
-    pub fn builder() -> EntryBuilder {
-        EntryBuilder {
-            inner: Default::default(),
-            time_set: false,
-        }
-    }
-}
+// impl Entry {
+//     pub fn builder() -> EntryBuilder {
+//         EntryBuilder {
+//             inner: Default::default(),
+//             time_set: false,
+//         }
+//     }
+// }
 
-impl FromStr for Entry {
-    type Err = TrackerError;
+// impl FromStr for Entry {
+//     type Err = TrackerError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let entry: Entry = serde_json::from_str(s)?;
-        Ok(entry)
-    }
-}
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         let entry: Entry = serde_json::from_str(s)?;
+//         Ok(entry)
+//     }
+// }
 
-impl ToString for Entry {
-    fn to_string(&self) -> String {
-        serde_json::to_string(&self).unwrap()
-    }
-}
+// impl ToString for Entry {
+//     fn to_string(&self) -> String {
+//         serde_json::to_string(&self).unwrap()
+//     }
+// }
 
-#[derive(Clone)]
-pub struct EntryBuilder {
-    inner: Entry,
-    time_set: bool,
-}
+// impl Into<models::Entry> for Entry{
+//     fn into(self) -> models::Entry {
+//         models::Entry::new(
+//             match self.status {
+//                 Status::Connect => models::Action::Start,
+//                 Status::Disconnect => models::Action::Break,
+//                 Status::Break => models::Action::Break,
+//                 Status::End => models::Action::End,
+//                 Status::Takeover => models::Action::Takeover
+//             },
+//             self.time
+//         )
+//     }
+// }
 
-impl EntryBuilder {
-    /// Set id by incrementing the provided id
-    pub fn id(&mut self, id: u8) -> &mut Self {
-        self.inner.id = id + 1;
-        self
-    }
+// #[derive(Clone)]
+// pub struct EntryBuilder {
+//     inner: Entry,
+//     time_set: bool,
+// }
 
-    /// Set status of entry.
-    pub fn status(&mut self, status: Status) -> &mut Self {
-        self.inner.status = status;
-        self
-    }
+// impl EntryBuilder {
+//     /// Set id by incrementing the provided id
+//     pub fn id(&mut self, id: u8) -> &mut Self {
+//         self.inner.id = id + 1;
+//         self
+//     }
 
-    /// Build the entry.
-    pub fn build(&mut self) -> Result<Entry, TrackerError> {
-        if !self.time_set {
-            Err(TrackerError::EntryError {
-                message: "time not set".to_owned(),
-            })
-        } else {
-            log::trace!("Build entry: {:?}", self.inner);
-            Ok(self.inner.clone())
-        }
-    }
+//     /// Set status of entry.
+//     pub fn status(&mut self, status: Status) -> &mut Self {
+//         self.inner.status = status;
+//         self
+//     }
 
-    pub fn time(&mut self, time: DateTime<Utc>) -> &mut Self {
-        self.inner.time = time;
-        self.time_set = true;
-        self
-    }
-}
+//     /// Build the entry.
+//     pub fn build(&mut self) -> Result<Entry, TrackerError> {
+//         if !self.time_set {
+//             Err(TrackerError::EntryError {
+//                 message: "time not set".to_owned(),
+//             })
+//         } else {
+//             log::trace!("Build entry: {:?}", self.inner);
+//             Ok(self.inner.clone())
+//         }
+//     }
 
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
+//     pub fn time(&mut self, time: DateTime<Utc>) -> &mut Self {
+//         self.inner.time = time;
+//         self.time_set = true;
+//         self
+//     }
+// }
 
-    use chrono::TimeZone;
+// #[cfg(test)]
+// mod tests {
+//     use std::str::FromStr;
 
-    use super::{Entry, Status};
+//     use chrono::TimeZone;
 
-    mod builder {
+//     use super::{Entry, Status};
 
-        use chrono::DateTime;
+//     mod builder {
 
-        use super::*;
+//         use chrono::DateTime;
 
-        #[test]
-        fn should_build() {
-            let entry = Entry::builder().time(DateTime::default()).build().unwrap();
+//         use super::*;
 
-            assert_eq!(Status::Connect, entry.status);
-        }
+//         #[test]
+//         fn should_build() {
+//             let entry = Entry::builder().time(DateTime::default()).build().unwrap();
 
-        #[test]
-        fn should_build_entry_with_status() {
-            let entry = Entry::builder()
-                .time(DateTime::default())
-                .status(Status::Disconnect)
-                .build()
-                .unwrap();
+//             assert_eq!(Status::Connect, entry.status);
+//         }
 
-            assert_eq!(Status::Disconnect, entry.status);
-        }
-    }
+//         #[test]
+//         fn should_build_entry_with_status() {
+//             let entry = Entry::builder()
+//                 .time(DateTime::default())
+//                 .status(Status::Disconnect)
+//                 .build()
+//                 .unwrap();
 
-    mod entry {
+//             assert_eq!(Status::Disconnect, entry.status);
+//         }
+//     }
 
-        use super::*;
+//     mod entry {
 
-        #[test]
-        fn should_serialize() {
-            let timestamp = chrono::DateTime::default();
-            let expected_id = "\"id\":0";
-            let expected_status = "\"status\":\"Connect\"";
-            let expected_time = format!("\"time\":\"{}", timestamp.format("%Y"));
-            let entry_str = Entry::builder()
-                .time(timestamp)
-                .build()
-                .unwrap()
-                .to_string();
+//         use super::*;
 
-            assert!(entry_str.contains(expected_id));
-            assert!(entry_str.contains(expected_status));
-            assert!(entry_str.contains(&expected_time));
-        }
+//         #[test]
+//         fn should_serialize() {
+//             let timestamp = chrono::DateTime::default();
+//             let expected_id = "\"id\":0";
+//             let expected_status = "\"status\":\"Connect\"";
+//             let expected_time = format!("\"time\":\"{}", timestamp.format("%Y"));
+//             let entry_str = Entry::builder()
+//                 .time(timestamp)
+//                 .build()
+//                 .unwrap()
+//                 .to_string();
 
-        #[test]
-        fn should_deserialize() {
-            let expected = chrono::Utc
-                .with_ymd_and_hms(2022, 2, 4,5, 27, 41).unwrap();
-            let data =
-                "{\"id\":2,\"status\":\"Disconnect\",\"time\":\"2022-02-04T05:27:41.000000000+00:00\"}";
-            let entry = Entry::from_str(data).unwrap();
+//             assert!(entry_str.contains(expected_id));
+//             assert!(entry_str.contains(expected_status));
+//             assert!(entry_str.contains(&expected_time));
+//         }
 
-            assert_eq!(2, entry.id);
-            assert_eq!(Status::Disconnect, entry.status);
-            assert_eq!(expected, entry.time);
-        }
-    }
-}
+//         #[test]
+//         fn should_deserialize() {
+//             let expected = chrono::Utc
+//                 .with_ymd_and_hms(2022, 2, 4,5, 27, 41).unwrap();
+//             let data =
+//                 "{\"id\":2,\"status\":\"Disconnect\",\"time\":\"2022-02-04T05:27:41.000000000+00:00\"}";
+//             let entry = Entry::from_str(data).unwrap();
+
+//             assert_eq!(2, entry.id);
+//             assert_eq!(Status::Disconnect, entry.status);
+//             assert_eq!(expected, entry.time);
+//         }
+//     }
+// }
