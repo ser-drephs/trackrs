@@ -75,10 +75,10 @@ fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
 
     let a = raw.first().unwrap();
 
-    assert!(a.contains("\"id\":1,\"status\":\"Connect\""));
-    assert!(a.contains("\"id\":2,\"status\":\"Break\""));
-    assert!(a.contains("\"id\":3,\"status\":\"Connect\""));
-    assert!(a.contains("\"id\":4,\"status\":\"End\""));
+    assert!(a.contains("\"status\":\"Start\""));
+    assert!(a.contains("\"status\":\"Break\""));
+    assert!(a.contains("\"status\":\"Start\""));
+    assert!(a.contains("\"status\":\"End\""));
 }
 
 #[test_context::test_context(IntegrationContext)]
@@ -111,9 +111,9 @@ fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
 
     let a = raw.first().unwrap();
 
-    assert!(a.contains("\"id\":1,\"status\":\"Connect\""));
-    assert!(a.contains("\"id\":2,\"status\":\"Break\""));
-    assert!(a.contains("\"id\":3,\"status\":\"Connect\""));
+    assert!(a.contains("\"status\":\"Start\""));
+    assert!(a.contains("\"status\":\"Break\""));
+    assert!(a.contains("\"status\":\"Start\""));
     assert!(!a.contains("\"status\":\"End\""));
 }
 
@@ -147,8 +147,8 @@ fn takeover_subtracts_from_today(ctx: &mut IntegrationContext) {
 
     let a = raw.first().unwrap();
 
-    assert!(a.contains("\"id\":1,\"status\":\"Connect\""));
-    assert!(a.contains("\"id\":2,\"status\":\"Break\""));
-    assert!(a.contains("\"id\":3,\"status\":\"Connect\""));
+    assert!(a.contains("\"status\":\"Start\""));
+    assert!(a.contains("\"status\":\"Break\""));
+    assert!(a.contains("\"status\":\"Start\""));
     assert!(!a.contains("\"status\":\"End\""));
 }

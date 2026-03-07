@@ -330,7 +330,7 @@ mod tests {
                 data: [
                     Entry {
                         id: 1,
-                        status: Status::Connect,
+                        status: Status::Start,
                         time: Utc.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
                     },
                     Entry {
@@ -340,7 +340,7 @@ mod tests {
                     },
                     Entry {
                         id: 3,
-                        status: Status::Connect,
+                        status: Status::Start,
                         time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
                     },
                     Entry {

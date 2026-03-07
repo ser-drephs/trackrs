@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 use crate::{
-    entry::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
+    models::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
 };
 
 type TrackerResult = Result<(), TrackerError>;

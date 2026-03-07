@@ -1,6 +1,6 @@
 use serde::{ Deserialize, Serialize };
 
-use crate::Entry;
+use crate::models::Entry;
 
 const CURRENT_VERSION: u8 = 1;
 

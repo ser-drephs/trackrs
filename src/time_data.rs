@@ -32,32 +32,30 @@ impl TimeData {
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         if e_break > a_break {
-            let last_id = match self.entries.data.last() {
-                Some(last) => last.id,
-                None => 0,
+            let last_entry = match self.entries.data.last() {
+                Some(last) => last,
+                None => return Ok(self),
             };
-            let now = self.entries.data.last().unwrap().time;
+            let now = last_entry.time;
 
             // calculate time for break assertion start
             let diff_b = e_break - a_break + Duration::minutes(1);
             let time_b = now - diff_b;
 
             // overwrite end entry
-            let last_index = last_id - 1;
-            self.entries.data[last_index as usize].status = Status::Break;
-            self.entries.data[last_index as usize].time = time_b;
+            let last_index = self.entries.data.len() - 1;
+            self.entries.data[last_index].status = Status::Break;
+            self.entries.data[last_index].time = time_b;
 
             // calculate time for connect entry afterwards
             let local_c = Duration::minutes(1);
             let time_c = now - local_c;
             let entry_c = Entry::builder()
-                .id(last_id)
-                .status(Status::Connect)
+                .status(Status::Start)
                 .time(time_c)
                 .build()?;
 
             let entry_e = Entry::builder()
-                .id(last_id + 1)
                 .status(Status::End)
                 .time(now)
                 .build()?;
@@ -110,12 +108,11 @@ impl TimeData {
         if end.is_none() {
             log::warn!("End first to takeover time!");
         } else {
-            let last_id = self.entries.data.last().unwrap().id;
+            let len = self.entries.data.len() - 1;
             let old_time = Option::unwrap(end).time;
-            self.entries.data[(last_id - 1) as usize].time = old_time.sub(takeover);
+            self.entries.data[len].time = old_time.sub(takeover);
 
             let entry = Entry::builder()
-                .id(last_id)
                 .status(Status::Takeover)
                 .time(old_time)
                 .build()?;
@@ -343,7 +340,30 @@ mod tests {
 
             time_data.read_from_file()?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
+            Ok(())
+        }
+
+        #[test]
+        fn should_read_time_data_sorting() -> Result<(), TrackerError> {
+            logger();
+            let file_content =
+                "{\"data\":[{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"id\":1,\"status\":\"Start\",\"time\":\"2022-08-04T23:00:53.523319900Z\"}],\"version\":1}";
+            let temp_dir = tempfile::tempdir()?;
+            let time_file = temp_dir.path().join("20220804.json");
+            let mut file = File::create(&time_file)?;
+            file.write_all(file_content.as_bytes())?;
+
+            wait();
+
+            let mut time_data = TimeData::builder()
+                .folder(temp_dir.into_path().into())
+                .date(Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap())
+                .build()?;
+
+            time_data.read_from_file()?;
+            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(Status::Start, time_data.entries.data[0].status);
+            assert_eq!(Status::End, time_data.entries.data[1].status);
             Ok(())
         }
 
@@ -369,14 +389,12 @@ mod tests {
 
             time_data.read_from_file()?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
 
             time_data.append(
                 Status::End,
                 day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
             )?;
             assert_eq!(3, time_data.entries.data.len());
-            assert_eq!(3, time_data.entries.data.last().unwrap().id);
 
             time_data.write_to_file()?;
             assert!(fs::metadata(&time_file)?.len() > initial_size);
@@ -405,20 +423,18 @@ mod tests {
 
             time_data.read_from_file()?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
 
             time_data.append(
                 Status::End,
                 day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
             )?;
             assert_eq!(3, time_data.entries.data.len());
-            assert_eq!(3, time_data.entries.data.last().unwrap().id);
 
             time_data.write_to_file()?;
             assert!(fs::metadata(&time_file)?.len() > initial_size);
 
             let file_content_update =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"id\":3,\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":1}";
+                "{\"data\":[{\"status\":\"Start\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":1}";
             let mut update_file = File::open(&time_file).unwrap();
             let mut data = vec![];
             update_file.read_to_end(&mut data)?;
@@ -447,7 +463,6 @@ mod tests {
 
             time_data.read_from_file()?.assert_break(Duration::minutes(45), Duration::minutes(15))?;
             assert_eq!(4, time_data.entries.data.len());
-            assert_eq!(4, time_data.entries.data.last().unwrap().id);
 
             let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
                 Some(c) => c.into(),
@@ -456,15 +471,13 @@ mod tests {
 
             let connects = time_data.entries.data
                 .iter()
-                .filter(|x| x.status == Status::Connect)
+                .filter(|x| x.status == Status::Start)
                 .cloned()
                 .collect::<Vec<Entry>>();
             let connect = connects.last();
 
             assert!(r#break.is_some());
             assert!(connect.is_some());
-
-            assert_eq!(r#break.unwrap().id + 1, connect.unwrap().id);
 
             let duration_b = r#break.unwrap().time.num_seconds_from_midnight();
             let duration_c = connect.unwrap().time.num_seconds_from_midnight();
@@ -476,7 +489,7 @@ mod tests {
         fn should_assert_break_with_order() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}],\"version\":1}";
+                "{\"data\":[{\"id\":1,\"status\":\"Start\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
@@ -494,56 +507,52 @@ mod tests {
                 .assert_break(Duration::minutes(45), Duration::minutes(15))?
                 .write_to_file()?;
             assert_eq!(4, time_data.entries.data.len());
-            assert_eq!(4, time_data.entries.data.last().unwrap().id);
 
             // assert order of elements
             let fill_connect = time_data.entries.data[1].to_owned();
             let fill_break = time_data.entries.data[2].to_owned();
             let end = time_data.entries.data[3].to_owned();
             assert_eq!(
-                (2, Status::Break),
-                (fill_connect.id, fill_connect.status.to_owned()),
-                "expected filler connect entry to be 2 and status Break but got {} {:?}",
-                fill_connect.id,
+                Status::Break,
+                fill_connect.status.to_owned(),
+                "expected filler connect entry to be 2 and status Break but got {:?}",
                 fill_connect.status
             );
             assert_eq!(
-                (3, Status::Connect),
-                (fill_break.id, fill_break.status.to_owned()),
-                "expected filler break entry to be 3 and status Connect but got {} {:?}",
-                fill_break.id,
+                Status::Start,
+                fill_break.status.to_owned(),
+                "expected filler break entry to be 3 and status Start but got {:?}",
                 fill_break.status
             );
             assert_eq!(
-                (4, Status::End),
-                (end.id, end.status.to_owned()),
-                "expected end entry to be 4 and status End but got {} {:?}",
-                end.id,
+                Status::End,
+                end.status.to_owned(),
+                "expected end entry to be 4 and status End but got {:?}",
                 end.status
             );
 
             // assert file content
-            let exp_break = "{\"id\":2,\"status\":\"Break\",\"time\":\"2022-08-04T07:29";
+            let exp_break = "{\"status\":\"Break\",\"time\":\"2022-08-04T07:29";
 
-            let exp_connect = "{\"id\":3,\"status\":\"Connect\",\"time\":\"2022-08-04T07:59";
+            let exp_connect = "{\"status\":\"Start\",\"time\":\"2022-08-04T07:59";
 
-            let exp_end = "{\"id\":4,\"status\":\"End\",\"time\":\"2022-08-04T08:00";
+            let exp_end = "{\"status\":\"End\",\"time\":\"2022-08-04T08:00";
 
             let act_content = fs::read_to_string(time_file)?;
 
             assert!(
                 act_content.contains(exp_break),
-                "expected content to contain Break with ID 2 and time 07:29, but got {}",
+                "expected content to contain Break with time 07:29, but got {}",
                 act_content
             );
             assert!(
                 act_content.contains(exp_connect),
-                "expected content to contain Connect with ID 3 and time 07:59, but got {}",
+                "expected content to contain Start with time 07:59, but got {}",
                 act_content
             );
             assert!(
                 act_content.contains(exp_end),
-                "expected content to contain End with ID 4 and time 08:00, but got {}",
+                "expected content to contain End with time 08:00, but got {}",
                 act_content
             );
             Ok(())
@@ -573,7 +582,6 @@ mod tests {
                     Duration::hours(1).add(Duration::minutes(15))
                 )?;
             assert_eq!(4, time_data.entries.data.len());
-            assert_eq!(4, time_data.entries.data.last().unwrap().id);
 
             let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
                 Some(c) => c.into(),
@@ -615,7 +623,6 @@ mod tests {
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
 
@@ -638,7 +645,6 @@ mod tests {
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
 
@@ -661,7 +667,6 @@ mod tests {
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
 
@@ -686,12 +691,10 @@ mod tests {
             assert_eq!(3, time_data.entries.data.len());
 
             let end = time_data.entries.data[1].to_owned();
-            assert_eq!(2, end.id);
             assert_eq!(Status::End, end.status);
             assert_eq!((3, 40, 53), (end.time.hour(), end.time.minute(), end.time.second()));
 
             let last = time_data.entries.data.last().unwrap();
-            assert_eq!(3, last.id);
             assert_eq!(Status::Takeover, last.status);
             assert_eq!((4, 0, 53), (last.time.hour(), last.time.minute(), last.time.second()));
             Ok(())
@@ -815,19 +818,19 @@ mod tests {
                 assert!(&time_file.exists());
 
                 // assert file content
-                let exp_takeover = "{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T02:00";
-                let exp_connect = "{\"id\":2,\"status\":\"Connect\",\"time\":\"2022-02-02T02:15";
+                let exp_takeover = "{\"status\":\"Start\",\"time\":\"2022-02-02T02:00";
+                let exp_connect = "{\"status\":\"Start\",\"time\":\"2022-02-02T02:15";
 
                 let act_content = fs::read_to_string(time_file)?;
 
                 assert!(
                     act_content.contains(exp_takeover),
-                    "expected content to contain Takeover Connect with ID 1, but got {}",
+                    "expected content to contain Takeover Connect, but got {}",
                     act_content
                 );
                 assert!(
                     act_content.contains(exp_connect),
-                    "expected content to contain Connect with ID 2, but got {}",
+                    "expected content to contain Connect, but got {}",
                     act_content
                 );
 
