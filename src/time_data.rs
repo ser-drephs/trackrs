@@ -1,8 +1,13 @@
-use std::{ fs::{ self, File, OpenOptions }, io::BufReader, ops::Sub, path::PathBuf, str::FromStr };
-
-use chrono::{ DateTime, Duration, Utc };
-
-use crate::{ Entries, Entry, Status, Takeover, TrackerError, Upgrade };
+use crate::{Entries, Entry, Status, Takeover, TrackerError, Upgrade};
+use chrono::{DateTime, Duration, Utc};
+use std::io::Read;
+use std::{
+    fs::{self, File, OpenOptions},
+    io::BufReader,
+    ops::Sub,
+    path::PathBuf,
+    str::FromStr,
+};
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
@@ -28,7 +33,7 @@ impl TimeData {
     pub fn assert_break(
         &mut self,
         e_break: Duration,
-        a_break: Duration
+        a_break: Duration,
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         if e_break > a_break {
@@ -55,10 +60,7 @@ impl TimeData {
                 .time(time_c)
                 .build()?;
 
-            let entry_e = Entry::builder()
-                .status(Status::End)
-                .time(now)
-                .build()?;
+            let entry_e = Entry::builder().status(Status::End).time(now).build()?;
             log::debug!(
                 "fill break with {:?} and {:?}",
                 self.entries.data[last_index as usize],
@@ -73,7 +75,7 @@ impl TimeData {
     pub fn append(
         &mut self,
         status: Status,
-        time: DateTime<Utc>
+        time: DateTime<Utc>,
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         let last_id = match self.entries.data.last() {
@@ -81,7 +83,11 @@ impl TimeData {
             None => 0,
         };
 
-        let entry = Entry::builder().id(last_id).status(status).time(time.to_utc()).build()?;
+        let entry = Entry::builder()
+            .id(last_id)
+            .status(status)
+            .time(time.to_utc())
+            .build()?;
         log::debug!("append time data: {:?}", entry);
         self.entries.data.append(&mut [entry].to_vec());
         Ok(self)
@@ -126,7 +132,9 @@ impl TimeData {
         self.assert_build()?;
         if self.file.exists() {
             let f = File::open(&self.file)?;
-            match Upgrade::to_v1(BufReader::new(f))? {
+            let mut raw_string = String::new();
+            BufReader::new(f).read_to_string(&mut raw_string)?;
+            match Upgrade::upgrade(&raw_string)? {
                 Some(res) => {
                     self.entries = res;
                 }
@@ -136,7 +144,9 @@ impl TimeData {
                 }
             }
 
-            self.entries.data.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+            self.entries
+                .data
+                .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
         } else {
             log::info!("file not yet created: {:?}", &self.file);
             // invoke takeover
@@ -249,11 +259,16 @@ impl TimeDataBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::{ env, fs::{ self, File }, io::Write, ops::Add };
+    use std::{
+        env,
+        fs::{self, File},
+        io::Write,
+        ops::Add,
+    };
 
-    use chrono::{ Duration, TimeZone, Timelike };
+    use chrono::{Duration, TimeZone, Timelike};
 
-    use crate::{ Entry, Status, TimeData, TrackerError };
+    use crate::{Entry, Status, TimeData, TrackerError};
 
     use serial_test::serial;
 
@@ -281,9 +296,9 @@ mod tests {
     }
 
     mod time_data {
-        use std::{ io::Read, process::Command };
+        use std::{io::Read, process::Command};
 
-        use chrono::{ NaiveTime, Utc };
+        use chrono::{NaiveTime, Utc};
 
         use super::*;
 
@@ -306,11 +321,13 @@ mod tests {
                 .read_from_file()?
                 .append(
                     Status::Connect,
-                    day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap()).unwrap()
+                    day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap())
+                        .unwrap(),
                 )?
                 .append(
                     Status::End,
-                    day.with_time(NaiveTime::from_hms_opt(4, 1, 0).unwrap()).unwrap()
+                    day.with_time(NaiveTime::from_hms_opt(4, 1, 0).unwrap())
+                        .unwrap(),
                 )?
                 .write_to_file()?;
 
@@ -392,7 +409,8 @@ mod tests {
 
             time_data.append(
                 Status::End,
-                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
+                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap())
+                    .unwrap(),
             )?;
             assert_eq!(3, time_data.entries.data.len());
 
@@ -426,7 +444,8 @@ mod tests {
 
             time_data.append(
                 Status::End,
-                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
+                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap())
+                    .unwrap(),
             )?;
             assert_eq!(3, time_data.entries.data.len());
 
@@ -434,7 +453,7 @@ mod tests {
             assert!(fs::metadata(&time_file)?.len() > initial_size);
 
             let file_content_update =
-                "{\"data\":[{\"status\":\"Start\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":1}";
+                "{\"data\":[{\"status\":\"Start\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":2}";
             let mut update_file = File::open(&time_file).unwrap();
             let mut data = vec![];
             update_file.read_to_end(&mut data)?;
@@ -461,15 +480,24 @@ mod tests {
                 .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
                 .build()?;
 
-            time_data.read_from_file()?.assert_break(Duration::minutes(45), Duration::minutes(15))?;
+            time_data
+                .read_from_file()?
+                .assert_break(Duration::minutes(45), Duration::minutes(15))?;
             assert_eq!(4, time_data.entries.data.len());
 
-            let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
+            let r#break = match time_data
+                .entries
+                .data
+                .iter()
+                .find(|x| x.status == Status::Break)
+            {
                 Some(c) => c.into(),
                 None => None,
             };
 
-            let connects = time_data.entries.data
+            let connects = time_data
+                .entries
+                .data
                 .iter()
                 .filter(|x| x.status == Status::Start)
                 .cloned()
@@ -575,20 +603,25 @@ mod tests {
                 .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
                 .build()?;
 
-            time_data
-                .read_from_file()?
-                .assert_break(
-                    Duration::minutes(45),
-                    Duration::hours(1).add(Duration::minutes(15))
-                )?;
+            time_data.read_from_file()?.assert_break(
+                Duration::minutes(45),
+                Duration::hours(1).add(Duration::minutes(15)),
+            )?;
             assert_eq!(4, time_data.entries.data.len());
 
-            let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
+            let r#break = match time_data
+                .entries
+                .data
+                .iter()
+                .find(|x| x.status == Status::Break)
+            {
                 Some(c) => c.into(),
                 None => None,
             };
 
-            let connects = time_data.entries.data
+            let connects = time_data
+                .entries
+                .data
                 .iter()
                 .filter(|x| x.status == Status::Connect)
                 .cloned()
@@ -600,7 +633,11 @@ mod tests {
 
             let duration_b = r#break.unwrap().time.num_seconds_from_midnight();
             let duration_c = connect.unwrap().time.num_seconds_from_midnight();
-            assert_eq!(6300, duration_c - duration_b, "total break duration should be 30 minutes");
+            assert_eq!(
+                6300,
+                duration_c - duration_b,
+                "total break duration should be 30 minutes"
+            );
             Ok(())
         }
 
@@ -621,7 +658,9 @@ mod tests {
                 .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
                 .build()?;
 
-            time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
+            time_data
+                .read_from_file()?
+                .assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.data.len());
             Ok(())
         }
@@ -643,7 +682,9 @@ mod tests {
                 .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
                 .build()?;
 
-            time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
+            time_data
+                .read_from_file()?
+                .assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.data.len());
             Ok(())
         }
@@ -665,7 +706,9 @@ mod tests {
                 .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
                 .build()?;
 
-            time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
+            time_data
+                .read_from_file()?
+                .assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.data.len());
             Ok(())
         }
@@ -687,21 +730,29 @@ mod tests {
                 .date(Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap())
                 .build()?;
 
-            time_data.read_from_file()?.takeover(Duration::minutes(20))?;
+            time_data
+                .read_from_file()?
+                .takeover(Duration::minutes(20))?;
             assert_eq!(3, time_data.entries.data.len());
 
             let end = time_data.entries.data[1].to_owned();
             assert_eq!(Status::End, end.status);
-            assert_eq!((3, 40, 53), (end.time.hour(), end.time.minute(), end.time.second()));
+            assert_eq!(
+                (3, 40, 53),
+                (end.time.hour(), end.time.minute(), end.time.second())
+            );
 
             let last = time_data.entries.data.last().unwrap();
             assert_eq!(Status::Takeover, last.status);
-            assert_eq!((4, 0, 53), (last.time.hour(), last.time.minute(), last.time.second()));
+            assert_eq!(
+                (4, 0, 53),
+                (last.time.hour(), last.time.minute(), last.time.second())
+            );
             Ok(())
         }
 
         mod takeover {
-            use chrono::{ DateTime, Utc };
+            use chrono::{DateTime, Utc};
 
             use super::*;
 
@@ -744,15 +795,18 @@ mod tests {
                 time_data
                     .read_from_file()?
                     .assert_takeover(
-                        day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap())
+                            .unwrap(),
                     )?
                     .append(
                         Status::Connect,
-                        day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap())
+                            .unwrap(),
                     )?
                     .append(
                         Status::End,
-                        day.with_time(NaiveTime::from_hms_opt(5, 0, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(5, 0, 0).unwrap())
+                            .unwrap(),
                     )?
                     .write_to_file()?;
                 assert!(&time_file.exists(), "time file should exist");
@@ -768,7 +822,8 @@ mod tests {
                     diff
                 );
                 assert_eq!(
-                    day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap()).unwrap(),
+                    day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap())
+                        .unwrap(),
                     takeover_time.time,
                     "takeover time doesnt match"
                 );
@@ -779,7 +834,7 @@ mod tests {
             #[test]
             #[serial]
             fn should_takeover_time_check_file(
-                ctx: &mut TakeoverContext
+                ctx: &mut TakeoverContext,
             ) -> Result<(), TrackerError> {
                 let time_file = ctx.temp_dir.path().join("20220202.json");
                 let day = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
@@ -797,22 +852,23 @@ mod tests {
                     .build()?;
                 time_data
                     .read_from_file()?
-                    .assert_takeover(
-                        DateTime::from(
-                            day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
-                        )
-                    )?
+                    .assert_takeover(DateTime::from(
+                        day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap())
+                            .unwrap(),
+                    ))?
                     .append(
                         Status::Connect,
                         DateTime::from(
-                            day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
-                        )
+                            day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap())
+                                .unwrap(),
+                        ),
                     )?
                     .append(
                         Status::End,
                         DateTime::from(
-                            day.with_time(NaiveTime::from_hms_opt(2, 45, 0).unwrap()).unwrap()
-                        )
+                            day.with_time(NaiveTime::from_hms_opt(2, 45, 0).unwrap())
+                                .unwrap(),
+                        ),
                     )?
                     .write_to_file()?;
                 assert!(&time_file.exists());
@@ -841,7 +897,7 @@ mod tests {
             #[test]
             #[serial]
             fn should_takeover_time_over_an_hour(
-                ctx: &mut TakeoverContext
+                ctx: &mut TakeoverContext,
             ) -> Result<(), TrackerError> {
                 let time_file = ctx.temp_dir.path().join("20220202.json");
                 let day = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
@@ -860,15 +916,18 @@ mod tests {
                 time_data
                     .read_from_file()?
                     .assert_takeover(
-                        day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap())
+                            .unwrap(),
                     )?
                     .append(
                         Status::Connect,
-                        day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap())
+                            .unwrap(),
                     )?
                     .append(
                         Status::End,
-                        day.with_time(NaiveTime::from_hms_opt(4, 14, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(4, 14, 0).unwrap())
+                            .unwrap(),
                     )?
                     .write_to_file()?;
                 assert!(&time_file.exists());

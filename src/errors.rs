@@ -33,11 +33,13 @@ pub enum TrackerError {
     TakeoverGetError { message: String },
     // own
     #[error("file upgrade error")]
-    UpgradeError(#[from] crate::UpgradeError)
+    UpgradeError(#[from] crate::UpgradeError),
 }
 
 #[derive(Error, Debug)]
 pub enum UpgradeError {
     #[error("error upgrading to v1")]
-    UpgradeV1Error(#[from] serde_json::Error),
+    UpgradeV1Error { message: String },
+    #[error("error upgrading to v2")]
+    UpgradeV2Error { message: String },
 }

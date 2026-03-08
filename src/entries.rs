@@ -2,7 +2,7 @@ use serde::{ Deserialize, Serialize };
 
 use crate::models::Entry;
 
-const CURRENT_VERSION: u8 = 1;
+const CURRENT_VERSION: u8 = 2;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Entries {
