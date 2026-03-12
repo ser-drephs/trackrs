@@ -34,6 +34,10 @@ pub enum TrackerError {
     // own
     #[error("file upgrade error")]
     UpgradeError(#[from] crate::UpgradeError),
+    #[error("storage error")]
+    StorageProviderError(#[from] crate::storage_provider::StorageProviderError),
+    #[error("configuration error")]
+    ConfigurationError(#[from] crate::config::ConfigurationError)
 }
 
 #[derive(Error, Debug)]

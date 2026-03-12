@@ -1,6 +1,6 @@
 use serde::{ Deserialize, Serialize };
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq)]
 pub enum Status {
     #[deprecated = "Use Start instead"]
     #[serde(rename(serialize = "Start", deserialize = "Connect"))]

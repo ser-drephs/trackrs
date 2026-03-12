@@ -1,12 +1,14 @@
+use std::cmp::Ordering;
 use std::fmt::Display;
+use std::ops::Sub;
 use std::str::FromStr;
 
-use chrono::{ DateTime, Utc };
-use serde::{ Deserialize, Serialize };
+use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
 
-use crate::{ Status, TrackerError };
+use crate::{Status, TrackerError};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Copy)]
 pub struct Entry {
     #[deprecated(note = "id is not used anymore, will be removed in future versions")]
     #[serde(skip)]
@@ -29,11 +31,24 @@ impl Default for Entry {
 }
 
 impl Entry {
+    #[deprecated(since = "3.0.0", note = "use direction methods instead of builder")]
     pub fn builder() -> EntryBuilder {
         EntryBuilder {
             inner: Default::default(),
             time_set: false,
         }
+    }
+
+    pub fn is_action(&self, status: Status) -> bool {
+        self.status == status
+    }
+
+    pub fn new_now(status: Status) -> Self {
+        Entry::builder()
+            .status(status)
+            .time(Utc::now())
+            .build()
+            .unwrap()
     }
 }
 
@@ -49,6 +64,26 @@ impl FromStr for Entry {
 impl Display for Entry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", serde_json::to_string(&self).unwrap())
+    }
+}
+
+impl PartialOrd for Entry {
+    fn partial_cmp(&self, other: &Entry) -> Option<Ordering> {
+        self.time.partial_cmp(&other.time)
+    }
+}
+
+impl Ord for Entry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.time.cmp(&other.time)
+    }
+}
+
+impl Sub for Entry {
+    type Output = Duration;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.time - rhs.time
     }
 }
 
@@ -96,7 +131,7 @@ mod tests {
 
     use chrono::TimeZone;
 
-    use super::{ Entry, Status };
+    use super::{Entry, Status};
 
     mod builder {
         use chrono::DateTime;
@@ -131,7 +166,11 @@ mod tests {
             let expected_id = "\"id\":0";
             let expected_status = "\"status\":\"Start\"";
             let expected_time = format!("\"time\":\"{}", timestamp.format("%Y"));
-            let entry_str = Entry::builder().time(timestamp).build().unwrap().to_string();
+            let entry_str = Entry::builder()
+                .time(timestamp)
+                .build()
+                .unwrap()
+                .to_string();
 
             assert!(!entry_str.contains(expected_id));
             assert!(entry_str.contains(expected_status));
@@ -141,8 +180,7 @@ mod tests {
         #[test]
         fn should_deserialize() {
             let expected = chrono::Utc.with_ymd_and_hms(2022, 2, 4, 5, 27, 41).unwrap();
-            let data =
-                "{\"status\":\"Break\",\"time\":\"2022-02-04T05:27:41.000000000+00:00\"}";
+            let data = "{\"status\":\"Break\",\"time\":\"2022-02-04T05:27:41.000000000+00:00\"}";
             let entry = Entry::from_str(data).unwrap();
 
             assert_eq!(Status::Break, entry.status);

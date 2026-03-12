@@ -1,10 +1,12 @@
-use std::{ env, fmt::Display, ops::Mul };
+use std::{env, fmt::Display, ops::Mul};
 
-use chrono::{ DateTime, Duration, Utc };
+use chrono::{DateTime, Datelike, Duration, Utc};
 use colored::Colorize;
-use prettytable::{ format, Table };
+use prettytable::{format, Table};
 
-use crate::{ Settings, StatusDaily, StatusTime, TimeData, TimeDataWeekly, TrackerError };
+use crate::{
+    config::Configuration, StatusDaily, StatusTime, TimeData, TimeDataWeekly, TrackerError,
+};
 
 #[derive(Clone, Default, Debug)]
 pub struct StatusWeekly {
@@ -32,16 +34,14 @@ impl StatusWeekly {
 
         log::trace!("set table titels");
 
-        table.set_titles(
-            row![
-                format!("{:width$}", "Date"),
-                format!("{:width$}", "Start"),
-                format!("{:width$}", "End"),
-                format!("{:width$}", "Break"),
-                format!("{:width$}", "Worktime"),
-                format!("{:width$}", "Overtime")
-            ]
-        );
+        table.set_titles(row![
+            format!("{:width$}", "Date"),
+            format!("{:width$}", "Start"),
+            format!("{:width$}", "End"),
+            format!("{:width$}", "Break"),
+            format!("{:width$}", "Worktime"),
+            format!("{:width$}", "Overtime")
+        ]);
 
         fn status_unwrap(status: Option<StatusTime>) -> StatusTime {
             match status {
@@ -53,32 +53,28 @@ impl StatusWeekly {
         log::trace!("iterate over entries");
 
         self.entries.iter().for_each(|(date, status)| {
-            table.add_row(
-                row![
-                    date.to_owned().format("%a %d %b"),
-                    format!("{}", status_unwrap(status.start.to_owned())),
-                    format!("{}", status_unwrap(status.end.to_owned())),
-                    format!("{}", status_unwrap(status.r#break.to_owned())),
-                    format!("{}", status.worktime),
-                    format!("{}", status.overtime)
-                ]
-            );
+            table.add_row(row![
+                date.to_owned().format("%a %d %b"),
+                format!("{}", status_unwrap(status.start.to_owned())),
+                format!("{}", status_unwrap(status.end.to_owned())),
+                format!("{}", status_unwrap(status.r#break.to_owned())),
+                format!("{}", status.worktime),
+                format!("{}", status.overtime)
+            ]);
         });
 
         table.add_empty_row();
 
         log::trace!("add summary row");
 
-        table.add_row(
-            row![
-                format!("Total week {}", self.week),
-                "",
-                "",
-                self.decimal,
-                self.total,
-                self.overtime
-            ]
-        );
+        table.add_row(row![
+            format!("Total week {}", self.week),
+            "",
+            "",
+            self.decimal,
+            self.total,
+            self.overtime
+        ]);
 
         if env::var("RUST_TEST").is_err() {
             log::trace!("print table to std");
@@ -89,7 +85,7 @@ impl StatusWeekly {
 
 #[derive(Default)]
 pub struct StatusWeeklyBuilder {
-    settings: Option<Settings>,
+    settings: Option<Configuration>,
     data: Option<TimeDataWeekly>,
 }
 
@@ -99,7 +95,7 @@ impl StatusWeeklyBuilder {
         self
     }
 
-    pub fn settings(&mut self, settings: Settings) -> &mut Self {
+    pub fn settings(&mut self, settings: Configuration) -> &mut Self {
         self.settings = Some(settings);
         self
     }
@@ -132,22 +128,31 @@ impl StatusWeeklyBuilder {
             log::trace!("processing: {:?}", d);
             let mut b = StatusDaily::builder();
             if !d.entries.data.is_empty() {
-                let s = b.data(d.to_owned()).settings(settings.clone()).build().unwrap();
-                log::info!("got {} working time and {} overtime", s.worktime, s.overtime);
+                let s = b
+                    .data(d.to_owned())
+                    .settings(settings.clone())
+                    .build()
+                    .unwrap();
+                log::info!(
+                    "got {} working time and {} overtime",
+                    s.worktime,
+                    s.overtime
+                );
                 entries.append(&mut [(d.date.unwrap().to_owned(), s.to_owned())].to_vec());
                 total += s.worktime;
                 overtime += s.overtime;
             } else {
-                let expected = self.settings
+                let expected = self
+                    .settings
                     .as_ref()
                     .unwrap()
-                    .workperday.from_date(d.date.unwrap());
+                    .workperday
+                    .get_by_workday(d.date.unwrap().weekday());
                 if expected >= &0 {
                     let exh = expected.to_owned() as i64;
                     overtime -= StatusTime::from(Duration::minutes(exh));
-                    let missing_status = StatusDaily::builder().empty_with_overtime(
-                        overtime.to_owned()
-                    );
+                    let missing_status =
+                        StatusDaily::builder().empty_with_overtime(overtime.to_owned());
                     entries.append(&mut [(d.date.unwrap().to_owned(), missing_status)].to_vec());
                 }
             }
@@ -186,12 +191,12 @@ impl Display for StatusWeekly {
 
         let line1 = format!(
             " {:width$} | {:width$} | {:width$} | {:width$}",
-            "Week",
-            "Work time",
-            "Overtime",
-            "Decimal"
+            "Week", "Work time", "Overtime", "Decimal"
         );
-        let line2 = format!(" {0:->width$} | {0:->width$} | {0:->width$} | {0:->width$}", "");
+        let line2 = format!(
+            " {0:->width$} | {0:->width$} | {0:->width$} | {0:->width$}",
+            ""
+        );
 
         let ot_fmt = match overtime.partial_cmp(&zero_dr.into()).unwrap() {
             std::cmp::Ordering::Less => format!("-{}", overtime.mul(-1)).bright_red(),
@@ -204,10 +209,7 @@ impl Display for StatusWeekly {
 
         let line3 = format!(
             " {0:width$} | {1: >width$} | {2: >width$} | {3: >width$}",
-            self.week,
-            t_fmt,
-            ot_fmt,
-            dc_fmt
+            self.week, t_fmt, ot_fmt, dc_fmt
         );
         write!(f, "{}\n{}\n{}\n", line1, line2, line3)
     }
@@ -221,7 +223,7 @@ mod tests {
 
     use chrono::TimeZone;
 
-    use crate::{ BreakLimit, Entry, Status };
+    use crate::{Entry, Status};
 
     fn logger() {
         // std::env::set_var("RUST_LOG", "trace");
@@ -307,20 +309,18 @@ mod tests {
     }
 
     mod builder {
+        use super::*;
+        use crate::config::BreakThreshold;
+        use crate::Entries;
         use chrono::Utc;
 
-        use crate::Entries;
-
-        use super::*;
-
-        fn get_settings() -> Settings {
-            Settings {
-                limits: [
-                    BreakLimit {
-                        start: 8 * 60,
-                        minutes: 45,
-                    },
-                ].to_vec(),
+        fn get_settings() -> Configuration {
+            Configuration {
+                limits: [BreakThreshold {
+                    start: 8 * 60,
+                    minutes: 45,
+                }]
+                .to_vec(),
                 ..Default::default()
             }
         }
@@ -346,16 +346,19 @@ mod tests {
                     Entry {
                         id: 4,
                         status: Status::End,
-                        time: Utc.with_ymd_and_hms(
-                            2022,
-                            3,
-                            day.into(),
-                            end.into(),
-                            end_minutes.into(),
-                            0
-                        ).unwrap(),
+                        time: Utc
+                            .with_ymd_and_hms(
+                                2022,
+                                3,
+                                day.into(),
+                                end.into(),
+                                end_minutes.into(),
+                                0,
+                            )
+                            .unwrap(),
                     },
-                ].to_vec(),
+                ]
+                .to_vec(),
                 ..Default::default()
             }
         }
@@ -395,7 +398,8 @@ mod tests {
                     date: Some(Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
-            ].to_vec()
+            ]
+            .to_vec()
         }
 
         #[test]
@@ -515,7 +519,8 @@ mod tests {
                     date: Some(Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
                     ..Default::default()
                 },
-            ].to_vec();
+            ]
+            .to_vec();
             let settings = get_settings();
             let time_data_weekly = TimeDataWeekly {
                 entries: time_data,

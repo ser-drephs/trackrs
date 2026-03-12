@@ -2,9 +2,9 @@ use chrono::{Datelike, IsoWeek, Local};
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
-use crate::{
-    models::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
-};
+use crate::config::Configuration;
+use crate::storage_provider::StorageProvider;
+use crate::{models::Status, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError};
 
 type TrackerResult = Result<(), TrackerError>;
 
@@ -88,21 +88,29 @@ pub enum Commands {
 }
 
 pub trait CliExecute {
-    fn execute(&self) -> TrackerResult;
+    fn execute<P: StorageProvider>(
+        &self,
+        storage_provider: &P,
+        configuration: &Configuration,
+    ) -> TrackerResult;
     fn init_logger(&self) -> TrackerResult;
 }
 
 impl CliExecute for Cli {
-    fn execute(&self) -> TrackerResult {
+    fn execute<P: StorageProvider>(
+        &self,
+        storage_provider: &P,
+        configuration: &Configuration,
+    ) -> TrackerResult {
         match &self.command {
-            Commands::Break => self.invoke_break(),
-            Commands::End => self.invoke_end(),
-            Commands::Disconnect => self.invoke_disconnect(),
-            Commands::Status { week, table } => self.invoke_status(week, table),
-            Commands::Config { list: _, edit } => self.invoke_config(edit),
-            Commands::Takeover { minutes } => self.invoke_takeover(minutes),
-            Commands::Start => self.invoke_start(),
-            _ => self.invoke_continue(), // default and Command::Start.
+            Commands::Break => self.invoke_break(configuration),
+            Commands::End => self.invoke_end(configuration),
+            Commands::Disconnect => self.invoke_disconnect(configuration),
+            Commands::Status { week, table } => self.invoke_status(week, table, configuration),
+            Commands::Config { list: _, edit } => self.invoke_config(edit, configuration),
+            Commands::Takeover { minutes } => self.invoke_takeover(minutes, configuration),
+            Commands::Start => self.invoke_start(configuration),
+            _ => self.invoke_continue(configuration), // default and Command::Start.
         }
     }
 
@@ -130,11 +138,10 @@ impl CliExecute for Cli {
 }
 
 impl Cli {
-    fn invoke_start(&self) -> TrackerResult {
+    fn invoke_start(&self, configuration: &Configuration) -> TrackerResult {
         log::info!("start executed");
-        let settings = Settings::new()?;
         let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
+            .folder((*configuration.folder).into())
             .today()
             .build()?;
         let now = Local::now();
@@ -145,11 +152,10 @@ impl Cli {
             .write_to_file()
     }
 
-    fn invoke_continue(&self) -> TrackerResult {
+    fn invoke_continue(&self, configuration: &Configuration) -> TrackerResult {
         log::info!("start executed");
-        let settings = Settings::new()?;
         let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
+            .folder((*configuration.folder).into())
             .today()
             .build()?;
         let now = Local::now();
@@ -159,11 +165,10 @@ impl Cli {
             .write_to_file()
     }
 
-    fn invoke_break(&self) -> TrackerResult {
+    fn invoke_break(&self, configuration: &Configuration) -> TrackerResult {
         log::info!("break executed");
-        let settings = Settings::new()?;
         let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
+            .folder((*configuration.folder).into())
             .today()
             .build()?;
         let now = Local::now();
@@ -173,15 +178,14 @@ impl Cli {
             .write_to_file()
     }
 
-    fn invoke_end(&self) -> TrackerResult {
+    fn invoke_end(&self, configuration: &Configuration) -> TrackerResult {
         log::info!("end executed");
-        let settings = Settings::new()?;
-        let folder: &str = settings.folder.as_ref();
+        let folder: &str = configuration.folder.as_ref();
         let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
         time_data.read_from_file()?;
         let status = StatusDaily::builder()
             .data(time_data.clone())
-            .settings(settings)
+            .settings(configuration.clone())
             .build()?;
         let now = Local::now();
         time_data
@@ -191,14 +195,13 @@ impl Cli {
                 status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
-        self.invoke_status(&None, &false)
+        self.invoke_status(&None, &false, configuration)
     }
 
-    fn invoke_disconnect(&self) -> TrackerResult {
+    fn invoke_disconnect(&self, configuration: &Configuration) -> TrackerResult {
         log::info!("disconnect executed");
-        let settings = Settings::new()?;
         let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
+            .folder((*configuration.folder).into())
             .today()
             .build()?;
         let now = Local::now();
@@ -208,23 +211,26 @@ impl Cli {
             .write_to_file()
     }
 
-    fn invoke_status(&self, week: &Option<i8>, table: &bool) -> TrackerResult {
+    fn invoke_status(
+        &self,
+        week: &Option<i8>,
+        table: &bool,
+        configuration: &Configuration,
+    ) -> TrackerResult {
         log::info!("status executed");
-        let settings = Settings::new()?;
-
         match week {
             Some(w) => {
                 let year = Local::now().year();
                 let cur_week: IsoWeek = Local::now().iso_week();
                 let time_data = TimeDataWeekly::builder()
-                    .folder(settings.folder.to_owned().into())
+                    .folder(configuration.folder.to_owned().into())
                     .year(year.try_into()?)
                     .week(w, cur_week)
                     .build()?;
 
                 let status = StatusWeekly::builder()
                     .data(time_data)
-                    .settings(settings)
+                    .settings(configuration.clone())
                     .build()?;
 
                 if *table {
@@ -235,13 +241,13 @@ impl Cli {
             }
             None => {
                 let mut time_data = TimeData::builder()
-                    .folder(settings.folder.to_owned().into())
+                    .folder(configuration.folder.to_owned().into())
                     .today()
                     .build()?;
                 time_data.read_from_file()?;
                 let status = StatusDaily::builder()
                     .data(time_data)
-                    .settings(settings)
+                    .settings(configuration.clone())
                     .build()?;
                 println!("{}", status);
             }
@@ -249,28 +255,26 @@ impl Cli {
         Ok(())
     }
 
-    fn invoke_config(&self, edit: &bool) -> TrackerResult {
+    fn invoke_config(&self, edit: &bool, configuration: &Configuration) -> TrackerResult {
         log::info!("status executed");
-        let settings = Settings::new()?;
 
         if *edit {
             log::debug!("invoke default editor with config");
-            open::that(settings.file)?
+            open::that(&Configuration::file())?
         } else {
-            println!("{:#?}", settings);
+            println!("{:#?}", configuration);
         }
         Ok(())
     }
 
-    fn invoke_takeover(&self, minutes: &u16) -> TrackerResult {
+    fn invoke_takeover(&self, minutes: &u16, configuration: &Configuration) -> TrackerResult {
         log::info!("takeover {} minutes", minutes);
-        let settings = Settings::new()?;
-        let folder: &str = settings.folder.as_ref();
+        let folder: &str = configuration.folder.as_ref();
         let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
         time_data.read_from_file()?;
         let status = StatusDaily::builder()
             .data(time_data.clone())
-            .settings(settings)
+            .settings(configuration.clone())
             .build()?;
         let now = Local::now();
         time_data
@@ -280,6 +284,6 @@ impl Cli {
                 status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
-        self.invoke_status(&None, &false)
+        self.invoke_status(&None, &false, configuration)
     }
 }

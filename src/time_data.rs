@@ -1,4 +1,4 @@
-use crate::{Entries, Entry, Status, Takeover, TrackerError, Upgrade};
+use crate::{Entries, Entry, Status, Takeover, TrackerError};
 use chrono::{DateTime, Duration, Utc};
 use std::io::Read;
 use std::{
@@ -8,6 +8,7 @@ use std::{
     path::PathBuf,
     str::FromStr,
 };
+use crate::upgrade::Upgrade;
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;

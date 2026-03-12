@@ -3,12 +3,12 @@ use std::ops::{ Add, Mul };
 use chrono::{ DateTime, Duration, Local, Utc };
 use colored::Colorize;
 
-use crate::{ Settings, Status, StatusTime, TimeData, TrackerError };
+use crate::{ config::Configuration, Status, StatusTime, TimeData, TrackerError };
 
 #[derive(Default, Clone, Debug)]
 pub struct StatusDaily {
     data: Option<TimeData>,
-    settings: Option<Settings>,
+    settings: Option<Configuration>,
     pub start: Option<StatusTime>,
     pub end: Option<StatusTime>,
     temp_end: Option<StatusTime>,
@@ -133,7 +133,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.entries.data[0].time).to_owned().into());
+            let w = s.workperday.get_duration_by_date(d.entries.data[0].time);
 
             self.exp_worktime = Some(StatusTime::from(w));
 
@@ -201,7 +201,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.entries.data[0].time).to_owned().into());
+            let w = s.workperday.get_duration_by_date(d.entries.data[0].time).to_owned();
 
             let e = if self.r#break.to_owned().unwrap() > self.exp_break.to_owned().unwrap() {
                 w.add(self.r#break.to_owned().unwrap().into())
@@ -235,7 +235,7 @@ impl StatusDailyBuilder {
         self
     }
 
-    pub fn settings(&mut self, settings: Settings) -> &mut Self {
+    pub fn settings(&mut self, settings: Configuration) -> &mut Self {
         self.inner.settings = Some(settings);
         self
     }
@@ -356,14 +356,14 @@ mod tests {
     use chrono::{ DateTime, Duration, TimeZone };
 
     use crate::{
-        BreakLimit,
+        config::BreakThreshold,
         Entry,
-        Settings,
+        config::Configuration,
         Status,
         StatusDaily,
         StatusTime,
         TimeData,
-        WorkPerDayInMinutes,
+        config::WorktimePerDay,
     };
 
     use indoc::indoc;
@@ -423,9 +423,9 @@ mod tests {
                 },
                 ..Default::default()
             };
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
@@ -505,9 +505,9 @@ mod tests {
                 },
                 ..Default::default()
             };
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
@@ -586,9 +586,9 @@ mod tests {
                 },
                 ..Default::default()
             };
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
@@ -651,14 +651,14 @@ mod tests {
                 },
                 ..Default::default()
             };
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     saturday: 8 * 60,
                     sunday: 8 * 60,
                     ..Default::default()
@@ -735,14 +735,14 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     wednesday: 6 * 60,
                     ..Default::default()
                 },
@@ -815,14 +815,14 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     wednesday: 6 * 60,
                     ..Default::default()
                 },
@@ -894,7 +894,7 @@ mod tests {
             };
             let status = StatusDaily::builder()
                 .data(data)
-                .settings(Settings::default())
+                .settings(Configuration::default())
                 .build()
                 .unwrap();
             assert!(status.has_connect());
@@ -919,7 +919,7 @@ mod tests {
                 ..Default::default()
             };
 
-            StatusDaily::builder().data(data).settings(Settings::default()).build().unwrap();
+            StatusDaily::builder().data(data).settings(Configuration::default()).build().unwrap();
         }
 
         #[test]
@@ -958,7 +958,7 @@ mod tests {
 
             let status = StatusDaily::builder()
                 .data(data)
-                .settings(Settings::default())
+                .settings(Configuration::default())
                 .build()
                 .unwrap();
 
@@ -986,7 +986,7 @@ mod tests {
 
             let status = StatusDaily::builder()
                 .data(data)
-                .settings(Settings::default())
+                .settings(Configuration::default())
                 .build()
                 .unwrap();
 
@@ -1031,7 +1031,7 @@ mod tests {
 
             let status = StatusDaily::builder()
                 .data(data)
-                .settings(Settings::default())
+                .settings(Configuration::default())
                 .build()
                 .unwrap();
 
@@ -1125,7 +1125,7 @@ mod tests {
 
             let status = StatusDaily::builder()
                 .data(data)
-                .settings(Settings::default())
+                .settings(Configuration::default())
                 .build()
                 .unwrap();
 
@@ -1159,7 +1159,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings::default();
+            let settings = Configuration::default();
             let status = StatusDaily::builder().data(data).settings(settings).build().unwrap();
 
             assert_eq!(7, status.online.as_ref().unwrap().hours);
@@ -1208,22 +1208,22 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     wednesday: 8 * 60,
                     ..Default::default()
                 },
@@ -1278,22 +1278,22 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     wednesday: 8 * 60,
                     ..Default::default()
                 },
@@ -1348,22 +1348,22 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     wednesday: 8 * 60,
                     ..Default::default()
                 },
@@ -1416,22 +1416,22 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     wednesday: 8 * 60,
                     ..Default::default()
                 },
@@ -1486,18 +1486,18 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     wednesday: 6 * 60,
                     ..Default::default()
                 },
@@ -1556,22 +1556,22 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     wednesday: 7 * 60,
                     ..Default::default()
                 },
@@ -1612,14 +1612,14 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     wednesday: 6 * 60,
                     ..Default::default()
                 },
@@ -1727,14 +1727,14 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 30,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     monday: 510,
                     ..Default::default()
                 },
@@ -1781,18 +1781,18 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 0,
                         minutes: 15,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     monday: 360,
                     ..Default::default()
                 },
@@ -1851,17 +1851,17 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
@@ -1926,17 +1926,17 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
@@ -2001,17 +2001,17 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
@@ -2062,22 +2062,22 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     friday: 6 * 60,
                     ..Default::default()
                 },
@@ -2128,22 +2128,22 @@ mod tests {
                 ..Default::default()
             };
 
-            let settings = Settings {
+            let settings = Configuration {
                 limits: [
-                    BreakLimit {
+                    BreakThreshold {
                         start: 6 * 60,
                         minutes: 30,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 8 * 60,
                         minutes: 45,
                     },
-                    BreakLimit {
+                    BreakThreshold {
                         start: 10 * 60,
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorktimePerDay {
                     friday: 6 * 60,
                     ..Default::default()
                 },

@@ -6,7 +6,9 @@ use std::{
 
 use clap::Parser;
 use serial_test::serial;
-use trackrs::{Cli, CliExecute, Settings};
+use trackrs::{Cli, CliExecute};
+use trackrs::config::Configuration;
+use trackrs::json_storage_provider::JsonStorageProvider;
 
 fn logger() {
     // env::set_var("RUST_LOG", "info");
@@ -23,17 +25,20 @@ impl test_context::TestContext for IntegrationContext {
         env::set_var("RUST_TEST", "true");
         let temp_dir = tempfile::tempdir().unwrap();
         env::set_current_dir(&temp_dir).unwrap();
-        let mut settings = Settings::new().unwrap();
+        let mut configuration = Configuration::builder()
+            .add_defaults().unwrap()
+            .add_json_source(&Configuration::file()).unwrap()
+            .build().unwrap();
         let trackrs_folder = temp_dir.path().join("trackrs");
-        settings.folder = trackrs_folder.to_str().unwrap().to_owned();
+        configuration.folder = trackrs_folder.to_str().unwrap().to_owned();
         let w = OpenOptions::new()
             .create(true)
             .write(true)
             .append(false)
             .truncate(false)
-            .open(&settings.file)
+            .open(&Configuration::file())
             .unwrap();
-        serde_json::to_writer_pretty(w, &settings).unwrap();
+        serde_json::to_writer_pretty(w, &configuration).unwrap();
         IntegrationContext { temp_dir }
     }
 
@@ -47,9 +52,14 @@ impl test_context::TestContext for IntegrationContext {
 #[serial]
 fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
     let folder = ctx.temp_dir.path().join("trackrs");
+    let configuration = Configuration::builder()
+        .add_defaults().unwrap()
+        .add_json_source(&Configuration::file()).unwrap()
+        .build().unwrap();
+    let storage = JsonStorageProvider::new_today(folder.clone()).unwrap();
 
     let s = Cli::parse_from(["trackrs", "start"].iter());
-    s.execute().unwrap();
+    s.execute(&storage, &configuration).unwrap();
 
     let f = fs::read_dir(&folder).unwrap();
     let files = f
@@ -59,13 +69,13 @@ fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
     assert_eq!(&1, &files.len());
 
     let b = Cli::parse_from(["trackrs", "break"].iter());
-    b.execute().unwrap();
+    b.execute(&storage, &configuration).unwrap();
 
     let c = Cli::parse_from(["trackrs", "continue"].iter());
-    c.execute().unwrap();
+    c.execute(&storage, &configuration).unwrap();
 
     let e = Cli::parse_from(["trackrs", "end"].iter());
-    e.execute().unwrap();
+    e.execute(&storage, &configuration).unwrap();
 
     let file = files.first().unwrap();
     let r = std::fs::File::open(file).unwrap();
@@ -86,9 +96,14 @@ fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
 #[serial]
 fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
     let folder = ctx.temp_dir.path().join("trackrs");
+    let configuration = Configuration::builder()
+        .add_defaults().unwrap()
+        .add_json_source(&Configuration::file()).unwrap()
+        .build().unwrap();
+    let storage = JsonStorageProvider::new_today(folder.clone()).unwrap();
 
     let s = Cli::parse_from(["trackrs", "start"].iter());
-    s.execute().unwrap();
+    s.execute(&storage, &configuration).unwrap();
 
     let f = fs::read_dir(&folder).unwrap();
     let files = f
@@ -98,10 +113,10 @@ fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
     assert_eq!(&1, &files.len());
 
     let b = Cli::parse_from(["trackrs", "break"].iter());
-    b.execute().unwrap();
+    b.execute(&storage, &configuration).unwrap();
 
     let c = Cli::parse_from(["trackrs", "continue"].iter());
-    c.execute().unwrap();
+    c.execute(&storage, &configuration).unwrap();
 
     let file = files.first().unwrap();
     let r = std::fs::File::open(file).unwrap();
@@ -122,9 +137,14 @@ fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
 #[serial]
 fn takeover_subtracts_from_today(ctx: &mut IntegrationContext) {
     let folder = ctx.temp_dir.path().join("trackrs");
+    let configuration = Configuration::builder()
+        .add_defaults().unwrap()
+        .add_json_source(&Configuration::file()).unwrap()
+        .build().unwrap();
+    let storage = JsonStorageProvider::new_today(folder.clone()).unwrap();
 
     let s = Cli::parse_from(["trackrs", "start"].iter());
-    s.execute().unwrap();
+    s.execute(&storage, &configuration).unwrap();
 
     let f = fs::read_dir(&folder).unwrap();
     let files = f
@@ -134,10 +154,10 @@ fn takeover_subtracts_from_today(ctx: &mut IntegrationContext) {
     assert_eq!(&1, &files.len());
 
     let b = Cli::parse_from(["trackrs", "break"].iter());
-    b.execute().unwrap();
+    b.execute(&storage, &configuration).unwrap();
 
     let c = Cli::parse_from(["trackrs", "continue"].iter());
-    c.execute().unwrap();
+    c.execute(&storage, &configuration).unwrap();
 
     let file = files.first().unwrap();
     let r = std::fs::File::open(file).unwrap();
