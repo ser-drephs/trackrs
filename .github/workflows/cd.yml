@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  prepare:
     runs-on: self-hosted
 
     steps:
@@ -21,7 +21,7 @@ jobs:
     - name: restore cargo cache
       uses: actions/cache@v4
       env:
-        cache-name: ci
+        cache-name: trackrs-cache
       with:
         path: |
           ~/.cargo/registry
@@ -41,36 +41,75 @@ jobs:
     - name: targets list
       run: rustup target list | grep installed
 
-    - name: prepare scripts
-      if: success()
-      run: chmod +x ${{ github.workspace }}/eng/set-version.sh && chmod +x ${{ github.workspace }}/eng/build-release.sh
+  build:
+    runs-on: self-hosted
+    needs: prepare
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            target: build-release-linux-musl
+          - os: windows
+            target: build-release-win
+          - os: mac
+            target: build-release-mac
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-    - name: build release linux
-      id: build-linux-release
-      if: success()
-      run: make build-release-linux-musl
+      - name: restore cargo cache
+        uses: actions/cache@v4
+        env:
+          cache-name: trackrs-cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: self-hosted-${{ env.cache-name }}-nightly-${{ hashFiles('Cargo.lock') }}
 
-    - name: build release windows
-      id: build-windows-release
-      if: success()
-      run: make build-release-win
+      - name: build ${{ matrix.target }}
+        run: make ${{ matrix.target }}
 
-    # # - name: build release mac
-    # #   id: build-mac-release
-    # #   if: ${{ steps.semantic-version.outputs.new_release_published == 'true' }}
-    # #   run: make build-release-mac
+  publish:
+    runs-on: self-hosted
+    needs: build
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-    - name: publish release
-      uses: cycjimmy/semantic-release-action@v4
-      if: success()
-      with:
-        dry_run: false
-        extra_plugins: |
-          @semantic-release/changelog@6
-          @semantic-release/git@10
-          @semantic-release/github@8
-          @semantic-release/commit-analyzer@9
-          @semantic-release/exec@6
-          conventional-changelog-conventionalcommits@4
-      env:
-        GITHUB_TOKEN: ${{ secrets.SEMREL }}
+      - name: restore cargo cache
+        uses: actions/cache@v4
+        env:
+          cache-name: trackrs-cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: self-hosted-${{ env.cache-name }}-nightly-${{ hashFiles('Cargo.lock') }}
+
+      - name: prepare scripts
+        if: success()
+        run: chmod +x ${{ github.workspace }}/eng/set-version.sh && chmod +x ${{ github.workspace }}/eng/build-release.sh
+
+      - name: publish release
+        uses: cycjimmy/semantic-release-action@v4
+        if: success()
+        with:
+          dry_run: false
+          extra_plugins: |
+            @semantic-release/changelog@6
+            @semantic-release/git@10
+            @semantic-release/github@8
+            @semantic-release/commit-analyzer@9
+            @semantic-release/exec@6
+            conventional-changelog-conventionalcommits@4
+        env:
+          GITHUB_TOKEN: ${{ secrets.SEMREL }}
