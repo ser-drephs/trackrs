@@ -12,6 +12,9 @@ build:
 build-ci:
 	cargo build --locked
 
+build-ci-win:
+	cargo build --locked --target x86_64-pc-windows-gnu
+
 build-release:
 	cargo build --release --offline
 
