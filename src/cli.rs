@@ -356,13 +356,14 @@ impl Cli {
     ) -> TrackerResult {
         log::info!("status executed");
         let settings = Settings::new()?;
+        let storage = JsonStorage::new(settings.folder.to_owned());
 
         if let Some(y) = year {
             let today = Local::now().date_naive();
-            let time_data = TimeDataYearly::load(settings.folder.to_owned().into(), *y, today)?;
-            let status = StatusYearly::new(time_data, &settings)?;
+            let time_data = TimeDataYearly::load(*y, today)?;
+            let status = StatusYearly::new(time_data, &settings, &storage)?;
             if table.unwrap_or(true) {
-                status.format_table(self.carry(&settings, status.start())?);
+                status.format_table(self.carry(&storage, &settings, status.start())?);
             } else {
                 println!("{}", status);
             }
@@ -371,10 +372,10 @@ impl Cli {
 
         if let Some(m) = month {
             let today = Local::now().date_naive();
-            let time_data = TimeDataMonthly::load(settings.folder.to_owned().into(), *m, today)?;
-            let status = StatusMonthly::new(time_data, &settings)?;
+            let time_data = TimeDataMonthly::load(*m, today)?;
+            let status = StatusMonthly::new(time_data, &settings, &storage)?;
             if table.unwrap_or(true) {
-                status.format_table(self.carry(&settings, status.start())?);
+                status.format_table(self.carry(&storage, &settings, status.start())?);
             } else {
                 println!("{}", status);
             }
@@ -392,7 +393,6 @@ impl Cli {
                     cur_week.year()
                 };
                 let time_data = TimeDataWeekly::builder()
-                    .folder(settings.folder.to_owned().into())
                     .year(year.try_into()?)
                     .week(w, cur_week)
                     .build()?;
@@ -400,11 +400,11 @@ impl Cli {
                 let status = StatusWeekly::builder()
                     .data(time_data)
                     .settings(settings.to_owned())
-                    .build()?;
+                    .build(&storage)?;
 
                 if table.unwrap_or(true) {
                     let carry = match status.start() {
-                        Some(start) => self.carry(&settings, start)?,
+                        Some(start) => self.carry(&storage, &settings, start)?,
                         None => None,
                     };
                     status.format_table(carry);
@@ -416,7 +416,7 @@ impl Cli {
                 // Day files are named by their UTC date, like today's.
                 let date = status_date(day, Utc::now().date_naive())?;
                 let status =
-                    StatusDaily::load(&JsonStorage::new(settings.folder.to_owned()), &settings, date)?
+                    StatusDaily::load(&storage, &settings, date)?
                         .ok_or_else(|| TrackerError::TimeDataError {
                             message: format!("no entries for {date}"),
                         })?;
@@ -434,6 +434,7 @@ impl Cli {
     /// that don't add up.
     fn carry(
         &self,
+        storage: &impl StorageProvider,
         settings: &Settings,
         start: NaiveDate,
     ) -> Result<Option<StatusTime>, TrackerError> {
@@ -441,7 +442,7 @@ impl Cli {
         for note in overtime.mismatches()? {
             eprintln!("{note}");
         }
-        overtime.carry(settings.folder.to_owned().into(), settings, start)
+        overtime.carry(storage, settings, start)
     }
 
     fn invoke_overtime(&self, month: &i16, force: &bool) -> TrackerResult {
@@ -455,9 +456,12 @@ impl Cli {
             });
         }
 
-        let time_data =
-            TimeDataMonthly::load_month(settings.folder.to_owned().into(), year, month)?;
-        let status = StatusMonthly::new(time_data, &settings)?;
+        let time_data = TimeDataMonthly::load_month(year, month)?;
+        let status = StatusMonthly::new(
+            time_data,
+            &settings,
+            &JsonStorage::new(settings.folder.to_owned())
+        )?;
         let stored = Overtime::new(Path::new(&settings.folder)).store(
             year,
             month,

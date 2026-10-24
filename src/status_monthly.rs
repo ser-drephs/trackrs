@@ -3,7 +3,7 @@ use std::fmt::Display;
 use chrono::{ Month, NaiveDate };
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusTime, StatusWeekly, TimeDataMonthly, TrackerError };
+use crate::{ Settings, StatusTime, StatusWeekly, StorageProvider, TimeDataMonthly, TrackerError };
 
 /// Status of a month, made of the weekly status of each of its weeks.
 #[derive(Clone, Debug)]
@@ -17,12 +17,16 @@ pub struct StatusMonthly {
 }
 
 impl StatusMonthly {
-    pub fn new(data: TimeDataMonthly, settings: &Settings) -> Result<Self, TrackerError> {
+    pub fn new(
+        data: TimeDataMonthly,
+        settings: &Settings,
+        storage: &impl StorageProvider
+    ) -> Result<Self, TrackerError> {
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
         let mut weeks = Vec::new();
         for week in data.weeks {
-            let s = StatusWeekly::builder().data(week).settings(settings.to_owned()).build()?;
+            let s = StatusWeekly::builder().data(week).settings(settings.to_owned()).build(storage)?;
             total += s.total.to_owned();
             overtime += s.overtime.to_owned();
             weeks.push(s);
@@ -85,32 +89,26 @@ impl Display for StatusMonthly {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
 
     use chrono::NaiveDate;
 
-    use crate::{ Settings, StatusMonthly, TimeDataMonthly, TrackerError };
+    use crate::{ MemoryStorage, Settings, Status, StatusMonthly, TimeDataMonthly, TrackerError };
 
     /// March 2022 with 8 hours on each workday of week 10 (7th to 11th) and nothing else.
-    fn march(folder: &std::path::Path) -> Result<StatusMonthly, TrackerError> {
-        for day in 7..=11 {
-            let content = format!(
-                "{{\"data\":[{{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-03-{day:02}T06:00:00Z\"}},{{\"id\":2,\"status\":\"End\",\"time\":\"2022-03-{day:02}T14:00:00Z\"}}],\"version\":2}}"
-            );
-            fs::write(folder.join(format!("202203{day:02}.json")), content)?;
-        }
-        let data = TimeDataMonthly::load(
-            folder.to_path_buf().into(),
-            3,
-            NaiveDate::from_ymd_opt(2022, 6, 1).unwrap()
-        )?;
-        StatusMonthly::new(data, &Settings::default())
+    fn march() -> Result<StatusMonthly, TrackerError> {
+        let storage = (7..=11).fold(MemoryStorage::default(), |storage, day| {
+            storage.day(
+                NaiveDate::from_ymd_opt(2022, 3, day).unwrap(),
+                &[(Status::Connect, 6, 0), (Status::End, 14, 0)]
+            )
+        });
+        let data = TimeDataMonthly::load(3, NaiveDate::from_ymd_opt(2022, 6, 1).unwrap())?;
+        StatusMonthly::new(data, &Settings::default(), &storage)
     }
 
     #[test]
     fn should_sum_weeks_of_month() -> Result<(), TrackerError> {
-        let temp_dir = tempfile::tempdir()?;
-        let s = march(temp_dir.path())?;
+        let s = march()?;
 
         let rows: Vec<(i16, String, String)> = s.weeks
             .iter()
@@ -136,8 +134,7 @@ mod tests {
 
     #[test]
     fn should_display_month() -> Result<(), TrackerError> {
-        let temp_dir = tempfile::tempdir()?;
-        let s = march(temp_dir.path())?;
+        let s = march()?;
 
         let out = s.to_string();
         let last = out.lines().last().unwrap();

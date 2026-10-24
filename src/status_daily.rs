@@ -413,6 +413,7 @@ mod tests {
         Timesheet,
         WorkPerDayInMinutes,
     };
+    use crate::MemoryStorage;
 
     use indoc::indoc;
 
@@ -430,42 +431,52 @@ mod tests {
 
         use super::*;
 
-        /// Write a day from `start` to `end` UTC with a break from 12:00 to 12:30.
-        fn write_day(folder: &std::path::Path, date: &str, start: &str, end: &str) {
-            let file = folder.join(format!("{}.json", date.replace('-', "")));
-            let content = format!(
-                "{{\"data\":[{{\"id\":1,\"status\":\"Connect\",\"time\":\"{date}T{start}:00Z\"}},{{\"id\":2,\"status\":\"Break\",\"time\":\"{date}T12:00:00Z\"}},{{\"id\":3,\"status\":\"Connect\",\"time\":\"{date}T12:30:00Z\"}},{{\"id\":4,\"status\":\"End\",\"time\":\"{date}T{end}:00Z\"}}],\"version\":2}}"
-            );
-            std::fs::write(file, content).unwrap();
+        fn date(date: &str) -> NaiveDate {
+            NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap()
         }
 
-        fn load(folder: &std::path::Path, date: &str) -> Option<StatusDaily> {
-            let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap();
-            StatusDaily::load(&crate::JsonStorage::new(folder), &Settings::default(), date).unwrap()
+        /// Add a day from `start` to `end` UTC with a break from 12:00 to 12:30.
+        fn with_day(
+            storage: MemoryStorage,
+            day: &str,
+            start: (u32, u32),
+            end: (u32, u32)
+        ) -> MemoryStorage {
+            storage.day(
+                date(day),
+                &[
+                    (Status::Connect, start.0, start.1),
+                    (Status::Break, 12, 0),
+                    (Status::Connect, 12, 30),
+                    (Status::End, end.0, end.1),
+                ]
+            )
+        }
+
+        fn load(storage: &MemoryStorage, day: &str) -> Option<StatusDaily> {
+            StatusDaily::load(storage, &Settings::default(), date(day)).unwrap()
         }
 
         #[test]
         fn should_load_the_given_day() {
-            let temp_dir = tempfile::tempdir().unwrap();
-            write_day(temp_dir.path(), "2022-03-07", "07:00", "15:30");
-            write_day(temp_dir.path(), "2022-03-08", "06:00", "16:30");
+            let storage = with_day(MemoryStorage::default(), "2022-03-07", (7, 0), (15, 30));
+            let storage = with_day(storage, "2022-03-08", (6, 0), (16, 30));
 
-            let monday = load(temp_dir.path(), "2022-03-07").unwrap();
+            let monday = load(&storage, "2022-03-07").unwrap();
             assert_eq!("08:00", monday.worktime.to_string());
             assert_eq!("00:30", monday.r#break.unwrap().to_string());
 
-            let tuesday = load(temp_dir.path(), "2022-03-08").unwrap();
+            let tuesday = load(&storage, "2022-03-08").unwrap();
             assert_eq!("10:00", tuesday.worktime.to_string());
             assert_eq!("02:00", tuesday.overtime.to_string());
         }
 
         #[test]
         fn should_load_nothing_for_day_without_entries() {
-            let temp_dir = tempfile::tempdir().unwrap();
-            write_day(temp_dir.path(), "2022-03-07", "07:00", "15:30");
+            let storage = with_day(MemoryStorage::default(), "2022-03-07", (7, 0), (15, 30));
 
-            assert!(load(temp_dir.path(), "2022-03-06").is_none());
-            assert!(load(temp_dir.path(), "2022-03-08").is_none());
+            assert!(load(&storage, "2022-03-06").is_none());
+            assert!(load(&storage, "2022-03-08").is_none());
         }
     }
 

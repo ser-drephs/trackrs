@@ -3,7 +3,7 @@ use std::fmt::Display;
 use chrono::NaiveDate;
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusMonthly, StatusTime, TimeDataYearly, TrackerError };
+use crate::{ Settings, StatusMonthly, StatusTime, StorageProvider, TimeDataYearly, TrackerError };
 
 /// Status of a year, made of the monthly status of each of its months.
 #[derive(Clone, Debug)]
@@ -16,12 +16,16 @@ pub struct StatusYearly {
 }
 
 impl StatusYearly {
-    pub fn new(data: TimeDataYearly, settings: &Settings) -> Result<Self, TrackerError> {
+    pub fn new(
+        data: TimeDataYearly,
+        settings: &Settings,
+        storage: &impl StorageProvider
+    ) -> Result<Self, TrackerError> {
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
         let mut months = Vec::new();
         for month in data.months {
-            let s = StatusMonthly::new(month, settings)?;
+            let s = StatusMonthly::new(month, settings, storage)?;
             total += s.total.to_owned();
             overtime += s.overtime.to_owned();
             months.push(s);
@@ -76,29 +80,27 @@ impl Display for StatusYearly {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
 
     use chrono::NaiveDate;
 
-    use crate::{ Settings, StatusYearly, TimeDataYearly, TrackerError };
+    use crate::{ MemoryStorage, Settings, Status, StatusYearly, TimeDataYearly, TrackerError };
 
     /// 2022 with 9 hours on each workday of week 10 (7th to 11th March) and nothing else.
-    fn year(folder: &std::path::Path) -> Result<StatusYearly, TrackerError> {
-        for day in 7..=11 {
-            let content = format!(
-                "{{\"data\":[{{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-03-{day:02}T06:00:00Z\"}},{{\"id\":2,\"status\":\"End\",\"time\":\"2022-03-{day:02}T15:00:00Z\"}}],\"version\":2}}"
-            );
-            fs::write(folder.join(format!("202203{day:02}.json")), content)?;
-        }
+    fn year() -> Result<StatusYearly, TrackerError> {
+        let storage = (7..=11).fold(MemoryStorage::default(), |storage, day| {
+            storage.day(
+                NaiveDate::from_ymd_opt(2022, 3, day).unwrap(),
+                &[(Status::Connect, 6, 0), (Status::End, 15, 0)]
+            )
+        });
         let today = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
-        let data = TimeDataYearly::load(folder.to_path_buf().into(), 2022, today)?;
-        StatusYearly::new(data, &Settings::default())
+        let data = TimeDataYearly::load(2022, today)?;
+        StatusYearly::new(data, &Settings::default(), &storage)
     }
 
     #[test]
     fn should_sum_months_of_year() -> Result<(), TrackerError> {
-        let temp_dir = tempfile::tempdir()?;
-        let s = year(temp_dir.path())?;
+        let s = year()?;
 
         let rows: Vec<(&str, String, String)> = s.months
             .iter()
@@ -118,8 +120,7 @@ mod tests {
 
     #[test]
     fn should_display_year() -> Result<(), TrackerError> {
-        let temp_dir = tempfile::tempdir()?;
-        let out = year(temp_dir.path())?.to_string();
+        let out = year()?.to_string();
         let last = out.lines().last().unwrap();
 
         assert!(last.contains("2022"), "{out}");

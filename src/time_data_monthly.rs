@@ -1,6 +1,6 @@
 use chrono::{ Datelike, NaiveDate };
 
-use crate::{ Folder, TimeDataWeekly, TrackerError };
+use crate::{ TimeDataWeekly, TrackerError };
 
 /// Time data of a month, split into its ISO weeks. The first and last week only hold the days
 /// within the month.
@@ -13,13 +13,13 @@ pub struct TimeDataMonthly {
 
 impl TimeDataMonthly {
     /// Load `month` (1-12), or a month relative to the one of `today` for 0 and less, e.g. -1.
-    pub fn load(folder: Folder, month: i16, today: NaiveDate) -> Result<Self, TrackerError> {
+    pub fn load(month: i16, today: NaiveDate) -> Result<Self, TrackerError> {
         let (year, month) = Self::resolve(month, today)?;
-        Self::load_month(folder, year, month)
+        Self::load_month(year, month)
     }
 
     /// Load `month` (1-12) of `year`.
-    pub fn load_month(folder: Folder, year: i32, month: u32) -> Result<Self, TrackerError> {
+    pub fn load_month(year: i32, month: u32) -> Result<Self, TrackerError> {
         let days: Vec<NaiveDate> = NaiveDate::from_ymd_opt(year, month, 1)
             .unwrap()
             .iter_days()
@@ -31,7 +31,7 @@ impl TimeDataMonthly {
             let week = days[0].iso_week().week().try_into()?;
             let dates = days.to_vec();
             weeks.push(
-                TimeDataWeekly::builder().folder(folder.to_owned()).week_dates(week, dates).build()?
+                TimeDataWeekly::builder().week_dates(week, dates).build()?
             );
         }
 
@@ -75,8 +75,7 @@ mod tests {
 
     #[test]
     fn should_split_month_into_weeks() -> Result<(), TrackerError> {
-        let temp_dir = tempfile::tempdir()?;
-        let m = TimeDataMonthly::load(temp_dir.path().to_path_buf().into(), 3, date(2022, 6, 1))?;
+        let m = TimeDataMonthly::load(3, date(2022, 6, 1))?;
 
         // March 2022 starts on a Tuesday and ends on a Thursday.
         let weeks: Vec<(i16, usize)> = m.weeks

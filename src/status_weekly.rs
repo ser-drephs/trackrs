@@ -4,7 +4,7 @@ use chrono::{ Duration, NaiveDate, NaiveTime };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
-use crate::{ JsonStorage, Settings, StatusDaily, StatusTime, TimeDataWeekly, TrackerError };
+use crate::{ Settings, StatusDaily, StatusTime, StorageProvider, TimeDataWeekly, TrackerError };
 
 #[derive(Clone, Default, Debug)]
 pub struct StatusWeekly {
@@ -120,7 +120,7 @@ impl StatusWeeklyBuilder {
         self
     }
 
-    pub fn build(&self) -> Result<StatusWeekly, TrackerError> {
+    pub fn build(&self, storage: &impl StorageProvider) -> Result<StatusWeekly, TrackerError> {
         let settings = match self.settings.to_owned() {
             Some(s) => s,
             None => {
@@ -146,7 +146,7 @@ impl StatusWeeklyBuilder {
 
         for date in &data.dates {
             log::trace!("processing: {}", date);
-            match StatusDaily::load(&JsonStorage::new(data.folder.clone()), &settings, *date)? {
+            match StatusDaily::load(storage, &settings, *date)? {
                 Some(s) => {
                     log::info!("got {} working time and {} overtime", s.worktime, s.overtime);
                     total += s.worktime.to_owned();
@@ -322,7 +322,7 @@ mod tests {
     mod builder {
         use chrono::Utc;
 
-        use crate::{ StorageProvider, Timesheet };
+        use crate::{ MemoryStorage, StorageProvider, Timesheet };
 
         use chrono::DateTime;
 
@@ -372,18 +372,19 @@ mod tests {
                 ].to_vec()
         }
 
-        /// Write the days with entries to `folder` and return the week of all their dates.
-        fn weekly(days: Vec<(DateTime<Utc>, Timesheet)>, folder: &std::path::Path) -> Result<TimeDataWeekly, TrackerError> {
+        /// Store the days with entries and return the week of all their dates with the storage.
+        fn weekly(days: Vec<(DateTime<Utc>, Timesheet)>) -> (TimeDataWeekly, MemoryStorage) {
+            let storage = MemoryStorage::default();
             for (date, day) in &days {
                 if !day.data.is_empty() {
-                    JsonStorage::new(folder).save(date.date_naive(), day)?;
+                    storage.save(date.date_naive(), day).unwrap();
                 }
             }
-            Ok(TimeDataWeekly {
-                folder: folder.to_path_buf().into(),
+            let data = TimeDataWeekly {
                 dates: days.iter().map(|(d, _)| d.date_naive()).collect(),
                 week: 10,
-            })
+            };
+            (data, storage)
         }
 
         fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> Vec<(DateTime<Utc>, Timesheet)> {
@@ -418,11 +419,10 @@ mod tests {
             logger();
             let time_data = get_time_data(10, 42);
             let settings = get_settings();
-            let temp_dir = tempfile::tempdir()?;
-            let time_data_weekly = weekly(time_data, temp_dir.path())?;
+            let (time_data_weekly, storage) = weekly(time_data);
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
 
             log::debug!("{}", s);
 
@@ -443,11 +443,10 @@ mod tests {
             logger();
             let time_data = get_time_data(9, 45);
             let settings = get_settings();
-            let temp_dir = tempfile::tempdir()?;
-            let time_data_weekly = weekly(time_data, temp_dir.path())?;
+            let (time_data_weekly, storage) = weekly(time_data);
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
 
             log::debug!("{}", s);
 
@@ -468,11 +467,10 @@ mod tests {
             logger();
             let time_data = get_time_data(6, 17);
             let settings = get_settings();
-            let temp_dir = tempfile::tempdir()?;
-            let time_data_weekly = weekly(time_data, temp_dir.path())?;
+            let (time_data_weekly, storage) = weekly(time_data);
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
 
             log::debug!("{}", s);
 
@@ -513,11 +511,10 @@ mod tests {
                 (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap(), Timesheet::default()),
             ].to_vec();
             let settings = get_settings();
-            let temp_dir = tempfile::tempdir()?;
-            let time_data_weekly = weekly(time_data, temp_dir.path())?;
+            let (time_data_weekly, storage) = weekly(time_data);
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
 
             log::debug!("{}", s);
 
@@ -546,11 +543,10 @@ mod tests {
             test_env();
             let time_data = get_time_data(10, 42);
             let settings = get_settings();
-            let temp_dir = tempfile::tempdir()?;
-            let time_data_weekly = weekly(time_data, temp_dir.path())?;
+            let (time_data_weekly, storage) = weekly(time_data);
 
             let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build()?;
+            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
             s.format_table(None);
             Ok(())
         }
