@@ -1,10 +1,10 @@
 use std::{ env, fmt::Display, ops::Mul };
 
-use chrono::{ Duration, NaiveDate };
+use chrono::{ Duration, NaiveDate, Utc };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusDaily, StatusTime, StorageProvider, TimeDataWeekly, TrackerError };
+use crate::{ Settings, StatusTime, StorageProvider, TimeDataWeekly, TrackerError };
 
 #[derive(Clone, Default, Debug)]
 pub struct StatusWeekly {
@@ -12,7 +12,17 @@ pub struct StatusWeekly {
     pub(crate) total: StatusTime,
     pub(crate) overtime: StatusTime,
     decimal: f64,
-    entries: Vec<(NaiveDate, StatusDaily)>,
+    entries: Vec<(NaiveDate, Day)>,
+}
+
+/// What the week shows of a day. A day without entries only has its missing overtime.
+#[derive(Clone, Default, Debug)]
+struct Day {
+    start: Option<StatusTime>,
+    end: Option<StatusTime>,
+    r#break: Option<StatusTime>,
+    worktime: StatusTime,
+    overtime: StatusTime,
 }
 
 impl StatusWeekly {
@@ -139,28 +149,33 @@ impl StatusWeeklyBuilder {
             }
         };
 
-        let mut entries: Vec<(NaiveDate, StatusDaily)> = Vec::new();
+        let now = Utc::now();
+        let mut entries: Vec<(NaiveDate, Day)> = Vec::new();
 
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
 
         for date in &data.dates {
             log::trace!("processing: {}", date);
-            match StatusDaily::load(storage, &settings, *date)? {
-                Some(s) => {
-                    log::info!("got {} working time and {} overtime", s.worktime, s.overtime);
-                    total += s.worktime.to_owned();
-                    overtime += s.overtime.to_owned();
-                    entries.push((*date, s));
-                }
-                None => {
-                    let expected = settings.workperday.minutes_on(*date);
-                    // A day without entries misses its whole target worktime.
-                    let day_overtime = StatusTime::from(Duration::minutes(-i64::from(expected)));
-                    overtime += day_overtime.to_owned();
-                    let missing_status = StatusDaily::builder().empty_with_overtime(day_overtime);
-                    entries.push((*date, missing_status));
-                }
+            let timesheet = storage.load(*date)?;
+            if timesheet.data.is_empty() {
+                let expected = settings.workperday.minutes_on(*date);
+                // A day without entries misses its whole target worktime.
+                let day_overtime = StatusTime::from(Duration::minutes(-i64::from(expected)));
+                overtime += day_overtime.to_owned();
+                entries.push((*date, Day { overtime: day_overtime, ..Default::default() }));
+            } else {
+                let day = Day {
+                    start: timesheet.start(),
+                    end: timesheet.end(),
+                    r#break: Some(timesheet.break_taken()),
+                    worktime: timesheet.worktime(&settings, now)?,
+                    overtime: timesheet.overtime(&settings, now)?,
+                };
+                log::info!("got {} working time and {} overtime", day.worktime, day.overtime);
+                total += day.worktime.to_owned();
+                overtime += day.overtime.to_owned();
+                entries.push((*date, day));
             }
         }
 

@@ -1,7 +1,7 @@
-use chrono::{ DateTime, Duration, Utc };
+use chrono::{ DateTime, Duration, Local, Utc };
 use serde::{ Deserialize, Serialize };
 
-use crate::{ Entry, Settings, Status, TrackerError };
+use crate::{ Entry, Settings, Status, StatusTime, TrackerError };
 
 pub(crate) const CURRENT_VERSION: u8 = 3;
 
@@ -19,6 +19,119 @@ impl Default for Timesheet {
 }
 
 impl Timesheet {
+    /// Time of the first connect of the day.
+    pub fn start(&self) -> Option<StatusTime> {
+        self.data.iter().find(|e| e.status == Status::Connect).map(StatusTime::from)
+    }
+
+    /// Time of the end of the day, `None` while the day is still running.
+    pub fn end(&self) -> Option<StatusTime> {
+        self.data.iter().find(|e| e.status == Status::End).map(StatusTime::from)
+    }
+
+    /// Total of the breaks that were ended by a connect.
+    pub fn break_taken(&self) -> StatusTime {
+        let mut taken = Duration::zero();
+        let mut since = None;
+        for e in &self.data {
+            match (since, &e.status) {
+                (None, Status::Break) => since = Some(e.time),
+                (Some(start), Status::Connect) => {
+                    taken = taken + (e.time - start);
+                    since = None;
+                }
+                _ => {}
+            }
+        }
+        log::debug!("a total of {:?} break duration was found", taken);
+        taken.into()
+    }
+
+    /// Start of the first break of the day.
+    pub fn first_break(&self) -> Option<DateTime<Local>> {
+        self.data.iter().find(|e| e.status == Status::Break).map(|e| DateTime::from(e.time))
+    }
+
+    /// Time from the start to the end of the day, or to `now` while the day is still running.
+    pub fn online(&self, now: DateTime<Utc>) -> Result<StatusTime, TrackerError> {
+        let end = self.end().unwrap_or_else(|| StatusTime::from(now.with_timezone(&Local)));
+        Ok(end - self.started()?)
+    }
+
+    /// Target worktime of the day, by the weekday of its first entry.
+    pub fn expected_worktime(&self, settings: &Settings) -> Result<StatusTime, TrackerError> {
+        let first = self.data.first().ok_or_else(|| invalid("data not added to status"))?;
+        let minutes = settings.workperday.minutes_on(first.time);
+        Ok(StatusTime::from(Duration::minutes(minutes.into())))
+    }
+
+    /// Break to take for the day, based on whichever is higher, its target worktime or its
+    /// online time less the threshold of the limits.
+    pub fn expected_break(
+        &self,
+        settings: &Settings,
+        now: DateTime<Utc>
+    ) -> Result<StatusTime, TrackerError> {
+        let online = self.online(now)?;
+        let worktime = self.expected_worktime(settings)?;
+        let (time, threshold) = if online >= worktime {
+            (online.duration, Duration::minutes(settings.threshold_limits.into()))
+        } else {
+            (worktime.duration, Duration::zero())
+        };
+        let expected = settings.break_for(time - threshold);
+        log::debug!("should take a break of {}", expected.num_minutes());
+        Ok(expected.into())
+    }
+
+    /// Time of day the target worktime is reached with the break taken or the expected break,
+    /// whichever is longer.
+    pub fn estimated_end(
+        &self,
+        settings: &Settings,
+        now: DateTime<Utc>
+    ) -> Result<StatusTime, TrackerError> {
+        let worktime = self.expected_worktime(settings)?;
+        let r#break = self.longer_break(settings, now)?;
+        Ok(self.started()? + StatusTime::from(worktime.duration + r#break.duration))
+    }
+
+    /// Time worked, the online time less the break taken or the expected break, whichever is
+    /// longer.
+    pub fn worktime(
+        &self,
+        settings: &Settings,
+        now: DateTime<Utc>
+    ) -> Result<StatusTime, TrackerError> {
+        Ok(self.online(now)? - self.longer_break(settings, now)?)
+    }
+
+    /// Worktime above, or below if negative, the target worktime.
+    pub fn overtime(
+        &self,
+        settings: &Settings,
+        now: DateTime<Utc>
+    ) -> Result<StatusTime, TrackerError> {
+        Ok(self.worktime(settings, now)? - self.expected_worktime(settings)?)
+    }
+
+    fn longer_break(
+        &self,
+        settings: &Settings,
+        now: DateTime<Utc>
+    ) -> Result<StatusTime, TrackerError> {
+        let taken = self.break_taken();
+        let expected = self.expected_break(settings, now)?;
+        Ok(if taken >= expected { taken } else { expected })
+    }
+
+    fn started(&self) -> Result<StatusTime, TrackerError> {
+        if self.data.is_empty() {
+            return Err(invalid("data not added to status"));
+        }
+        self.start().ok_or_else(|| invalid("no initial connect found in data"))
+    }
+
     /// Fill the break missing to the expected break `e_break`, as a break with a note:
     /// - after the first break and connect pair, so that break looks extended,
     /// - or one second after the start, if no break was taken yet. Starts in front of it, like a
@@ -189,6 +302,10 @@ impl Timesheet {
     }
 }
 
+fn invalid(message: &str) -> TrackerError {
+    TrackerError::StatusError { message: message.to_owned() }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Add;
@@ -261,9 +378,8 @@ mod tests {
                 limits: vec![crate::BreakLimit { start: 6 * 60, minutes: 30 }],
                 ..Default::default()
             };
-            let status = crate::StatusDaily::builder().data(t).settings(settings).build()?;
-            assert_eq!("00:30", status.r#break.unwrap().to_string());
-            assert_eq!("08:00", status.worktime.to_string());
+            assert_eq!("00:30", t.break_taken().to_string());
+            assert_eq!("08:00", t.worktime(&settings, chrono::Utc::now())?.to_string());
             Ok(())
         }
 
@@ -533,7 +649,7 @@ mod tests {
     mod absence {
         use chrono::{ DateTime, Utc };
 
-        use crate::{ BreakLimit, Settings, StatusDaily };
+        use crate::{ BreakLimit, Settings };
 
         use super::*;
 
@@ -572,12 +688,7 @@ mod tests {
         }
 
         fn worktime(t: &Timesheet) -> String {
-            let status = StatusDaily::builder()
-                .data(t.to_owned())
-                .settings(settings())
-                .build()
-                .unwrap();
-            status.worktime.to_string()
+            t.worktime(&settings(), at(23, 0)).unwrap().to_string()
         }
 
         fn sick() -> Option<String> {
@@ -733,6 +844,1211 @@ mod tests {
             time_data.assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.data.len());
             Ok(())
+        }
+    }
+
+    mod calculation {
+        use std::ops::Sub;
+
+        use chrono::{ DateTime, Local, Utc };
+
+        use crate::{ BreakLimit, Settings, WorkPerDay };
+
+        use super::*;
+
+        /// Clock for days that are ended, so it doesn't matter.
+        fn now() -> DateTime<Utc> {
+            Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap().to_utc()
+        }
+
+        #[test]
+        fn should_set_connect() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+            assert!(data.start().is_some());
+        }
+
+        #[test]
+        fn no_connect() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            assert!(data.worktime(&Settings::default(), now()).is_err());
+        }
+
+        #[test]
+        fn should_set_end() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            assert!(data.end().is_some());
+            assert_eq!(10, data.end().unwrap().duration.num_hours())
+        }
+
+        #[test]
+        fn should_use_now_as_end_of_running_day() {
+            let data = Timesheet {
+                data: vec![
+                    Entry {
+                        status: Status::Connect,
+                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                        note: None,
+                    },
+                ],
+                ..Default::default()
+            };
+            let now = Local.with_ymd_and_hms(2022, 2, 2, 9, 30, 0).unwrap().to_utc();
+
+            assert!(data.end().is_none());
+            let online = data.online(now).unwrap();
+            assert_eq!(1, online.hours);
+            assert_eq!(30, online.minutes);
+        }
+
+        #[test]
+        fn should_calculate_break() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let r#break = data.break_taken();
+            assert_eq!(0, r#break.hours);
+            assert_eq!(5, r#break.minutes);
+        }
+
+        #[test]
+        fn should_calculate_break_between_mutliple_breaks() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 5)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 55)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 55, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 55)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 56)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 1, 56)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let r#break = data.break_taken();
+            assert_eq!(0, r#break.hours);
+            assert_eq!(21, r#break.minutes);
+        }
+
+        #[test]
+        fn should_calculate_online_time() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let online = data.online(now()).unwrap();
+
+            assert_eq!(7, online.hours);
+            assert_eq!(3, online.minutes);
+        }
+
+        #[test]
+        fn should_calculate_est_end_with_break_fully_taken() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    wednesday: 8 * 60,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let est_end = data.estimated_end(&settings, now()).unwrap();
+            let expected_end = Duration::hours(8).add(Duration::minutes(45));
+            assert_eq!(expected_end, est_end.duration);
+        }
+
+        #[test]
+        fn should_calculate_est_end_with_break_not_fully_taken() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    wednesday: 8 * 60,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let est_end = data.estimated_end(&settings, now()).unwrap();
+
+            let expected_end = Duration::hours(8).add(Duration::minutes(45));
+            assert_eq!(expected_end, est_end.duration);
+        }
+
+        #[test]
+        fn should_calculate_est_end_with_more_break_taken() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    wednesday: 8 * 60,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let est_end = data.estimated_end(&settings, now()).unwrap();
+            let expected_end = Duration::hours(9);
+            assert_eq!(expected_end, est_end.duration);
+        }
+
+        #[test]
+        fn should_calculate_est_end_with_no_break_taken() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 15, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    wednesday: 8 * 60,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let est_end = data.estimated_end(&settings, now()).unwrap();
+            let expected_end = Duration::hours(10).add(
+                Duration::hours(8).add(Duration::minutes(45))
+            );
+            assert_eq!(expected_end, est_end.duration);
+        }
+
+        #[test]
+        fn should_calculate_est_end_with_no_break_taken_short_day_and_threshold() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    wednesday: 6 * 60,
+                    ..Default::default()
+                },
+                threshold_limits: 5,
+                ..Default::default()
+            };
+
+            let est_end = data.estimated_end(&settings, now()).unwrap();
+            let expected_end = Duration::hours(10).add(Duration::hours(6));
+            assert_eq!(
+                expected_end,
+                est_end.duration,
+                "expected end at 6:00 but got {}",
+                est_end
+            );
+        }
+
+        #[test]
+        fn should_calculate_est_end_with_no_break_taken_odd_day() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Disconnect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    wednesday: 7 * 60,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let est_end = data.estimated_end(&settings, now()).unwrap();
+            let expected_end = Duration::hours(10).add(
+                Duration::hours(7).add(Duration::minutes(30))
+            );
+            assert_eq!(expected_end, est_end.duration);
+        }
+
+        #[test]
+        fn should_calculate_no_break_on_short_day() {
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    wednesday: 6 * 60,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let exp_break = data.expected_break(&settings, now()).unwrap();
+            let est_end = data.estimated_end(&settings, now()).unwrap();
+            let expected_end = Duration::hours(14).add(Duration::minutes(22));
+            assert_eq!(
+                expected_end,
+                est_end.duration,
+                "expected to end at 14:22 but got {}",
+                est_end
+            );
+            assert_eq!(
+                Duration::minutes(0),
+                exp_break.duration,
+                "expected break to be 00:00 but got {}",
+                exp_break
+            );
+        }
+
+        #[test]
+        fn should_calculate_overtime() {
+            logger();
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 56, 15)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 25, 57)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 26, 46)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 28, 7)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 58, 7)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 17, 0, 7)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 17, 15, 7)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 18, 27, 40)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 30,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    monday: 510,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let overtime = data.overtime(&settings, now()).unwrap();
+
+
+            assert_eq!(
+                Duration::minutes(16).add(Duration::seconds(5)),
+                overtime.duration,
+                "expected 0:16 overtime but was {}",
+                overtime
+            );
+        }
+
+        #[test]
+        fn should_calculate_negative_overtime() {
+            logger();
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 16, 32)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 0,
+                        minutes: 15,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    monday: 360,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let overtime = data.overtime(&settings, now()).unwrap();
+
+
+            assert_eq!(
+                Duration::hours(-2).sub(Duration::minutes(21).sub(Duration::seconds(21))),
+                overtime.duration,
+                "expected -2:21 overtime but was {}",
+                overtime
+            );
+        }
+
+        #[test]
+        fn should_calculate_worktime_and_expected_break_with_only_30_minutes_break_taken() {
+            logger();
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 30, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 17, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                ..Default::default()
+            };
+
+            let exp_break = data.expected_break(&settings, now()).unwrap();
+            let worktime = data.worktime(&settings, now()).unwrap();
+
+            assert_eq!(
+                Duration::minutes(45),
+                exp_break.duration,
+                "expected 45 minutes break but was {}",
+                exp_break
+            );
+            assert_eq!(
+                Duration::hours(8).add(Duration::minutes(15)),
+                worktime.duration,
+                "expected 8:15 working time but was {}",
+                worktime
+            )
+        }
+
+        #[test]
+        fn should_calculate_worktime_and_expected_break_with_4_hours_break_taken() {
+            logger();
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 21, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                ..Default::default()
+            };
+
+            let exp_break = data.expected_break(&settings, now()).unwrap();
+            let worktime = data.worktime(&settings, now()).unwrap();
+
+            assert_eq!(
+                Duration::minutes(60),
+                exp_break.duration,
+                "expected 1:00 break but was {}",
+                exp_break
+            );
+            assert_eq!(
+                Duration::hours(9),
+                worktime.duration,
+                "expected 9:00 working time but was {}",
+                worktime
+            )
+        }
+
+        #[test]
+        fn should_calculate_worktime_and_expected_break_with_4_hours_break_taken_and_over_10_hours_worktime() {
+            logger();
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Break,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 23, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                ..Default::default()
+            };
+
+            let exp_break = data.expected_break(&settings, now()).unwrap();
+            let worktime = data.worktime(&settings, now()).unwrap();
+
+            assert_eq!(
+                Duration::hours(1),
+                exp_break.duration,
+                "expected 1:00 hour break but was {}",
+                exp_break
+            );
+            assert_eq!(
+                Duration::hours(11),
+                worktime.duration,
+                "expected 11:00 working time but was {}",
+                worktime
+            )
+        }
+
+        #[test]
+        fn should_calculate_worktime_and_no_expected_break_because_less_than_6_hours_worktime() {
+            logger();
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 4, 14, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    friday: 6 * 60,
+                    ..Default::default()
+                },
+                threshold_limits: 5,
+                ..Default::default()
+            };
+
+            let exp_break = data.expected_break(&settings, now()).unwrap();
+            let worktime = data.worktime(&settings, now()).unwrap();
+
+            assert_eq!(
+                Duration::minutes(0),
+                exp_break.duration,
+                "expected 0:00 hour break but was {}",
+                exp_break
+            );
+            assert_eq!(
+                Duration::hours(6),
+                worktime.duration,
+                "expected 6:00 working time but was {}",
+                worktime
+            )
+        }
+
+        #[test]
+        fn expected_break_not_displayed_correctly_in_status() {
+            logger();
+            let data = Timesheet {
+                data: {
+                    [
+                            Entry {
+                                status: Status::Connect,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
+                            },
+                            Entry {
+                                status: Status::End,
+                                time: Local.with_ymd_and_hms(2022, 2, 2, 14, 0, 0)
+                                    .unwrap()
+                                    .to_utc(),
+                                note: None,
+                            },
+                        ].to_vec()
+                },
+                ..Default::default()
+            };
+
+            let settings = Settings {
+                limits: [
+                    BreakLimit {
+                        start: 6 * 60,
+                        minutes: 30,
+                    },
+                    BreakLimit {
+                        start: 8 * 60,
+                        minutes: 45,
+                    },
+                    BreakLimit {
+                        start: 10 * 60,
+                        minutes: 60,
+                    },
+                ].to_vec(),
+                workperday: WorkPerDay {
+                    friday: 6 * 60,
+                    ..Default::default()
+                },
+                threshold_limits: 5,
+                ..Default::default()
+            };
+
+            let exp_break = data.expected_break(&settings, now()).unwrap();
+
+            assert_eq!(
+                Duration::minutes(45),
+                exp_break.duration,
+                "expected 0:45 hour break but was {}",
+                exp_break
+            );
         }
     }
 }

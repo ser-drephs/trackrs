@@ -262,52 +262,87 @@ mod tests {
 
         #[test]
         fn should_create_from_entry() {
-            let d = Duration::seconds(
-                Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0)
-                    .unwrap()
-                    .num_seconds_from_midnight()
-                    .into()
-            );
+            // The time of day of an entry is its local one.
+            let time = chrono::Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 5).unwrap().to_utc();
             let entry = Entry {
                 status: Status::Disconnect,
-                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
-                note: None,
+                time,
+                note: Some("lunch".to_owned()),
             };
             let status = StatusTime::from(&entry);
-            assert!(
-                status.duration.ge(&d),
-                "duration {} should be greater or equal to {}",
-                status.minutes,
-                &d.num_minutes()
-            );
-            let dm = &d.num_minutes() % 60;
-            assert!(
-                status.minutes.ge(&dm),
-                "minutes {} should be greater or equal to {}",
-                status.minutes,
-                &d.num_minutes()
-            );
-            assert!(status.inner.is_some());
-            assert_eq!(Status::Disconnect, status.inner.unwrap().status);
+
+            assert_eq!(Duration::seconds(8 * 3600 + 3 * 60 + 5), status.duration);
+            assert_eq!(8, status.hours);
+            assert_eq!(3, status.minutes);
+            let inner = status.inner.unwrap();
+            assert_eq!(Status::Disconnect, inner.status);
+            assert_eq!(time, inner.time);
+            assert_eq!(Some("lunch".to_owned()), inner.note);
         }
 
         #[test]
         fn should_create_from_datetime() {
-            let l = DateTime::<Utc>::default();
-            let d = Duration::seconds(l.num_seconds_from_midnight().into());
-            let status = StatusTime::from(l);
-            assert!(status.duration.ge(&d));
-            assert!(status.minutes.ge(&(&d.num_minutes() % 60)));
+            let status = StatusTime::from(Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 5).unwrap());
+
+            assert_eq!(Duration::seconds(8 * 3600 + 3 * 60 + 5), status.duration);
+            assert_eq!(8, status.hours);
+            assert_eq!(3, status.minutes);
             assert!(status.inner.is_none());
         }
 
         #[test]
+        fn should_create_from_datetime_at_midnight() {
+            let status = StatusTime::from(DateTime::<Utc>::default());
+
+            assert_eq!(Duration::zero(), status.duration);
+            assert_eq!(0, status.hours);
+            assert_eq!(0, status.minutes);
+        }
+
+        #[test]
         fn duration() {
-            let d = Duration::minutes(10);
-            let status = StatusTime::from(d);
-            assert!(status.duration.ge(&d));
-            assert!(status.minutes.ge(&d.num_minutes()));
+            let status = StatusTime::from(Duration::minutes(10));
+
+            assert_eq!(Duration::minutes(10), status.duration);
+            assert_eq!(0, status.hours);
+            assert_eq!(10, status.minutes);
             assert!(status.inner.is_none());
+        }
+
+        #[test]
+        fn should_create_from_duration_over_a_day() {
+            let status = StatusTime::from(Duration::hours(25) + Duration::minutes(15));
+
+            assert_eq!(25, status.hours);
+            assert_eq!(15, status.minutes);
+        }
+
+        #[test]
+        fn should_create_from_negative_duration() {
+            let status = StatusTime::from(Duration::minutes(-90));
+
+            assert_eq!(Duration::minutes(-90), status.duration);
+            assert_eq!(-1, status.hours);
+            assert_eq!(-30, status.minutes);
+        }
+
+        #[test]
+        fn should_create_from_local_datetime() {
+            let time = chrono::Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 5).unwrap();
+            let status = StatusTime::from(time);
+
+            assert_eq!(Duration::seconds(8 * 3600 + 3 * 60 + 5), status.duration);
+            assert_eq!(8, status.hours);
+            assert_eq!(3, status.minutes);
+            assert!(status.inner.is_none());
+        }
+
+        #[test]
+        fn should_convert_into_duration() {
+            let d = Duration::minutes(75);
+
+            assert_eq!(d, Duration::from(StatusTime::from(d)));
+            assert_eq!(Duration::minutes(-30), StatusTime::from(Duration::minutes(-30)).into());
         }
     }
 

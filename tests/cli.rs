@@ -5,7 +5,7 @@ use std::{
 };
 
 use serial_test::serial;
-use trackrs::{BreakLimit, Cli, CliExecute, JsonStorage, Settings, StatusDaily, StorageProvider};
+use trackrs::{BreakLimit, Cli, CliExecute, JsonStorage, Settings, StorageProvider};
 
 fn logger() {
     // env::set_var("RUST_LOG", "info");
@@ -211,13 +211,9 @@ fn sick_writes_full_day_with_break(ctx: &mut IntegrationContext) {
     let time_data = JsonStorage::new(settings.folder.to_owned())
         .load(chrono::NaiveDate::from_ymd_opt(2022, 2, 7).unwrap())
         .unwrap();
-    let status = StatusDaily::builder()
-        .data(time_data)
-        .settings(settings)
-        .build()
-        .unwrap();
-    assert_eq!("08:00", status.worktime.to_string());
-    assert_eq!("00:00", status.overtime.to_string());
+    let now = chrono::Utc::now();
+    assert_eq!("08:00", time_data.worktime(&settings, now).unwrap().to_string());
+    assert_eq!("00:00", time_data.overtime(&settings, now).unwrap().to_string());
 }
 
 #[test_context::test_context(IntegrationContext)]
@@ -491,6 +487,8 @@ fn status_day_shows_stored_day_only(ctx: &mut IntegrationContext) {
 
     let stored = Cli::parse_from(["trackrs", "status", "-d", "2022-02-07"].iter());
     assert!(stored.execute().is_ok());
+    let table = Cli::parse_from(["trackrs", "status", "-d", "2022-02-07", "-t"].iter());
+    assert!(table.execute().is_ok());
 
     let missing = Cli::parse_from(["trackrs", "status", "-d", "2022-02-08"].iter());
     assert!(missing.execute().is_err());
