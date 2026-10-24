@@ -2,7 +2,7 @@ use std::{ fs::{ self, File, OpenOptions }, io::BufReader, ops::Sub, path::PathB
 
 use chrono::{ DateTime, Duration, Utc };
 
-use crate::{ Entries, Entry, Status, Takeover, TrackerError, Upgrade };
+use crate::{ Entries, Entry, Settings, Status, Takeover, TrackerError, Upgrade };
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
@@ -93,6 +93,58 @@ impl TimeData {
         log::debug!("append time data: {:?}", entry);
         self.entries.data.append(&mut [entry].to_vec());
         Ok(self)
+    }
+
+    /// Fill the remaining target worktime of the day with an absence (`sick` or `vacation`).
+    ///
+    /// The absence starts at the default start (`date` of this time data) for an empty day, at the
+    /// end of an ended day (whose end is replaced), and otherwise at `now`, or at the last entry if
+    /// the day is not today. It lasts until the day's worktime reaches the target with its break.
+    pub fn absence(
+        &mut self,
+        note: &str,
+        now: DateTime<Utc>,
+        settings: &Settings
+    ) -> Result<&mut Self, TrackerError> {
+        self.assert_build()?;
+        let day = self.date.unwrap();
+        let mut data = self.entries.data.clone();
+        let from = match data.last().map(|e| (e.status.to_owned(), e.time)) {
+            None => day,
+            Some((Status::End, time)) => {
+                data.pop();
+                time
+            }
+            Some((Status::Connect | Status::Break, time)) => {
+                if now.date_naive() == day.date_naive() { now.max(time) } else { time }
+            }
+            Some((status, _)) => {
+                return Err(TrackerError::TimeDataError {
+                    message: format!("can't add {note} to a day ending with {status:?}"),
+                });
+            }
+        };
+
+        let start = data
+            .iter()
+            .find(|e| e.status == Status::Connect)
+            .map_or(from, |e| e.time);
+        let taken = data
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.status == Status::Break)
+            .map(|(i, e)| data.get(i + 1).map_or(from, |n| n.time) - e.time)
+            .fold(Duration::zero(), |a, b| a + b);
+        let target = Duration::minutes((*settings.workperday.from(start)).into());
+        let end = start + target + taken.max(settings.break_for(target));
+        if end <= from {
+            return Err(TrackerError::TimeDataError {
+                message: format!("target worktime already reached, not adding {note}"),
+            });
+        }
+
+        self.entries.data = data;
+        self.append(Status::Connect, from, Some(note.to_owned()))?.append(Status::End, end, None)
     }
 
     pub fn assert_takeover(&mut self, time: DateTime<Utc>) -> Result<&mut Self, TrackerError> {
@@ -278,6 +330,170 @@ mod tests {
             logger();
             let time_data = TimeData::builder().folder("".into()).build();
             assert!(time_data.is_err());
+        }
+    }
+
+    mod absence {
+        use chrono::{ DateTime, Utc };
+
+        use crate::{ BreakLimit, Entries, Settings, StatusDaily };
+
+        use super::*;
+
+        fn at(hour: u32, minute: u32) -> DateTime<Utc> {
+            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
+        }
+
+        fn settings() -> Settings {
+            Settings {
+                limits: vec![BreakLimit { start: 6 * 60, minutes: 30 }],
+                ..Default::default()
+            }
+        }
+
+        /// Monday 2022-02-07 with the given (status, hour, minute) entries.
+        fn day(entries: &[(Status, u32, u32)]) -> TimeData {
+            let data = entries
+                .iter()
+                .enumerate()
+                .map(|(i, (status, h, m))| Entry {
+                    id: (i + 1) as u8,
+                    status: status.to_owned(),
+                    time: at(*h, *m),
+                    note: None,
+                })
+                .collect();
+            TimeData {
+                entries: Entries { data, version: 2 },
+                build: true,
+                date: Some(at(6, 0)),
+                ..Default::default()
+            }
+        }
+
+        fn summary(t: &TimeData) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
+            t.entries.data
+                .iter()
+                .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
+                .collect()
+        }
+
+        fn worktime(t: &TimeData) -> String {
+            let status = StatusDaily::builder()
+                .data(t.to_owned())
+                .settings(settings())
+                .build()
+                .unwrap();
+            status.worktime.to_string()
+        }
+
+        fn sick() -> Option<String> {
+            Some("sick".to_owned())
+        }
+
+        #[test]
+        fn should_fill_empty_day() -> Result<(), TrackerError> {
+            let mut t = day(&[]);
+            t.absence("sick", at(9, 0), &settings())?;
+
+            assert_eq!(
+                vec![(Status::Connect, at(6, 0), sick()), (Status::End, at(14, 30), None)],
+                summary(&t)
+            );
+            assert_eq!("08:00", worktime(&t));
+            Ok(())
+        }
+
+        #[test]
+        fn should_extend_running_day_from_now() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0)]);
+            t.absence("sick", at(10, 0), &settings())?;
+
+            assert_eq!(
+                vec![
+                    (Status::Connect, at(8, 0), None),
+                    (Status::Connect, at(10, 0), sick()),
+                    (Status::End, at(16, 30), None)
+                ],
+                summary(&t)
+            );
+            assert_eq!("08:00", worktime(&t));
+            Ok(())
+        }
+
+        #[test]
+        fn should_extend_ended_day_from_its_end() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 10, 0)]);
+            t.absence("sick", at(15, 0), &settings())?;
+
+            assert_eq!(
+                vec![
+                    (Status::Connect, at(8, 0), None),
+                    (Status::Connect, at(10, 0), sick()),
+                    (Status::End, at(16, 30), None)
+                ],
+                summary(&t)
+            );
+            assert_eq!("08:00", worktime(&t));
+            Ok(())
+        }
+
+        #[test]
+        fn should_keep_longer_break_taken() -> Result<(), TrackerError> {
+            let mut t = day(
+                &[(Status::Connect, 8, 0), (Status::Break, 12, 0), (Status::Connect, 13, 0)]
+            );
+            t.absence("sick", at(14, 0), &settings())?;
+
+            assert_eq!((Status::End, at(17, 0), None), summary(&t)[4]);
+            assert_eq!("08:00", worktime(&t));
+            Ok(())
+        }
+
+        #[test]
+        fn should_end_running_break() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::Break, 12, 0)]);
+            t.absence("sick", at(12, 15), &settings())?;
+
+            assert_eq!(
+                vec![
+                    (Status::Connect, at(8, 0), None),
+                    (Status::Break, at(12, 0), None),
+                    (Status::Connect, at(12, 15), sick()),
+                    (Status::End, at(16, 30), None)
+                ],
+                summary(&t)
+            );
+            assert_eq!("08:00", worktime(&t));
+            Ok(())
+        }
+
+        #[test]
+        fn should_extend_past_day_from_last_entry() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0)]);
+            t.absence("sick", Utc.with_ymd_and_hms(2022, 2, 9, 9, 0, 0).unwrap(), &settings())?;
+
+            assert_eq!((Status::Connect, at(8, 0), sick()), summary(&t)[1]);
+            assert_eq!((Status::End, at(16, 30), None), summary(&t)[2]);
+            Ok(())
+        }
+
+        #[test]
+        fn should_not_change_day_with_reached_target() {
+            let mut t = day(&[(Status::Connect, 6, 0), (Status::End, 14, 30)]);
+            let before = summary(&t);
+
+            assert!(t.absence("vacation", at(15, 0), &settings()).is_err());
+            assert_eq!(before, summary(&t));
+        }
+
+        #[test]
+        fn should_not_change_day_ending_with_takeover() {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 10, 0), (Status::Takeover, 10, 0)]);
+            let before = summary(&t);
+
+            assert!(t.absence("sick", at(11, 0), &settings()).is_err());
+            assert_eq!(before, summary(&t));
         }
     }
 

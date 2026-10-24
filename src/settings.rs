@@ -1,6 +1,6 @@
 use std::{ env, fs::OpenOptions, path::Path };
 
-use chrono::{ DateTime, Datelike, Utc };
+use chrono::{ DateTime, Datelike, Duration, Utc };
 use config::{ Config, ConfigError, File, FileFormat, Map, Value, ValueKind };
 use serde::Serialize;
 use serde_derive::Deserialize;
@@ -127,6 +127,15 @@ impl Settings {
         };
 
         Settings::build(&d)
+    }
+
+    /// Break to take for the given worktime, based on the highest reached break limit.
+    pub fn break_for(&self, worktime: Duration) -> Duration {
+        self.limits
+            .iter()
+            .filter(|l| worktime >= Duration::minutes(l.start.into()))
+            .max_by_key(|l| l.start)
+            .map_or(Duration::zero(), |l| Duration::minutes(l.minutes.into()))
     }
 
     fn build(base: &Path) -> Result<Self, ConfigError> {

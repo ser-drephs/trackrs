@@ -36,6 +36,15 @@ Don't forget to continue after your break by executing `trackrs start` again.
 
 Execute `trackrs end` to add an end entry and show the status for this day.
 
+### Sick and vacation days
+
+Execute `trackrs sick` or `trackrs vacation` to fill the rest of today's target work time, e.g. when you feel unwell during the day.
+Add a date as `YYYY-MM-DD` to do this for another day.
+
+- An empty day starts at 06:00 UTC and lasts the configured work time plus the break for it.
+- A running day continues from now, an ended day from its end.
+- A day that already reached its target work time is left untouched.
+
 ### Status
 
 Execute `trackrs status` to get the current tracking status.
