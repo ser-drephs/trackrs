@@ -320,9 +320,6 @@ mod tests {
     }
 
     mod display {
-        use chrono::Local;
-
-
         use super::*;
 
         #[test]
@@ -608,7 +605,7 @@ mod tests {
         #[test]
         fn daily_temp_end() {
             logger();
-            let local = now().with_timezone(&Local).sub(Duration::minutes(35));
+            let local = now().sub(Duration::minutes(35));
             let est_end = StatusTime::from(
                 local.add(Duration::hours(8).add(Duration::minutes(30)))
             );
