@@ -1,6 +1,6 @@
 use chrono::{ Datelike, NaiveDate };
 
-use crate::{ TimeDataWeekly, TrackerError };
+use crate::{ StorageProvider, TimeDataWeekly, TrackerError };
 
 /// Time data of a month, split into its ISO weeks. The first and last week only hold the days
 /// within the month.
@@ -13,13 +13,21 @@ pub struct TimeDataMonthly {
 
 impl TimeDataMonthly {
     /// Load `month` (1-12), or a month relative to the one of `today` for 0 and less, e.g. -1.
-    pub fn load(month: i16, today: NaiveDate) -> Result<Self, TrackerError> {
+    pub fn load(
+        storage: &impl StorageProvider,
+        month: i16,
+        today: NaiveDate
+    ) -> Result<Self, TrackerError> {
         let (year, month) = Self::resolve(month, today)?;
-        Self::load_month(year, month)
+        Self::load_month(storage, year, month)
     }
 
     /// Load `month` (1-12) of `year`.
-    pub fn load_month(year: i32, month: u32) -> Result<Self, TrackerError> {
+    pub fn load_month(
+        storage: &impl StorageProvider,
+        year: i32,
+        month: u32
+    ) -> Result<Self, TrackerError> {
         let days: Vec<NaiveDate> = NaiveDate::from_ymd_opt(year, month, 1)
             .unwrap()
             .iter_days()
@@ -31,7 +39,7 @@ impl TimeDataMonthly {
             let week = days[0].iso_week().week().try_into()?;
             let dates = days.to_vec();
             weeks.push(
-                TimeDataWeekly::builder().week_dates(week, dates).build()?
+                TimeDataWeekly::for_dates(storage, week, dates)?
             );
         }
 
@@ -56,7 +64,7 @@ impl TimeDataMonthly {
 mod tests {
     use chrono::NaiveDate;
 
-    use crate::{ TimeDataMonthly, TrackerError };
+    use crate::{ MemoryStorage, TimeDataMonthly, TrackerError };
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, d).unwrap()
@@ -75,12 +83,12 @@ mod tests {
 
     #[test]
     fn should_split_month_into_weeks() -> Result<(), TrackerError> {
-        let m = TimeDataMonthly::load(3, date(2022, 6, 1))?;
+        let m = TimeDataMonthly::load(&MemoryStorage::default(), 3, date(2022, 6, 1))?;
 
         // March 2022 starts on a Tuesday and ends on a Thursday.
         let weeks: Vec<(i16, usize)> = m.weeks
             .iter()
-            .map(|w| (w.week, w.dates.len()))
+            .map(|w| (w.week, w.days.len()))
             .collect();
         assert_eq!(vec![(9, 6), (10, 7), (11, 7), (12, 7), (13, 4)], weeks);
         assert_eq!((2022, 3), (m.year, m.month));

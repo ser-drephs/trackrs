@@ -4,10 +4,10 @@ use std::{
     path::{ Path, PathBuf },
 };
 
-use chrono::{ Datelike, Months, NaiveDate };
+use chrono::{ DateTime, Datelike, Months, NaiveDate, Utc };
 use serde::{ Deserialize, Serialize };
 
-use crate::{ Settings, StatusTime, StatusWeekly, StorageProvider, TimeDataWeekly, TrackerError };
+use crate::{ Settings, StatusTime, StorageProvider, TimeDataWeekly, TrackerError, Weekly };
 
 /// Overtime of a month and the overtime accumulated up to and including it, as `HH:mm`.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -144,7 +144,8 @@ impl Overtime {
         &self,
         storage: &impl StorageProvider,
         settings: &Settings,
-        start: NaiveDate
+        start: NaiveDate,
+        now: DateTime<Utc>
     ) -> Result<Option<StatusTime>, TrackerError> {
         let entries = self.read()?;
         let Some((k, e)) = entries.range(..key(start.year(), start.month())).next_back() else {
@@ -161,8 +162,8 @@ impl Overtime {
         if dates.is_empty() {
             return Ok(Some(cumulated));
         }
-        let data = TimeDataWeekly::builder().week_dates(0, dates).build()?;
-        let between = StatusWeekly::builder().data(data).settings(settings.to_owned()).build(storage)?;
+        let data = TimeDataWeekly::for_dates(storage, 0, dates)?;
+        let between = Weekly::new(&data, settings, now)?;
         Ok(Some(cumulated + between.overtime))
     }
 }
@@ -295,21 +296,23 @@ mod tests {
         let o = Overtime::new(temp_dir.path());
         let storage = MemoryStorage::default();
         let settings = Settings::default();
+        // All days are missing, so the clock doesn't matter.
+        let now = chrono::DateTime::default();
         let date = |m, d| NaiveDate::from_ymd_opt(2022, m, d).unwrap();
 
         // Nothing stored before.
-        assert_eq!(None, o.carry(&storage, &settings, date(3, 1))?);
+        assert_eq!(None, o.carry(&storage, &settings, date(3, 1), now)?);
 
         o.store(2022, 1, time("10:00"), false)?;
         // Right after the stored month.
-        assert_eq!(Some(time("10:00")), o.carry(&storage, &settings, date(2, 1))?);
+        assert_eq!(Some(time("10:00")), o.carry(&storage, &settings, date(2, 1), now)?);
         // Mid February: the 1st to 4th (Tuesday to Friday) are missing 8 hours each.
         assert_eq!(
             Some(StatusTime::from(Duration::hours(10 - 32))),
-            o.carry(&storage, &settings, date(2, 5))?
+            o.carry(&storage, &settings, date(2, 5), now)?
         );
         // Not counting the stored month itself or later ones.
-        assert_eq!(None, o.carry(&storage, &settings, date(1, 15))?);
+        assert_eq!(None, o.carry(&storage, &settings, date(1, 15), now)?);
         Ok(())
     }
 }
