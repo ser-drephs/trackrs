@@ -3,7 +3,7 @@ use std::fmt::Display;
 use chrono::{ DateTime, NaiveDate, Utc };
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusMonthly, StatusTime, TimeDataYearly, TrackerError };
+use crate::{ Monthly, Settings, StatusTime, TimeDataYearly, TrackerError };
 
 /// Status of a year, made of the monthly status of each of its months.
 #[derive(Clone, Debug)]
@@ -12,7 +12,7 @@ pub struct StatusYearly {
     total: StatusTime,
     overtime: StatusTime,
     decimal: f64,
-    months: Vec<StatusMonthly>,
+    months: Vec<Monthly>,
 }
 
 impl StatusYearly {
@@ -24,8 +24,8 @@ impl StatusYearly {
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
         let mut months = Vec::new();
-        for month in data.months {
-            let s = StatusMonthly::new(month, settings, now)?;
+        for month in &data.months {
+            let s = Monthly::new(month, settings, now)?;
             total += s.total.to_owned();
             overtime += s.overtime.to_owned();
             months.push(s);

@@ -4,6 +4,12 @@ pub use daily::*;
 mod daily_data;
 pub use daily_data::*;
 
+mod monthly;
+pub use monthly::*;
+
+mod monthly_data;
+pub use monthly_data::*;
+
 mod time;
 pub use time::*;
 

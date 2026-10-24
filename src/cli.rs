@@ -9,8 +9,8 @@ use usage::{
 };
 
 use crate::{
-    Daily, JsonStorage, Overtime, Settings, StorageProvider, Status, StatusDisplay, StatusMonthly, StatusTime,
-    StatusYearly, Takeover, TimeDataMonthly, TimeDataWeekly, TimeDataYearly, Weekly,
+    Daily, JsonStorage, Overtime, Settings, StorageProvider, Status, StatusDisplay, StatusTime,
+    StatusYearly, Takeover, TimeDataMonthly, TimeDataWeekly, TimeDataYearly, Weekly, Monthly,
     TrackerError,
 };
 
@@ -367,10 +367,11 @@ impl Cli {
 
         if let Some(m) = month {
             let today = Local::now().date_naive();
-            let time_data = TimeDataMonthly::load(&storage, *m, today)?;
-            let status = StatusMonthly::new(time_data, &settings, Utc::now())?;
+            let time_data = TimeDataMonthly::for_month(&storage, *m, today)?;
+            let status = Monthly::new(&time_data, &settings, Utc::now())?;
             if table.unwrap_or(true) {
-                status.format_table(self.carry(&storage, &settings, status.start())?);
+                let carry = self.carry(&storage, &settings, status.start())?;
+                print!("{}", status.with_carry(carry).table());
             } else {
                 println!("{}", status);
             }
@@ -447,8 +448,8 @@ impl Cli {
         }
 
         let storage = JsonStorage::new(settings.folder.to_owned());
-        let time_data = TimeDataMonthly::load_month(&storage, year, month)?;
-        let status = StatusMonthly::new(time_data, &settings, Utc::now())?;
+        let time_data = TimeDataMonthly::for_year_month(&storage, year, month)?;
+        let status = Monthly::new(&time_data, &settings, Utc::now())?;
         let stored = Overtime::new(Path::new(&settings.folder)).store(
             year,
             month,
