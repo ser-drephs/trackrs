@@ -152,9 +152,26 @@ Example:
 
 ## Installation
 
-Current no automatic installation scripts or setups are available.
-Download the binary from release and place it somewhere on your harddrive.
-Will be added in the future maybe.
+Download the binary from the latest release and place it somewhere on your `PATH`.
+
+### Nix
+
+The flake installs the binary of the GitHub release on `x86_64-linux`, without building it:
+
+```bash
+nix run github:ser-drephs/trackrs/main -- status
+nix profile install github:ser-drephs/trackrs/main
+```
+
+Or add it to a flake based configuration:
+
+```nix
+inputs.trackrs.url = "github:ser-drephs/trackrs/main";
+# ...
+environment.systemPackages = [ inputs.trackrs.packages.x86_64-linux.default ];
+```
+
+Each release updates the version and hash in `flake.nix`.
 
 ## Build
 

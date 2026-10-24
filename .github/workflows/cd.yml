@@ -49,7 +49,7 @@ jobs:
 
     - name: prepare scripts
       if: success()
-      run: chmod +x ${{ github.workspace }}/eng/set-version.sh && chmod +x ${{ github.workspace }}/eng/build-release.sh
+      run: chmod +x ${{ github.workspace }}/eng/set-version.sh && chmod +x ${{ github.workspace }}/eng/build-release.sh && chmod +x ${{ github.workspace }}/eng/update-flake.sh
 
     - name: build release linux
       id: build-linux-release
