@@ -31,3 +31,6 @@ pub use status_yearly::*;
 
 mod models;
 pub use models::*;
+
+mod storage;
+pub use storage::*;

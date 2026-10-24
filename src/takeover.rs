@@ -39,6 +39,9 @@ impl Takeover {
         let c = Content {
             minutes: Some(minutes),
         };
+        if let Some(folder) = self.file.parent() {
+            fs::create_dir_all(folder)?;
+        }
         Ok(fs::write(&self.file, serde_json::to_string(&c)?)?)
     }
 

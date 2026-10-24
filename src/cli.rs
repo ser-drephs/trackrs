@@ -9,8 +9,8 @@ use usage::{
 };
 
 use crate::{
-    Overtime, Settings, Status, StatusDaily, StatusMonthly, StatusTime, StatusWeekly,
-    StatusYearly, Takeover, Timesheet, TimeDataMonthly, TimeDataWeekly, TimeDataYearly,
+    JsonStorage, Overtime, Settings, StorageProvider, Status, StatusDaily, StatusMonthly, StatusTime, StatusWeekly,
+    StatusYearly, Takeover, TimeDataMonthly, TimeDataWeekly, TimeDataYearly,
     TrackerError,
 };
 
@@ -262,14 +262,12 @@ impl Cli {
     fn invoke_start(&self, note: &Option<String>) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
-        let mut time_data = Timesheet::builder()
-            .folder(settings.folder.to_owned().into())
-            .today()
-            .build()?;
+        let storage = JsonStorage::new(settings.folder.to_owned());
+        let today = Utc::now().date_naive();
+        let mut time_data = storage.load(today)?;
         let now = Local::now();
-        time_data.read_from_file()?;
         let first = !time_data
-            .entries
+            .data
             .iter()
             .any(|e| e.status == Status::Connect);
         time_data.append(Status::Connect, now.to_utc(), note.clone())?;
@@ -288,7 +286,7 @@ impl Cli {
             }
         }
 
-        time_data.write_to_file()?;
+        storage.save(today, &time_data)?;
         if taken.is_some() {
             takeover.remove()?;
         }
@@ -298,23 +296,19 @@ impl Cli {
     fn invoke_break(&self, note: &Option<String>) -> TrackerResult {
         log::info!("break executed");
         let settings = Settings::new()?;
-        let mut time_data = Timesheet::builder()
-            .folder(settings.folder.into())
-            .today()
-            .build()?;
-        let now = Local::now();
-        time_data
-            .read_from_file()?
-            .append(Status::Break, now.to_utc(), note.clone())?
-            .write_to_file()
+        let storage = JsonStorage::new(settings.folder);
+        let today = Utc::now().date_naive();
+        let mut time_data = storage.load(today)?;
+        time_data.append(Status::Break, Local::now().to_utc(), note.clone())?;
+        storage.save(today, &time_data)
     }
 
     fn invoke_end(&self) -> TrackerResult {
         log::info!("end executed");
         let settings = Settings::new()?;
-        let folder: &str = settings.folder.as_ref();
-        let mut time_data = Timesheet::builder().folder(folder.into()).today().build()?;
-        time_data.read_from_file()?;
+        let storage = JsonStorage::new(settings.folder.to_owned());
+        let today = Utc::now().date_naive();
+        let mut time_data = storage.load(today)?;
         let status = StatusDaily::builder()
             .data(time_data.clone())
             .settings(settings)
@@ -325,22 +319,19 @@ impl Cli {
             .assert_break(
                 status.exp_break.unwrap().duration,
                 status.r#break.unwrap().duration,
-            )?
-            .write_to_file()?;
+            )?;
+        storage.save(today, &time_data)?;
         self.invoke_status(&None, &None, &None, &None, &None)
     }
 
     fn invoke_add(&self, minutes: &u16) -> TrackerResult {
         log::info!("add executed");
         let settings = Settings::new()?;
-        let mut time_data = Timesheet::builder()
-            .folder(settings.folder.into())
-            .today()
-            .build()?;
-        time_data
-            .read_from_file()?
-            .prepend(*minutes, "manually added")?
-            .write_to_file()
+        let storage = JsonStorage::new(settings.folder);
+        let today = Utc::now().date_naive();
+        let mut time_data = storage.load(today)?;
+        time_data.prepend(*minutes, "manually added")?;
+        storage.save(today, &time_data)
     }
 
     fn invoke_absence(&self, date: &NaiveDate, note: &str) -> TrackerResult {
@@ -349,14 +340,10 @@ impl Cli {
         // An empty day starts at 06:00 UTC: a regular workday start across Europe (UTC-1 to UTC+3)
         // that keeps the whole day on the same date there, in UTC and local time.
         let start = date.and_hms_opt(6, 0, 0).unwrap().and_utc();
-        let mut time_data = Timesheet::builder()
-            .folder(settings.folder.to_owned().into())
-            .date(start)
-            .build()?;
-        time_data
-            .read_from_file()?
-            .absence(note, Local::now().to_utc(), &settings)?
-            .write_to_file()
+        let storage = JsonStorage::new(settings.folder.to_owned());
+        let mut time_data = storage.load(*date)?;
+        time_data.absence(start, note, Local::now().to_utc(), &settings)?;
+        storage.save(*date, &time_data)
     }
 
     fn invoke_status(
@@ -429,7 +416,7 @@ impl Cli {
                 // Day files are named by their UTC date, like today's.
                 let date = status_date(day, Utc::now().date_naive())?;
                 let status =
-                    StatusDaily::load(&settings.folder.to_owned().into(), &settings, date)?
+                    StatusDaily::load(&JsonStorage::new(settings.folder.to_owned()), &settings, date)?
                         .ok_or_else(|| TrackerError::TimeDataError {
                             message: format!("no entries for {date}"),
                         })?;
@@ -509,15 +496,14 @@ impl Cli {
             });
         }
 
-        let mut time_data = Timesheet::builder()
-            .folder(settings.folder.to_owned().into())
-            .today()
-            .build()?;
-        time_data.read_from_file()?.takeover(*minutes)?;
+        let storage = JsonStorage::new(settings.folder.to_owned());
+        let today = Utc::now().date_naive();
+        let mut time_data = storage.load(today)?;
+        time_data.takeover(*minutes)?;
 
         // Store the minutes first, so they're never lost; undo that if the day can't be saved.
         takeover.set(*minutes)?;
-        if let Err(e) = time_data.write_to_file() {
+        if let Err(e) = storage.save(today, &time_data) {
             takeover.remove()?;
             return Err(e);
         }

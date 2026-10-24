@@ -5,8 +5,7 @@ use std::{
 };
 
 use serial_test::serial;
-use chrono::TimeZone;
-use trackrs::{BreakLimit, Cli, CliExecute, Settings, StatusDaily, Timesheet};
+use trackrs::{BreakLimit, Cli, CliExecute, JsonStorage, Settings, StatusDaily, StorageProvider};
 
 fn logger() {
     // env::set_var("RUST_LOG", "info");
@@ -209,12 +208,9 @@ fn sick_writes_full_day_with_break(ctx: &mut IntegrationContext) {
     ));
     assert!(a.contains("{\"status\":\"End\",\"time\":\"2022-02-07T14:30:00Z\"}"));
 
-    let mut time_data = Timesheet::builder()
-        .folder(settings.folder.to_owned().into())
-        .date(chrono::Utc.with_ymd_and_hms(2022, 2, 7, 6, 0, 0).unwrap())
-        .build()
+    let time_data = JsonStorage::new(settings.folder.to_owned())
+        .load(chrono::NaiveDate::from_ymd_opt(2022, 2, 7).unwrap())
         .unwrap();
-    time_data.read_from_file().unwrap();
     let status = StatusDaily::builder()
         .data(time_data)
         .settings(settings)
@@ -328,7 +324,7 @@ fn add_rejects_without_start(ctx: &mut IntegrationContext) {
     assert!(a.execute().is_err());
 
     let folder = ctx.temp_dir.path().join("trackrs");
-    assert_eq!(0, fs::read_dir(&folder).unwrap().count());
+    assert!(!folder.exists() || fs::read_dir(&folder).unwrap().count() == 0);
 }
 
 fn takeover_file(ctx: &IntegrationContext) -> std::path::PathBuf {

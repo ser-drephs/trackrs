@@ -32,7 +32,7 @@ impl Upgrade {
     /// Versionless: a plain array of entries.
     fn to_v1(value: Value) -> Result<Timesheet, UpgradeError> {
         let data: Vec<Entry> = serde_json::from_value(value)?;
-        Ok(Timesheet { entries: data, version: 1, ..Default::default() })
+        Ok(Timesheet { data, version: 1, ..Default::default() })
     }
 
     /// v2 adds the optional `note` to an entry, which v1 entries simply lack.
@@ -64,7 +64,7 @@ mod tests {
     fn should_upgrade_versionless_to_v1() {
         let value = serde_json::from_str(VERSIONLESS).unwrap();
         let ent = Upgrade::to_v1(value).unwrap();
-        assert_eq!(ent.entries.len(), 2);
+        assert_eq!(ent.data.len(), 2);
         assert_eq!(ent.version, 1)
     }
 
@@ -73,8 +73,8 @@ mod tests {
         let v1 = serde_json::from_str(V1).unwrap();
         let ent = Upgrade::to_v2(v1);
         assert_eq!(ent.version, 2);
-        assert_eq!(ent.entries.len(), 2);
-        assert!(ent.entries.iter().all(|e| e.note.is_none()));
+        assert_eq!(ent.data.len(), 2);
+        assert!(ent.data.iter().all(|e| e.note.is_none()));
     }
 
     #[test]
