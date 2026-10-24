@@ -13,9 +13,13 @@ pub struct TimeDataMonthly {
 
 impl TimeDataMonthly {
     /// Load `month` (1-12), or a month relative to the one of `today` for 0 and less, e.g. -1.
-    pub fn load(folder: Folder, month: i8, today: NaiveDate) -> Result<Self, TrackerError> {
+    pub fn load(folder: Folder, month: i16, today: NaiveDate) -> Result<Self, TrackerError> {
         let (year, month) = Self::resolve(month, today)?;
+        Self::load_month(folder, year, month)
+    }
 
+    /// Load `month` (1-12) of `year`.
+    pub fn load_month(folder: Folder, year: i32, month: u32) -> Result<Self, TrackerError> {
         let days: Vec<NaiveDate> = NaiveDate::from_ymd_opt(year, month, 1)
             .unwrap()
             .iter_days()
@@ -37,7 +41,7 @@ impl TimeDataMonthly {
         Ok(TimeDataMonthly { year, month, weeks })
     }
 
-    fn resolve(month: i8, today: NaiveDate) -> Result<(i32, u32), TrackerError> {
+    fn resolve(month: i16, today: NaiveDate) -> Result<(i32, u32), TrackerError> {
         match month {
             1..=12 => Ok((today.year(), month as u32)),
             13.. => Err(TrackerError::TimeDataError {
@@ -78,7 +82,7 @@ mod tests {
         let m = TimeDataMonthly::load(temp_dir.path().to_path_buf().into(), 3, date(2022, 6, 1))?;
 
         // March 2022 starts on a Tuesday and ends on a Thursday.
-        let weeks: Vec<(i8, usize)> = m.weeks
+        let weeks: Vec<(i16, usize)> = m.weeks
             .iter()
             .map(|w| (w.week, w.entries.len()))
             .collect();
