@@ -2,7 +2,8 @@ use std::io;
 
 use serde_json::Value;
 
-use crate::{ Entries, Entry, entries::CURRENT_VERSION };
+use super::timesheet::CURRENT_VERSION;
+use crate::{ Entry, Timesheet };
 
 use super::UpgradeError;
 
@@ -10,7 +11,7 @@ pub struct Upgrade {}
 
 impl Upgrade {
     /// Read entries of any known version and upgrade them to the current version.
-    pub fn upgrade<R: io::Read>(reader: R) -> Result<Entries, UpgradeError> {
+    pub fn upgrade<R: io::Read>(reader: R) -> Result<Timesheet, UpgradeError> {
         let value: Value = serde_json::from_reader(reader)?;
         let mut timesheet = match value {
             Value::Array(_) => Self::to_v1(value)?,
@@ -29,14 +30,14 @@ impl Upgrade {
     }
 
     /// Versionless: a plain array of entries.
-    fn to_v1(value: Value) -> Result<Entries, UpgradeError> {
+    fn to_v1(value: Value) -> Result<Timesheet, UpgradeError> {
         let data: Vec<Entry> = serde_json::from_value(value)?;
-        Ok(Entries { data, version: 1 })
+        Ok(Timesheet { entries: data, version: 1, ..Default::default() })
     }
 
     /// v2 adds the optional `note` to an entry, which v1 entries simply lack.
-    fn to_v2(entries: Entries) -> Entries {
-        Entries { version: 2, ..entries }
+    fn to_v2(timesheet: Timesheet) -> Timesheet {
+        Timesheet { version: 2, ..timesheet }
     }
 
     /// v3 drops the `id` of an entry. Entries ignore the `id` they are read with, so it is gone
@@ -63,7 +64,7 @@ mod tests {
     fn should_upgrade_versionless_to_v1() {
         let value = serde_json::from_str(VERSIONLESS).unwrap();
         let ent = Upgrade::to_v1(value).unwrap();
-        assert_eq!(ent.data.len(), 2);
+        assert_eq!(ent.entries.len(), 2);
         assert_eq!(ent.version, 1)
     }
 
@@ -72,8 +73,8 @@ mod tests {
         let v1 = serde_json::from_str(V1).unwrap();
         let ent = Upgrade::to_v2(v1);
         assert_eq!(ent.version, 2);
-        assert_eq!(ent.data.len(), 2);
-        assert!(ent.data.iter().all(|e| e.note.is_none()));
+        assert_eq!(ent.entries.len(), 2);
+        assert!(ent.entries.iter().all(|e| e.note.is_none()));
     }
 
     #[test]

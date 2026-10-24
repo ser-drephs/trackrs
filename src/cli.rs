@@ -10,7 +10,7 @@ use usage::{
 
 use crate::{
     Overtime, Settings, Status, StatusDaily, StatusMonthly, StatusTime, StatusWeekly,
-    StatusYearly, Takeover, TimeData, TimeDataMonthly, TimeDataWeekly, TimeDataYearly,
+    StatusYearly, Takeover, Timesheet, TimeDataMonthly, TimeDataWeekly, TimeDataYearly,
     TrackerError,
 };
 
@@ -262,7 +262,7 @@ impl Cli {
     fn invoke_start(&self, note: &Option<String>) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
+        let mut time_data = Timesheet::builder()
             .folder(settings.folder.to_owned().into())
             .today()
             .build()?;
@@ -270,7 +270,6 @@ impl Cli {
         time_data.read_from_file()?;
         let first = !time_data
             .entries
-            .data
             .iter()
             .any(|e| e.status == Status::Connect);
         time_data.append(Status::Connect, now.to_utc(), note.clone())?;
@@ -299,7 +298,7 @@ impl Cli {
     fn invoke_break(&self, note: &Option<String>) -> TrackerResult {
         log::info!("break executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
+        let mut time_data = Timesheet::builder()
             .folder(settings.folder.into())
             .today()
             .build()?;
@@ -314,7 +313,7 @@ impl Cli {
         log::info!("end executed");
         let settings = Settings::new()?;
         let folder: &str = settings.folder.as_ref();
-        let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
+        let mut time_data = Timesheet::builder().folder(folder.into()).today().build()?;
         time_data.read_from_file()?;
         let status = StatusDaily::builder()
             .data(time_data.clone())
@@ -334,7 +333,7 @@ impl Cli {
     fn invoke_add(&self, minutes: &u16) -> TrackerResult {
         log::info!("add executed");
         let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
+        let mut time_data = Timesheet::builder()
             .folder(settings.folder.into())
             .today()
             .build()?;
@@ -350,7 +349,7 @@ impl Cli {
         // An empty day starts at 06:00 UTC: a regular workday start across Europe (UTC-1 to UTC+3)
         // that keeps the whole day on the same date there, in UTC and local time.
         let start = date.and_hms_opt(6, 0, 0).unwrap().and_utc();
-        let mut time_data = TimeData::builder()
+        let mut time_data = Timesheet::builder()
             .folder(settings.folder.to_owned().into())
             .date(start)
             .build()?;
@@ -510,7 +509,7 @@ impl Cli {
             });
         }
 
-        let mut time_data = TimeData::builder()
+        let mut time_data = Timesheet::builder()
             .folder(settings.folder.to_owned().into())
             .today()
             .build()?;

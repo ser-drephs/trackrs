@@ -1,24 +1,42 @@
 use std::{ fs::{ self, File, OpenOptions }, io::BufReader, path::PathBuf, str::FromStr };
 
 use chrono::{ DateTime, Duration, Utc };
+use serde::{ Deserialize, Serialize };
 
-use crate::{ Entries, Entry, Settings, Status, TrackerError, Upgrade };
+use crate::{ Entry, Settings, Status, TrackerError, Upgrade };
 
 pub(crate) const CURRENT_VERSION: u8 = 3;
 
 
-#[derive(Default, Clone, Debug)]
-pub struct TimeData {
-    pub entries: Entries,
-    pub(super) file: PathBuf,
-    pub(super) build: bool,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Timesheet {
+    #[serde(rename = "data")]
+    pub entries: Vec<Entry>,
+    pub version: u8,
+    #[serde(skip)]
+    pub(crate) file: PathBuf,
+    #[serde(skip)]
+    pub(crate) build: bool,
+    #[serde(skip)]
     pub date: Option<DateTime<Utc>>,
 }
 
-impl TimeData {
-    pub fn builder() -> TimeDataBuilder {
-        TimeDataBuilder {
-            inner: TimeData::default(),
+impl Default for Timesheet {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            version: CURRENT_VERSION,
+            file: PathBuf::default(),
+            build: false,
+            date: None,
+        }
+    }
+}
+
+impl Timesheet {
+    pub fn builder() -> TimesheetBuilder {
+        TimesheetBuilder {
+            inner: Timesheet::default(),
             folder: PathBuf::default(),
             has_file: false,
         }
@@ -39,7 +57,7 @@ impl TimeData {
         if e_break <= a_break {
             return Ok(self);
         }
-        let data = &self.entries.data;
+        let data = &self.entries;
         let after_break = data
             .windows(2)
             .position(|w| w[0].status == Status::Break && w[1].status == Status::Connect)
@@ -67,7 +85,7 @@ impl TimeData {
         let r#break = Entry::new(Status::Break, start, Some("filled mandatory remaining break".to_owned()));
         let connect = Entry::new(Status::Connect, end, None);
         log::debug!("fill break with {:?} and {:?}", r#break, connect);
-        self.entries.data.splice(anchor + 1..anchor + 1, [r#break, connect]);
+        self.entries.splice(anchor + 1..anchor + 1, [r#break, connect]);
         Ok(self)
     }
 
@@ -80,7 +98,7 @@ impl TimeData {
         self.assert_build()?;
         let entry = Entry::new(status, time.to_utc(), note);
         log::debug!("append time data: {:?}", entry);
-        self.entries.data.append(&mut [entry].to_vec());
+        self.entries.append(&mut [entry].to_vec());
         Ok(self)
     }
 
@@ -97,7 +115,7 @@ impl TimeData {
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         let day = self.date.unwrap();
-        let mut data = self.entries.data.clone();
+        let mut data = self.entries.clone();
         let from = match data.last().map(|e| (e.status.to_owned(), e.time)) {
             None => day,
             Some((Status::End, time)) => {
@@ -132,14 +150,14 @@ impl TimeData {
             });
         }
 
-        self.entries.data = data;
+        self.entries = data;
         self.append(Status::Connect, from, Some(note.to_owned()))?.append(Status::End, end, None)
     }
 
     /// Prepend a connect entry `minutes` before the first connect of the day.
     pub fn prepend(&mut self, minutes: u16, note: &str) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
-        let first = self.entries.data
+        let first = self.entries
             .iter()
             .find(|e| e.status == Status::Connect)
             .ok_or_else(|| TrackerError::TimeDataError {
@@ -154,7 +172,7 @@ impl TimeData {
 
         let entry = Entry::new(Status::Connect, time, Some(note.to_owned()));
         log::debug!("prepend time data: {:?}", entry);
-        self.entries.data.insert(0, entry);
+        self.entries.insert(0, entry);
         Ok(self)
     }
 
@@ -162,7 +180,7 @@ impl TimeData {
     /// mark it with a takeover entry one second later.
     pub fn takeover(&mut self, minutes: u16) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
-        let data = &mut self.entries.data;
+        let data = &mut self.entries;
         match data.last().map(|e| &e.status) {
             Some(Status::End) => {}
             Some(Status::Takeover) => {
@@ -202,9 +220,11 @@ impl TimeData {
         self.assert_build()?;
         if self.file.exists() {
             let f = File::open(&self.file)?;
-            self.entries = Upgrade::upgrade(BufReader::new(f))?;
+            let loaded = Upgrade::upgrade(BufReader::new(f))?;
+            self.entries = loaded.entries;
+            self.version = loaded.version;
 
-            self.entries.data.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+            self.entries.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
         } else {
             log::info!("file not yet created: {:?}", &self.file);
         }
@@ -222,7 +242,7 @@ impl TimeData {
             // The file may be longer than the new content, e.g. after being reformatted by hand.
             .truncate(true)
             .open(&self.file)?;
-        Ok(serde_json::to_writer(w, &self.entries)?)
+        Ok(serde_json::to_writer(w, self)?)
     }
 
     fn assert_build(&self) -> Result<(), TrackerError> {
@@ -236,8 +256,8 @@ impl TimeData {
     }
 }
 
-pub struct TimeDataBuilder {
-    inner: TimeData,
+pub struct TimesheetBuilder {
+    inner: Timesheet,
     folder: PathBuf,
     has_file: bool,
 }
@@ -275,7 +295,7 @@ impl From<Folder> for PathBuf {
     }
 }
 
-impl TimeDataBuilder {
+impl TimesheetBuilder {
     pub fn folder(&mut self, folder: Folder) -> &mut Self {
         log::debug!("set time data folder to: {:?}", &folder);
         fs::create_dir_all(&folder.inner).unwrap();
@@ -297,7 +317,7 @@ impl TimeDataBuilder {
         self
     }
 
-    pub fn build(&mut self) -> Result<TimeData, TrackerError> {
+    pub fn build(&mut self) -> Result<Timesheet, TrackerError> {
         if !self.has_file {
             Err(TrackerError::TimeDataError {
                 message: "time data file is not defined".to_string(),
@@ -316,7 +336,7 @@ mod tests {
 
     use chrono::{ Duration, TimeZone, Timelike };
 
-    use crate::{ Entry, Status, TimeData, TrackerError };
+    use crate::{ Entry, Status, Timesheet, TrackerError };
 
     fn logger() {
         // std::env::set_var("RUST_LOG", "debug");
@@ -329,14 +349,14 @@ mod tests {
         #[test]
         fn should_error_with_file_not_set() {
             logger();
-            let time_data = TimeData::builder().build();
+            let time_data = Timesheet::builder().build();
             assert!(time_data.is_err());
         }
 
         #[test]
         fn should_error_with_date_not_set() {
             logger();
-            let time_data = TimeData::builder().folder("".into()).build();
+            let time_data = Timesheet::builder().folder("".into()).build();
             assert!(time_data.is_err());
         }
     }
@@ -344,7 +364,6 @@ mod tests {
     mod fill_break {
         use chrono::{ DateTime, Utc };
 
-        use crate::Entries;
 
         use super::*;
 
@@ -352,7 +371,7 @@ mod tests {
             Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
         }
 
-        fn day(entries: &[(Status, u32, u32)]) -> TimeData {
+        fn day(entries: &[(Status, u32, u32)]) -> Timesheet {
             let data = entries
                 .iter()
                 .map(|(status, h, m)| Entry {
@@ -361,15 +380,15 @@ mod tests {
                     note: None,
                 })
                 .collect();
-            TimeData {
-                entries: Entries { data, version: 2 },
+            Timesheet {
+                entries: data,
                 build: true,
                 ..Default::default()
             }
         }
 
-        fn summary(t: &TimeData) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
-            t.entries.data
+        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
+            t.entries
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
@@ -472,7 +491,6 @@ mod tests {
     mod takeover {
         use chrono::{ DateTime, Utc };
 
-        use crate::Entries;
 
         use super::*;
 
@@ -480,7 +498,7 @@ mod tests {
             Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
         }
 
-        fn day(entries: &[(Status, u32, u32)]) -> TimeData {
+        fn day(entries: &[(Status, u32, u32)]) -> Timesheet {
             let data = entries
                 .iter()
                 .map(|(status, h, m)| Entry {
@@ -489,15 +507,15 @@ mod tests {
                     note: None,
                 })
                 .collect();
-            TimeData {
-                entries: Entries { data, version: 2 },
+            Timesheet {
+                entries: data,
                 build: true,
                 ..Default::default()
             }
         }
 
-        fn summary(t: &TimeData) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
-            t.entries.data
+        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
+            t.entries
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
@@ -531,7 +549,7 @@ mod tests {
         fn should_reject_empty_day() {
             let mut t = day(&[]);
             assert!(t.takeover(30).is_err());
-            assert!(t.entries.data.is_empty());
+            assert!(t.entries.is_empty());
         }
 
         #[test]
@@ -585,7 +603,7 @@ mod tests {
             )?;
             let before = fs::metadata(&file)?.len();
 
-            let mut t = TimeData::builder()
+            let mut t = Timesheet::builder()
                 .folder(temp_dir.path().to_path_buf().into())
                 .date(Utc.with_ymd_and_hms(2022, 2, 7, 0, 0, 0).unwrap())
                 .build()?;
@@ -598,7 +616,7 @@ mod tests {
                 content
             );
             t.read_from_file()?;
-            assert_eq!(1, t.entries.data.len());
+            assert_eq!(1, t.entries.len());
             Ok(())
         }
     }
@@ -606,7 +624,6 @@ mod tests {
     mod prepend {
         use chrono::{ DateTime, Utc };
 
-        use crate::Entries;
 
         use super::*;
 
@@ -614,7 +631,7 @@ mod tests {
             Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
         }
 
-        fn day(entries: &[(Status, u32, u32)]) -> TimeData {
+        fn day(entries: &[(Status, u32, u32)]) -> Timesheet {
             let data = entries
                 .iter()
                 .map(|(status, h, m)| Entry {
@@ -623,15 +640,15 @@ mod tests {
                     note: None,
                 })
                 .collect();
-            TimeData {
-                entries: Entries { data, version: 2 },
+            Timesheet {
+                entries: data,
                 build: true,
                 ..Default::default()
             }
         }
 
-        fn summary(t: &TimeData) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
-            t.entries.data
+        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
+            t.entries
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
@@ -696,7 +713,7 @@ mod tests {
         fn should_reject_without_start() {
             let mut t = day(&[]);
             assert!(t.prepend(30, "manually added").is_err());
-            assert!(t.entries.data.is_empty());
+            assert!(t.entries.is_empty());
         }
 
         #[test]
@@ -712,7 +729,7 @@ mod tests {
     mod absence {
         use chrono::{ DateTime, Utc };
 
-        use crate::{ BreakLimit, Entries, Settings, StatusDaily };
+        use crate::{ BreakLimit, Settings, StatusDaily };
 
         use super::*;
 
@@ -728,7 +745,7 @@ mod tests {
         }
 
         /// Monday 2022-02-07 with the given (status, hour, minute) entries.
-        fn day(entries: &[(Status, u32, u32)]) -> TimeData {
+        fn day(entries: &[(Status, u32, u32)]) -> Timesheet {
             let data = entries
                 .iter()
                 .map(|(status, h, m)| Entry {
@@ -737,22 +754,22 @@ mod tests {
                     note: None,
                 })
                 .collect();
-            TimeData {
-                entries: Entries { data, version: 2 },
+            Timesheet {
+                entries: data,
                 build: true,
                 date: Some(at(6, 0)),
                 ..Default::default()
             }
         }
 
-        fn summary(t: &TimeData) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
-            t.entries.data
+        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
+            t.entries
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
         }
 
-        fn worktime(t: &TimeData) -> String {
+        fn worktime(t: &Timesheet) -> String {
             let status = StatusDaily::builder()
                 .data(t.to_owned())
                 .settings(settings())
@@ -889,7 +906,7 @@ mod tests {
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let day = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
-            let mut time_data = TimeData::builder()
+            let mut time_data = Timesheet::builder()
                 .folder(temp_dir.into_path().into())
                 .date(day)
                 .build()?;
@@ -926,13 +943,13 @@ mod tests {
 
             wait();
 
-            let mut time_data = TimeData::builder()
+            let mut time_data = Timesheet::builder()
                 .folder(temp_dir.into_path().into())
                 .date(Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap())
                 .build()?;
 
             time_data.read_from_file()?;
-            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.len());
             Ok(())
         }
 
@@ -951,20 +968,20 @@ mod tests {
 
             let initial_size = fs::metadata(&time_file)?.len();
 
-            let mut time_data = TimeData::builder()
+            let mut time_data = Timesheet::builder()
                 .folder(temp_dir.into_path().into())
                 .date(day)
                 .build()?;
 
             time_data.read_from_file()?;
-            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.len());
 
             time_data.append(
                 Status::End,
                 day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap(),
                 None
             )?;
-            assert_eq!(3, time_data.entries.data.len());
+            assert_eq!(3, time_data.entries.len());
 
             time_data.write_to_file()?;
             assert!(fs::metadata(&time_file)?.len() > initial_size);
@@ -986,20 +1003,20 @@ mod tests {
 
             let initial_size = fs::metadata(&time_file)?.len();
 
-            let mut time_data = TimeData::builder()
+            let mut time_data = Timesheet::builder()
                 .folder(temp_dir.into_path().into())
                 .date(day)
                 .build()?;
 
             time_data.read_from_file()?;
-            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.len());
 
             time_data.append(
                 Status::End,
                 day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap(),
                 None
             )?;
-            assert_eq!(3, time_data.entries.data.len());
+            assert_eq!(3, time_data.entries.len());
 
             time_data.write_to_file()?;
             assert!(fs::metadata(&time_file)?.len() > initial_size);
@@ -1027,7 +1044,7 @@ mod tests {
 
             wait();
 
-            let mut time_data = TimeData::builder()
+            let mut time_data = Timesheet::builder()
                 .folder(temp_dir.into_path().into())
                 .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
                 .build()?;
@@ -1038,14 +1055,14 @@ mod tests {
                     Duration::minutes(45),
                     Duration::hours(1).add(Duration::minutes(15))
                 )?;
-            assert_eq!(4, time_data.entries.data.len());
+            assert_eq!(4, time_data.entries.len());
 
-            let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
+            let r#break = match time_data.entries.iter().find(|x| x.status == Status::Break) {
                 Some(c) => c.into(),
                 None => None,
             };
 
-            let connects = time_data.entries.data
+            let connects = time_data.entries
                 .iter()
                 .filter(|x| x.status == Status::Connect)
                 .cloned()
@@ -1073,13 +1090,13 @@ mod tests {
 
             wait();
 
-            let mut time_data = TimeData::builder()
+            let mut time_data = Timesheet::builder()
                 .folder(temp_dir.into_path().into())
                 .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
                 .build()?;
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
-            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.len());
             Ok(())
         }
 
@@ -1095,13 +1112,13 @@ mod tests {
 
             wait();
 
-            let mut time_data = TimeData::builder()
+            let mut time_data = Timesheet::builder()
                 .folder(temp_dir.into_path().into())
                 .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
                 .build()?;
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
-            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.len());
             Ok(())
         }
 
@@ -1117,13 +1134,13 @@ mod tests {
 
             wait();
 
-            let mut time_data = TimeData::builder()
+            let mut time_data = Timesheet::builder()
                 .folder(temp_dir.into_path().into())
                 .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
                 .build()?;
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
-            assert_eq!(2, time_data.entries.data.len());
+            assert_eq!(2, time_data.entries.len());
             Ok(())
         }
     }

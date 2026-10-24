@@ -4,11 +4,11 @@ use chrono::{ DateTime, Duration, Local, NaiveDate, NaiveTime, Utc };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
-use crate::{ Entry, Folder, Settings, Status, StatusTime, TimeData, TrackerError };
+use crate::{ Entry, Folder, Settings, Status, StatusTime, Timesheet, TrackerError };
 
 #[derive(Default, Clone, Debug)]
 pub struct StatusDaily {
-    data: Option<TimeData>,
+    data: Option<Timesheet>,
     settings: Option<Settings>,
     pub start: Option<StatusTime>,
     pub end: Option<StatusTime>,
@@ -36,12 +36,12 @@ impl StatusDaily {
         settings: &Settings,
         date: NaiveDate
     ) -> Result<Option<StatusDaily>, TrackerError> {
-        let mut data = TimeData::builder()
+        let mut data = Timesheet::builder()
             .folder(folder.to_owned())
             .date(date.and_time(NaiveTime::MIN).and_utc())
             .build()?;
         data.read_from_file()?;
-        if data.entries.data.is_empty() {
+        if data.entries.is_empty() {
             return Ok(None);
         }
         StatusDaily::builder().data(data).settings(settings.to_owned()).build().map(Some)
@@ -56,7 +56,7 @@ impl StatusDaily {
     fn has_connect(&self) -> bool {
         log::debug!("check if any connect entry is present");
         match self.data.as_ref() {
-            Some(d) => d.entries.data.iter().any(|x| x.status == Status::Connect),
+            Some(d) => d.entries.iter().any(|x| x.status == Status::Connect),
             None => false,
         }
     }
@@ -66,7 +66,7 @@ impl StatusDaily {
             self.data
                 .as_ref()
                 .unwrap()
-                .entries.data.iter()
+                .entries.iter()
                 .find(|x| x.status == Status::Connect)
         {
             Some(c) => {
@@ -87,7 +87,7 @@ impl StatusDaily {
             self.data
                 .as_ref()
                 .unwrap()
-                .entries.data.iter()
+                .entries.iter()
                 .find(|x| x.status == Status::End)
         {
             Some(c) => {
@@ -114,23 +114,23 @@ impl StatusDaily {
         // first break set
         let mut f = false;
         let d = self.data.as_ref().unwrap();
-        for n in 0..d.entries.data.len() {
+        for n in 0..d.entries.len() {
             if !b {
                 // get break entry
-                if d.entries.data[n].status == Status::Break {
+                if d.entries[n].status == Status::Break {
                     // temp save time
-                    tb = d.entries.data[n].time;
+                    tb = d.entries[n].time;
                     log::info!("break at: {}", tb.time());
                     b = true;
                     if !f {
-                        let local_f_break: DateTime<Local> = DateTime::from(d.entries.data[n].time);
+                        let local_f_break: DateTime<Local> = DateTime::from(d.entries[n].time);
                         self.f_break = Some(local_f_break);
                         f = true;
                     }
                 }
-            } else if b && d.entries.data[n].status == Status::Connect {
+            } else if b && d.entries[n].status == Status::Connect {
                 // get next connect
-                let tc = d.entries.data[n].time;
+                let tc = d.entries[n].time;
                 log::info!("connect at: {}", tc.time());
                 // caluclate time between both
                 let tbd = tc - tb;
@@ -151,7 +151,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.entries.data[0].time).to_owned().into());
+            let w = Duration::minutes(s.workperday.from(d.entries[0].time).to_owned().into());
 
             self.exp_worktime = Some(StatusTime::from(w));
 
@@ -207,7 +207,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.entries.data[0].time).to_owned().into());
+            let w = Duration::minutes(s.workperday.from(d.entries[0].time).to_owned().into());
 
             let e = if self.r#break.to_owned().unwrap() > self.exp_break.to_owned().unwrap() {
                 w.add(self.r#break.to_owned().unwrap().into())
@@ -235,7 +235,7 @@ impl StatusDaily {
     /// Work and break ranges of the day, each starting at a connect or break entry and ending
     /// at the next entry. The last range has no end while it is still running.
     fn ranges(&self) -> Vec<(&Entry, Option<&Entry>)> {
-        let entries = &self.data.as_ref().unwrap().entries.data;
+        let entries = &self.data.as_ref().unwrap().entries;
         entries
             .iter()
             .enumerate()
@@ -273,7 +273,7 @@ pub struct StatusDailyBuilder {
 }
 
 impl StatusDailyBuilder {
-    pub fn data(&mut self, data: TimeData) -> &mut Self {
+    pub fn data(&mut self, data: Timesheet) -> &mut Self {
         self.inner.data = Some(data);
         self
     }
@@ -284,7 +284,7 @@ impl StatusDailyBuilder {
     }
 
     pub fn build(&self) -> Result<StatusDaily, TrackerError> {
-        if self.inner.data.is_none() || self.inner.data.as_ref().unwrap().entries.data.is_empty() {
+        if self.inner.data.is_none() || self.inner.data.as_ref().unwrap().entries.is_empty() {
             return Err(TrackerError::StatusError {
                 message: "data not added to status".to_owned(),
             });
@@ -386,7 +386,7 @@ impl std::fmt::Display for StatusDaily {
         );
         let notes: Vec<&str> = self.data
             .as_ref()
-            .map(|d| d.entries.data.iter().filter_map(|e| e.note.as_deref()).collect())
+            .map(|d| d.entries.iter().filter_map(|e| e.note.as_deref()).collect())
             .unwrap_or_default();
         let activities = if notes.is_empty() {
             "".to_owned()
@@ -414,7 +414,7 @@ mod tests {
         Status,
         StatusDaily,
         StatusTime,
-        TimeData,
+        Timesheet,
         WorkPerDayInMinutes,
     };
 
@@ -476,7 +476,6 @@ mod tests {
     mod ranges {
         use chrono::Local;
 
-        use crate::Entries;
 
         use super::*;
 
@@ -490,8 +489,8 @@ mod tests {
 
         fn status(data: Vec<Entry>) -> StatusDaily {
             StatusDaily::builder()
-                .data(TimeData {
-                    entries: Entries { data, version: 2 },
+                .data(Timesheet {
+                    entries: data,
                     ..Default::default()
                 })
                 .settings(Settings::default())
@@ -541,17 +540,15 @@ mod tests {
     mod display {
         use chrono::Local;
 
-        use crate::Entries;
 
         use super::*;
 
         #[test]
         fn status_daily_with_remaing_worktime_and_break() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
@@ -578,9 +575,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -631,17 +626,14 @@ mod tests {
         fn status_daily_with_activities() {
             logger();
             let at = |hour, minute| Local.with_ymd_and_hms(2022, 2, 2, hour, minute, 0).unwrap().to_utc();
-            let data = TimeData {
-                entries: Entries {
-                    data: vec![
+            let data = Timesheet {
+                entries: vec![
                         Entry { status: Status::Connect, time: at(8, 0), note: Some("standup".to_owned()) },
                         Entry { status: Status::Break, time: at(12, 0), note: Some("lunch".to_owned()) },
                         Entry { status: Status::Connect, time: at(12, 30), note: None },
                         Entry { status: Status::Connect, time: at(13, 0), note: Some("review".to_owned()) },
                         Entry { status: Status::End, time: at(16, 30), note: None }
                     ],
-                    ..Default::default()
-                },
                 ..Default::default()
             };
 
@@ -661,16 +653,13 @@ mod tests {
         fn status_daily_without_notes_has_no_activities() {
             logger();
             let at = |hour, minute| Local.with_ymd_and_hms(2022, 2, 2, hour, minute, 0).unwrap().to_utc();
-            let data = TimeData {
-                entries: Entries {
-                    data: vec![
+            let data = Timesheet {
+                entries: vec![
                         Entry { status: Status::Connect, time: at(8, 0), note: None },
                         Entry { status: Status::Break, time: at(12, 0), note: None },
                         Entry { status: Status::Connect, time: at(12, 30), note: None },
                         Entry { status: Status::End, time: at(16, 30), note: None }
                     ],
-                    ..Default::default()
-                },
                 ..Default::default()
             };
 
@@ -688,10 +677,9 @@ mod tests {
         #[test]
         fn status_daily_with_overtime_and_more_break() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
@@ -718,9 +706,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -769,10 +755,9 @@ mod tests {
         #[test]
         fn status_daily_on_point() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
@@ -799,9 +784,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -855,18 +838,15 @@ mod tests {
             let est_end = StatusTime::from(
                 local.add(Duration::hours(8).add(Duration::minutes(30)))
             );
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: local.to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -929,10 +909,9 @@ mod tests {
         #[test]
         fn status_daily_short_day_without_break() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
@@ -947,9 +926,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1002,10 +979,9 @@ mod tests {
         #[test]
         fn status_daily_should_ignore_takeover() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
@@ -1027,9 +1003,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1083,16 +1057,14 @@ mod tests {
     mod builder {
         use chrono::Local;
 
-        use crate::Entries;
 
         use super::*;
 
         #[test]
         fn should_set_connect() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
@@ -1105,9 +1077,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1122,18 +1092,15 @@ mod tests {
         #[test]
         #[should_panic]
         fn no_connect() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1143,10 +1110,9 @@ mod tests {
 
         #[test]
         fn should_set_end() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
@@ -1168,9 +1134,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1187,18 +1151,15 @@ mod tests {
 
         #[test]
         fn should_set_temporary_end() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: DateTime::default(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1216,10 +1177,9 @@ mod tests {
 
         #[test]
         fn should_calculate_break() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
@@ -1241,9 +1201,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1261,10 +1219,9 @@ mod tests {
 
         #[test]
         fn should_calculate_break_between_mutliple_breaks() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
@@ -1335,9 +1292,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1355,10 +1310,9 @@ mod tests {
 
         #[test]
         fn should_calculate_online_time() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
@@ -1371,9 +1325,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1387,10 +1339,9 @@ mod tests {
 
         #[test]
         fn should_calculate_est_end_with_break_fully_taken() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().to_utc(),
@@ -1420,9 +1371,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1455,10 +1404,9 @@ mod tests {
 
         #[test]
         fn should_calculate_est_end_with_break_not_fully_taken() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
@@ -1490,9 +1438,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1527,10 +1473,9 @@ mod tests {
 
         #[test]
         fn should_calculate_est_end_with_more_break_taken() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
@@ -1560,9 +1505,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1596,10 +1539,9 @@ mod tests {
 
         #[test]
         fn should_calculate_est_end_with_no_break_taken() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
@@ -1628,9 +1570,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1666,10 +1606,9 @@ mod tests {
 
         #[test]
         fn should_calculate_est_end_with_no_break_taken_short_day_and_threshold() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
@@ -1698,9 +1637,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1736,10 +1673,9 @@ mod tests {
 
         #[test]
         fn should_calculate_est_end_with_no_break_taken_odd_day() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
@@ -1768,9 +1704,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1806,10 +1740,9 @@ mod tests {
 
         #[test]
         fn should_calculate_no_break_on_short_day() {
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
@@ -1824,9 +1757,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1865,17 +1796,15 @@ mod tests {
     mod logic {
         use chrono::Local;
 
-        use crate::Entries;
 
         use super::*;
 
         #[test]
         fn should_calculate_overtime() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46)
@@ -1939,9 +1868,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -1975,10 +1902,9 @@ mod tests {
         #[test]
         fn should_calculate_negative_overtime() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11)
@@ -1993,9 +1919,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -2033,10 +1957,9 @@ mod tests {
         #[test]
         fn should_calculate_worktime_and_expected_break_with_only_30_minutes_break_taken() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
@@ -2063,9 +1986,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -2108,10 +2029,9 @@ mod tests {
         #[test]
         fn should_calculate_worktime_and_expected_break_with_4_hours_break_taken() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
@@ -2138,9 +2058,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -2183,10 +2101,9 @@ mod tests {
         #[test]
         fn should_calculate_worktime_and_expected_break_with_4_hours_break_taken_and_over_10_hours_worktime() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
@@ -2213,9 +2130,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -2258,10 +2173,9 @@ mod tests {
         #[test]
         fn should_calculate_worktime_and_no_expected_break_because_less_than_6_hours_worktime() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().to_utc(),
@@ -2274,9 +2188,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
@@ -2324,10 +2236,9 @@ mod tests {
         #[test]
         fn expected_break_not_displayed_correctly_in_status() {
             logger();
-            let data = TimeData {
+            let data = Timesheet {
                 entries: {
-                    Entries {
-                        data: [
+                    [
                             Entry {
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
@@ -2340,9 +2251,7 @@ mod tests {
                                     .to_utc(),
                                 note: None,
                             },
-                        ].to_vec(),
-                        ..Default::default()
-                    }
+                        ].to_vec()
                 },
                 ..Default::default()
             };
