@@ -45,6 +45,11 @@ Add a date as `YYYY-MM-DD` to do this for another day.
 - A running day continues from now, an ended day from its end.
 - A day that already reached its target work time is left untouched.
 
+### Add time
+
+Execute `trackrs add <minutes>` to add work you forgot to track today, e.g. `trackrs add 30`.
+The minutes are added before today's first start, so today needs a start. This also works after `trackrs end`.
+
 ### Status
 
 Execute `trackrs status` to get the current tracking status.

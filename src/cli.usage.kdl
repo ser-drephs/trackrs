@@ -25,10 +25,13 @@ cmd "sick" display_order=5 help="Track sick for the rest of a day" long_help="Fi
 cmd "vacation" display_order=6 help="Track vacation for the rest of a day" long_help="Fills the remaining target work time of the day with vacation. An empty day starts at 06:00 UTC, an ended day continues at its end and a running day continues now." {
     arg "[date]" help="Date as YYYY-MM-DD, defaults to today."
 }
-cmd "takeover" display_order=7 help="Take over time to next day" long_help="Takes over defined minutes to next day, whenever next connect is executed." {
+cmd "add" display_order=7 help="Add minutes to today" long_help="Adds minutes of work to today, before the first start. Requires a start today, also works after end." {
+    arg "<minutes>" help="Minutes to add to today."
+}
+cmd "takeover" display_order=8 help="Take over time to next day" long_help="Takes over defined minutes to next day, whenever next connect is executed." {
     arg "<minutes>" help="Minutes to take over to next day."
 }
-cmd "config" display_order=8 help="Configuration" long_help="List or edit configuration" {
+cmd "config" display_order=9 help="Configuration" long_help="List or edit configuration" {
     flag "-l --list" help="List configuration" conflicts="edit"
     flag "-e --edit" help="Open configuration in default editor" conflicts="list"
 }

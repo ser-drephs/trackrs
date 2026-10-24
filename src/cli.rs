@@ -34,6 +34,7 @@ pub enum Commands {
     End,
     /// Full day of `sick` or `vacation`, named by the note.
     Absence { date: NaiveDate, note: String },
+    Add { minutes: u16 },
     Takeover { minutes: u16 },
     Config { list: bool, edit: bool },
 }
@@ -97,6 +98,9 @@ impl Cli {
                     None => Utc::now().date_naive(),
                 },
                 note: name.to_owned(),
+            },
+            "add" => Commands::Add {
+                minutes: typed("minutes", string(&out, "minutes").unwrap_or_default())?,
             },
             "takeover" => Commands::Takeover {
                 minutes: typed("minutes", string(&out, "minutes").unwrap_or_default())?,
@@ -170,6 +174,7 @@ impl CliExecute for Cli {
             Commands::Absence { date, note } => self.invoke_absence(date, note),
             Commands::Status { week, table } => self.invoke_status(week, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
+            Commands::Add { minutes } => self.invoke_add(minutes),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
             Commands::Start { note } => self.invoke_start(note),
         }
@@ -247,6 +252,19 @@ impl Cli {
             )?
             .write_to_file()?;
         self.invoke_status(&None, &None)
+    }
+
+    fn invoke_add(&self, minutes: &u16) -> TrackerResult {
+        log::info!("add executed");
+        let settings = Settings::new()?;
+        let mut time_data = TimeData::builder()
+            .folder(settings.folder.into())
+            .today()
+            .build()?;
+        time_data
+            .read_from_file()?
+            .prepend(*minutes, "manually added")?
+            .write_to_file()
     }
 
     fn invoke_absence(&self, date: &NaiveDate, note: &str) -> TrackerResult {

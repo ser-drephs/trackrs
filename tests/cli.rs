@@ -279,3 +279,54 @@ fn sick_extends_running_day(ctx: &mut IntegrationContext) {
     assert!(a.contains("\"note\":\"sick\""));
     assert!(a.contains("\"id\":3,\"status\":\"End\""));
 }
+
+fn read_today(ctx: &IntegrationContext) -> String {
+    let folder = ctx.temp_dir.path().join("trackrs");
+    let file = fs::read_dir(&folder).unwrap().next().unwrap().unwrap().path();
+    fs::read_to_string(file).unwrap()
+}
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn add_prepends_before_start(ctx: &mut IntegrationContext) {
+    let s = Cli::parse_from(["trackrs", "start"].iter());
+    s.execute().unwrap();
+    let a = Cli::parse_from(["trackrs", "add", "30"].iter());
+    a.execute().unwrap();
+
+    let a = read_today(ctx);
+    assert!(a.contains("\"id\":1,\"status\":\"Connect\""));
+    assert!(a.contains("\"note\":\"manually added\"}"));
+    assert!(a.contains("\"id\":2,\"status\":\"Connect\""));
+    assert!(a.find("manually added") < a.find("\"id\":2"));
+}
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn add_works_after_end(ctx: &mut IntegrationContext) {
+    let s = Cli::parse_from(["trackrs", "start"].iter());
+    s.execute().unwrap();
+    let e = Cli::parse_from(["trackrs", "end"].iter());
+    e.execute().unwrap();
+    let a = Cli::parse_from(["trackrs", "add", "15"].iter());
+    a.execute().unwrap();
+
+    let a = read_today(ctx);
+    assert!(a.contains("\"id\":1,\"status\":\"Connect\""));
+    assert!(a.contains("\"note\":\"manually added\"}"));
+    assert!(a.contains("\"id\":2,\"status\":\"Connect\""));
+    assert!(a.contains("\"id\":3,\"status\":\"End\""));
+}
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn add_rejects_without_start(ctx: &mut IntegrationContext) {
+    let a = Cli::parse_from(["trackrs", "add", "30"].iter());
+    assert!(a.execute().is_err());
+
+    let folder = ctx.temp_dir.path().join("trackrs");
+    assert_eq!(0, fs::read_dir(&folder).unwrap().count());
+}
