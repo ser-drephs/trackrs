@@ -7,7 +7,7 @@ use std::{
 use chrono::{ Datelike, DateTime, FixedOffset, Months, NaiveDate };
 use serde::{ Deserialize, Serialize };
 
-use crate::{ Settings, StatusTime, StorageProvider, TimeDataWeekly, TrackerError, Weekly };
+use crate::{ Settings, StatusTime, StorageProvider, WeeklyData, TrackerError, Weekly };
 
 /// Overtime of a month and the overtime accumulated up to and including it, as `HH:mm`.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -162,7 +162,7 @@ impl Overtime {
         if dates.is_empty() {
             return Ok(Some(cumulated));
         }
-        let data = TimeDataWeekly::for_dates(storage, 0, dates)?;
+        let data = WeeklyData::for_dates(storage, 0, dates)?;
         let between = Weekly::new(&data, settings, now)?;
         Ok(Some(cumulated + between.overtime))
     }

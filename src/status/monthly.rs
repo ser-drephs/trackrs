@@ -3,7 +3,7 @@ use std::fmt::Display;
 use chrono::{ DateTime, FixedOffset, Month, NaiveDate };
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusDisplay, StatusTime, TimeDataMonthly, TrackerError, Weekly };
+use crate::{ Settings, StatusDisplay, StatusTime, MonthlyData, TrackerError, Weekly };
 
 /// Status of a month, made of the weekly status of each of its weeks.
 #[derive(Clone, Debug)]
@@ -21,7 +21,7 @@ pub struct Monthly {
 impl Monthly {
     /// Status of `data` at `now`, which ends a day that is still running.
     pub fn new(
-        data: &TimeDataMonthly,
+        data: &MonthlyData,
         settings: &Settings,
         now: DateTime<FixedOffset>
     ) -> Result<Self, TrackerError> {
@@ -115,7 +115,7 @@ mod tests {
         Status,
         StatusDisplay,
         StatusTime,
-        TimeDataMonthly,
+        MonthlyData,
         TrackerError,
     };
 
@@ -134,7 +134,7 @@ mod tests {
                 &[(Status::Connect, 6, 0), (Status::End, 14, 0)]
             )
         });
-        let data = TimeDataMonthly::for_month(
+        let data = MonthlyData::for_month(
             &storage,
             3,
             NaiveDate::from_ymd_opt(2022, 6, 1).unwrap()
