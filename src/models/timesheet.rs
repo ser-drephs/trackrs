@@ -116,7 +116,7 @@ impl Timesheet {
             .filter(|(_, e)| e.status == Status::Break)
             .map(|(i, e)| data.get(i + 1).map_or(from, |n| n.time) - e.time)
             .fold(Duration::zero(), |a, b| a + b);
-        let target = Duration::minutes((*settings.workperday.from(start)).into());
+        let target = Duration::minutes(settings.workperday.minutes_on(start).into());
         let end = start + target + taken.max(settings.break_for(target));
         if end <= from {
             return Err(TrackerError::TimeDataError {

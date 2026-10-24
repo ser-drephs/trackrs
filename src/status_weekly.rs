@@ -1,6 +1,6 @@
 use std::{ env, fmt::Display, ops::Mul };
 
-use chrono::{ Duration, NaiveDate, NaiveTime };
+use chrono::{ Duration, NaiveDate };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
@@ -154,11 +154,9 @@ impl StatusWeeklyBuilder {
                     entries.push((*date, s));
                 }
                 None => {
-                    let expected = settings.workperday.from_date(
-                        date.and_time(NaiveTime::MIN).and_utc()
-                    );
+                    let expected = settings.workperday.minutes_on(*date);
                     // A day without entries misses its whole target worktime.
-                    let day_overtime = StatusTime::from(Duration::minutes(-(*expected as i64)));
+                    let day_overtime = StatusTime::from(Duration::minutes(-i64::from(expected)));
                     overtime += day_overtime.to_owned();
                     let missing_status = StatusDaily::builder().empty_with_overtime(day_overtime);
                     entries.push((*date, missing_status));

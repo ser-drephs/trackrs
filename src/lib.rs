@@ -2,7 +2,7 @@
 extern crate prettytable;
 mod cli;
 mod errors;
-mod settings;
+mod configuration;
 mod status_daily;
 mod status_time;
 mod status_weekly;
@@ -16,7 +16,7 @@ mod status_yearly;
 
 pub use cli::*;
 pub use errors::*;
-pub use settings::*;
+pub use configuration::*;
 pub use status_daily::*;
 pub use status_time::*;
 pub use status_weekly::*;
