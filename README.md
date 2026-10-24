@@ -29,7 +29,7 @@ After this the status is available.
 ### Take a break
 
 Execute `trackrs break` to add a break entry.
-Don't forget to contine after your break by executing `trackrs continue`.
+Don't forget to continue after your break by executing `trackrs start` again.
 
 ### End tracking
 
