@@ -9,7 +9,7 @@ use usage::{
 };
 
 use crate::{
-    JsonStorage, Overtime, Settings, StorageProvider, Status, StatusDaily, StatusMonthly, StatusTime, StatusWeekly,
+    Daily, JsonStorage, Overtime, Settings, StorageProvider, Status, StatusDisplay, StatusMonthly, StatusTime, StatusWeekly,
     StatusYearly, Takeover, TimeDataMonthly, TimeDataWeekly, TimeDataYearly,
     TrackerError,
 };
@@ -309,17 +309,12 @@ impl Cli {
         let storage = JsonStorage::new(settings.folder.to_owned());
         let today = Utc::now().date_naive();
         let mut time_data = storage.load(today)?;
-        let status = StatusDaily::builder()
-            .data(time_data.clone())
-            .settings(settings)
-            .build()?;
-        let now = Local::now();
+        let now = Utc::now();
+        let expected_break = time_data.expected_break(&settings, now)?;
+        let taken_break = time_data.break_taken();
         time_data
-            .append(Status::End, now.to_utc(), None)?
-            .assert_break(
-                status.exp_break.unwrap().duration,
-                status.r#break.unwrap().duration,
-            )?;
+            .append(Status::End, now, None)?
+            .assert_break(expected_break.duration, taken_break.duration)?;
         storage.save(today, &time_data)?;
         self.invoke_status(&None, &None, &None, &None, &None)
     }
@@ -415,13 +410,15 @@ impl Cli {
             None => {
                 // Day files are named by their UTC date, like today's.
                 let date = status_date(day, Utc::now().date_naive())?;
-                let status =
-                    StatusDaily::load(&storage, &settings, date)?
-                        .ok_or_else(|| TrackerError::TimeDataError {
-                            message: format!("no entries for {date}"),
-                        })?;
+                let timesheet = storage.load(date)?;
+                if timesheet.data.is_empty() {
+                    return Err(TrackerError::TimeDataError {
+                        message: format!("no entries for {date}"),
+                    });
+                }
+                let status = Daily::new(&timesheet, &settings, Utc::now())?;
                 if table.unwrap_or(false) {
-                    status.format_ranges_table();
+                    print!("{}", status.table());
                 } else {
                     println!("{}", status);
                 }
