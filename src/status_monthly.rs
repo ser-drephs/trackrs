@@ -1,9 +1,9 @@
 use std::fmt::Display;
 
-use chrono::{ Month, NaiveDate };
+use chrono::{ DateTime, Month, NaiveDate, Utc };
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusTime, StatusWeekly, StorageProvider, TimeDataMonthly, TrackerError };
+use crate::{ Settings, StatusTime, TimeDataMonthly, TrackerError, Weekly };
 
 /// Status of a month, made of the weekly status of each of its weeks.
 #[derive(Clone, Debug)]
@@ -13,20 +13,20 @@ pub struct StatusMonthly {
     pub(crate) total: StatusTime,
     pub(crate) overtime: StatusTime,
     decimal: f64,
-    weeks: Vec<StatusWeekly>,
+    weeks: Vec<Weekly>,
 }
 
 impl StatusMonthly {
     pub fn new(
         data: TimeDataMonthly,
         settings: &Settings,
-        storage: &impl StorageProvider
+        now: DateTime<Utc>
     ) -> Result<Self, TrackerError> {
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
         let mut weeks = Vec::new();
         for week in data.weeks {
-            let s = StatusWeekly::builder().data(week).settings(settings.to_owned()).build(storage)?;
+            let s = Weekly::new(&week, settings, now)?;
             total += s.total.to_owned();
             overtime += s.overtime.to_owned();
             weeks.push(s);
@@ -102,8 +102,9 @@ mod tests {
                 &[(Status::Connect, 6, 0), (Status::End, 14, 0)]
             )
         });
-        let data = TimeDataMonthly::load(3, NaiveDate::from_ymd_opt(2022, 6, 1).unwrap())?;
-        StatusMonthly::new(data, &Settings::default(), &storage)
+        let data = TimeDataMonthly::load(&storage, 3, NaiveDate::from_ymd_opt(2022, 6, 1).unwrap())?;
+        // All days are ended or missing, so the clock doesn't matter.
+        StatusMonthly::new(data, &Settings::default(), chrono::DateTime::default())
     }
 
     #[test]

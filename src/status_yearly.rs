@@ -1,9 +1,9 @@
 use std::fmt::Display;
 
-use chrono::NaiveDate;
+use chrono::{ DateTime, NaiveDate, Utc };
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusMonthly, StatusTime, StorageProvider, TimeDataYearly, TrackerError };
+use crate::{ Settings, StatusMonthly, StatusTime, TimeDataYearly, TrackerError };
 
 /// Status of a year, made of the monthly status of each of its months.
 #[derive(Clone, Debug)]
@@ -19,13 +19,13 @@ impl StatusYearly {
     pub fn new(
         data: TimeDataYearly,
         settings: &Settings,
-        storage: &impl StorageProvider
+        now: DateTime<Utc>
     ) -> Result<Self, TrackerError> {
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
         let mut months = Vec::new();
         for month in data.months {
-            let s = StatusMonthly::new(month, settings, storage)?;
+            let s = StatusMonthly::new(month, settings, now)?;
             total += s.total.to_owned();
             overtime += s.overtime.to_owned();
             months.push(s);
@@ -94,8 +94,9 @@ mod tests {
             )
         });
         let today = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
-        let data = TimeDataYearly::load(2022, today)?;
-        StatusYearly::new(data, &Settings::default(), &storage)
+        let data = TimeDataYearly::load(&storage, 2022, today)?;
+        // All days are ended or missing, so the clock doesn't matter.
+        StatusYearly::new(data, &Settings::default(), chrono::DateTime::default())
     }
 
     #[test]

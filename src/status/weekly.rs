@@ -1,44 +1,59 @@
-use std::{ env, fmt::Display, ops::Mul };
+use std::{ fmt::Display, ops::Mul };
 
-use chrono::{ Duration, NaiveDate, Utc };
+use chrono::{ DateTime, Duration, NaiveDate, Utc };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusTime, StorageProvider, TimeDataWeekly, TrackerError };
+use crate::{ DailyData, Settings, StatusDisplay, StatusTime, TimeDataWeekly, TrackerError };
 
+/// The status of a week, or of its days within a month, calculated from its timesheets.
 #[derive(Clone, Default, Debug)]
-pub struct StatusWeekly {
+pub struct Weekly {
     pub(crate) week: i16,
     pub(crate) total: StatusTime,
     pub(crate) overtime: StatusTime,
     decimal: f64,
-    entries: Vec<(NaiveDate, Day)>,
+    entries: Vec<(NaiveDate, DailyData)>,
+    /// Overtime accumulated before the week.
+    carry: Option<StatusTime>,
 }
 
-/// What the week shows of a day. A day without entries only has its missing overtime.
-#[derive(Clone, Default, Debug)]
-struct Day {
-    start: Option<StatusTime>,
-    end: Option<StatusTime>,
-    r#break: Option<StatusTime>,
-    worktime: StatusTime,
-    overtime: StatusTime,
-}
+impl Weekly {
+    /// Status of `data` at `now`, which ends a day that is still running.
+    pub fn new(
+        data: &TimeDataWeekly,
+        settings: &Settings,
+        now: DateTime<Utc>
+    ) -> Result<Self, TrackerError> {
+        let entries = data.day_data(settings, now)?;
 
-impl StatusWeekly {
-    pub fn builder() -> StatusWeeklyBuilder {
-        StatusWeeklyBuilder {
-            ..Default::default()
+        let mut total = StatusTime::default();
+        let mut overtime = StatusTime::default();
+        for (_, day) in &entries {
+            total += day.worktime().to_owned();
+            overtime += day.overtime().to_owned();
         }
+
+        log::info!("totally {} working time and {} overtime", total, overtime);
+
+        let decimal = (total.hours() as f64) + (total.minutes() as f64) * (1.0 / 60.0);
+        Ok(Weekly { week: data.week, total, overtime, decimal, entries, carry: None })
+    }
+
+    /// Show the overtime accumulated before the week in the table.
+    pub fn with_carry(mut self, carry: Option<StatusTime>) -> Self {
+        self.carry = carry;
+        self
     }
 
     /// First day of the week, or of its days that were loaded.
     pub fn start(&self) -> Option<NaiveDate> {
         self.entries.first().map(|(d, _)| *d)
     }
+}
 
-    /// Print the table; `carry` is the overtime accumulated before the week.
-    pub fn format_table(&self, carry: Option<StatusTime>) {
+impl StatusDisplay for Weekly {
+    fn table(&self) -> String {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_COLSEP);
 
@@ -69,22 +84,22 @@ impl StatusWeekly {
 
         log::trace!("iterate over entries");
 
-        if let Some(carry) = &carry {
+        if let Some(carry) = &self.carry {
             table.add_row(row!["Carried over", "", "", "", "", "", carry]);
         }
         let cumulated = StatusTime::cumulated(
-            carry.unwrap_or_default(),
-            self.entries.iter().map(|(_, s)| &s.overtime)
+            self.carry.to_owned().unwrap_or_default(),
+            self.entries.iter().map(|(_, s)| s.overtime())
         );
         self.entries.iter().zip(cumulated).for_each(|((date, status), cumulated)| {
             table.add_row(
                 row![
                     date.to_owned().format("%a %d %b"),
-                    format!("{}", status_unwrap(status.start.to_owned())),
-                    format!("{}", status_unwrap(status.end.to_owned())),
-                    format!("{}", status_unwrap(status.r#break.to_owned())),
-                    format!("{}", status.worktime),
-                    format!("{}", status.overtime),
+                    format!("{}", status_unwrap(status.start().cloned())),
+                    format!("{}", status_unwrap(status.end().cloned())),
+                    format!("{}", status_unwrap(status.r#break().cloned())),
+                    format!("{}", status.worktime()),
+                    format!("{}", status.overtime()),
                     format!("{}", cumulated)
                 ]
             );
@@ -106,104 +121,11 @@ impl StatusWeekly {
             ]
         );
 
-        if env::var("RUST_TEST").is_err() {
-            log::trace!("print table to std");
-            table.printstd();
-        }
+        table.to_string()
     }
 }
 
-#[derive(Default)]
-pub struct StatusWeeklyBuilder {
-    settings: Option<Settings>,
-    data: Option<TimeDataWeekly>,
-}
-
-impl StatusWeeklyBuilder {
-    pub fn data(&mut self, data: TimeDataWeekly) -> &mut Self {
-        self.data = Some(data);
-        self
-    }
-
-    pub fn settings(&mut self, settings: Settings) -> &mut Self {
-        self.settings = Some(settings);
-        self
-    }
-
-    pub fn build(&self, storage: &impl StorageProvider) -> Result<StatusWeekly, TrackerError> {
-        let settings = match self.settings.to_owned() {
-            Some(s) => s,
-            None => {
-                return Err(TrackerError::StatusWeeklyError {
-                    message: "settings not defined".to_owned(),
-                });
-            }
-        };
-
-        let data = match self.data.to_owned() {
-            Some(d) => d,
-            None => {
-                return Err(TrackerError::StatusWeeklyError {
-                    message: "data not defined".to_owned(),
-                });
-            }
-        };
-
-        let now = Utc::now();
-        let mut entries: Vec<(NaiveDate, Day)> = Vec::new();
-
-        let mut total = StatusTime::default();
-        let mut overtime = StatusTime::default();
-
-        for date in &data.dates {
-            log::trace!("processing: {}", date);
-            let timesheet = storage.load(*date)?;
-            if timesheet.data.is_empty() {
-                let expected = settings.workperday.minutes_on(*date);
-                // A day without entries misses its whole target worktime.
-                let day_overtime = StatusTime::from(Duration::minutes(-i64::from(expected)));
-                overtime += day_overtime.to_owned();
-                entries.push((*date, Day { overtime: day_overtime, ..Default::default() }));
-            } else {
-                let day = Day {
-                    start: timesheet.start(),
-                    end: timesheet.end(),
-                    r#break: Some(timesheet.break_taken()),
-                    worktime: timesheet.worktime(&settings, now)?,
-                    overtime: timesheet.overtime(&settings, now)?,
-                };
-                log::info!("got {} working time and {} overtime", day.worktime, day.overtime);
-                total += day.worktime.to_owned();
-                overtime += day.overtime.to_owned();
-                entries.push((*date, day));
-            }
-        }
-
-        log::info!("totally {} working time and {} overtime", total, overtime);
-
-        // let i_32: i32 = total.duration.num_minutes().try_into()?;
-        let decimal: f64 = self.datetime_to_decimal(&total);
-        let week = data.week.to_owned();
-        let sw = StatusWeekly {
-            week,
-            total,
-            overtime,
-            decimal: decimal.to_owned(),
-            entries,
-        };
-
-        Ok(sw)
-    }
-
-    fn datetime_to_decimal(&self, total: &StatusTime) -> f64 {
-        let hours = total.hours() as f64; //.try_into().unwrap();
-        let minutes = total.minutes() as f64;
-        let md = minutes * (1.0 / 60.0);
-        hours + md
-    }
-}
-
-impl Display for StatusWeekly {
+impl Display for Weekly {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let zero_dr = Duration::minutes(0);
         let overtime = self.overtime.clone();
@@ -247,15 +169,16 @@ mod tests {
 
     use chrono::TimeZone;
 
-    use crate::{ BreakLimit, Entry, Status };
+    use crate::{ BreakLimit, Entry, Status, Timesheet };
 
     fn logger() {
         // std::env::set_var("RUST_LOG", "trace");
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    fn test_env() {
-        env::set_var("RUST_TEST", "true");
+    /// Clock after the days of the tests, which are all ended, so it doesn't matter.
+    fn now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2022, 3, 14, 12, 0, 0).unwrap()
     }
 
     mod format {
@@ -266,12 +189,13 @@ mod tests {
         #[test]
         fn status_overtime() {
             logger();
-            let s = StatusWeekly {
+            let s = Weekly {
                 week: 23,
                 total: StatusTime::from(Duration::hours(41).add(Duration::minutes(22))),
                 overtime: StatusTime::from(Duration::minutes(82)),
                 decimal: 42.5,
                 entries: Vec::new(),
+                carry: None,
             };
             log::debug!("{}", s);
 
@@ -291,12 +215,13 @@ mod tests {
         #[test]
         fn status_on_point() {
             logger();
-            let s = StatusWeekly {
+            let s = Weekly {
                 week: 23,
                 total: StatusTime::from(Duration::hours(40)),
                 overtime: StatusTime::from(Duration::minutes(0)),
                 decimal: 40.0,
                 entries: Vec::new(),
+                carry: None,
             };
             log::debug!("{}", s);
 
@@ -309,12 +234,13 @@ mod tests {
         #[test]
         fn status_less() {
             logger();
-            let s = StatusWeekly {
+            let s = Weekly {
                 week: 23,
                 total: StatusTime::from(Duration::hours(38).add(Duration::minutes(22))),
                 overtime: StatusTime::from(Duration::minutes(-98)),
                 decimal: 38.3,
                 entries: Vec::new(),
+                carry: None,
             };
             log::debug!("{}", s);
 
@@ -332,12 +258,8 @@ mod tests {
         }
     }
 
-    mod builder {
+    mod new {
         use chrono::Utc;
-
-        use crate::{ MemoryStorage, StorageProvider, Timesheet };
-
-        use chrono::DateTime;
 
         use super::*;
 
@@ -385,57 +307,50 @@ mod tests {
                 ].to_vec()
         }
 
-        /// Store the days with entries and return the week of all their dates with the storage.
-        fn weekly(days: Vec<(DateTime<Utc>, Timesheet)>) -> (TimeDataWeekly, MemoryStorage) {
-            let storage = MemoryStorage::default();
-            for (date, day) in &days {
-                if !day.data.is_empty() {
-                    storage.save(date.date_naive(), day).unwrap();
-                }
-            }
-            let data = TimeDataWeekly {
-                dates: days.iter().map(|(d, _)| d.date_naive()).collect(),
+        /// The days of week 10 of 2022, from Monday on, with their timesheets.
+        fn weekly(days: Vec<(DateTime<Utc>, Timesheet)>) -> TimeDataWeekly {
+            TimeDataWeekly {
                 week: 10,
-            };
-            (data, storage)
+                days: days.into_iter().map(|(date, day)| (date.date_naive(), day)).collect(),
+            }
         }
 
-        fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> Vec<(DateTime<Utc>, Timesheet)> {
-            [
-                (
-                    Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
-                    Timesheet { data: get_entries(7, 8, 30), ..Default::default() }
-                ),
-                (
-                    Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap(),
-                    Timesheet { data: get_entries(8, 8, 30), ..Default::default() }
-                ),
-                (
-                    Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap(),
-                    Timesheet { data: get_entries(9, one_day_end, 30), ..Default::default() }
-                ),
-                (
-                    Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap(),
-                    Timesheet { data: get_entries(10, 8, one_day_minute_off), ..Default::default() }
-                ),
-                (
-                    Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap(),
-                    Timesheet { data: get_entries(11, 8, 30), ..Default::default() }
-                ),
-                (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap(), Timesheet::default()),
-                (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap(), Timesheet::default()),
-            ].to_vec()
+        fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> TimeDataWeekly {
+            weekly(
+                vec![
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
+                        Timesheet { data: get_entries(7, 8, 30), ..Default::default() }
+                    ),
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap(),
+                        Timesheet { data: get_entries(8, 8, 30), ..Default::default() }
+                    ),
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap(),
+                        Timesheet { data: get_entries(9, one_day_end, 30), ..Default::default() }
+                    ),
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap(),
+                        Timesheet {
+                            data: get_entries(10, 8, one_day_minute_off),
+                            ..Default::default()
+                        }
+                    ),
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap(),
+                        Timesheet { data: get_entries(11, 8, 30), ..Default::default() }
+                    ),
+                    (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap(), Timesheet::default()),
+                    (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap(), Timesheet::default())
+                ]
+            )
         }
 
         #[test]
         fn should_calculate_overtime() -> Result<(), TrackerError> {
             logger();
-            let time_data = get_time_data(10, 42);
-            let settings = get_settings();
-            let (time_data_weekly, storage) = weekly(time_data);
-
-            let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
+            let s = Weekly::new(&get_time_data(10, 42), &get_settings(), now())?;
 
             log::debug!("{}", s);
 
@@ -454,12 +369,7 @@ mod tests {
         #[test]
         fn should_calculate_on_point() -> Result<(), TrackerError> {
             logger();
-            let time_data = get_time_data(9, 45);
-            let settings = get_settings();
-            let (time_data_weekly, storage) = weekly(time_data);
-
-            let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
+            let s = Weekly::new(&get_time_data(9, 45), &get_settings(), now())?;
 
             log::debug!("{}", s);
 
@@ -478,12 +388,7 @@ mod tests {
         #[test]
         fn should_calculate_less() -> Result<(), TrackerError> {
             logger();
-            let time_data = get_time_data(6, 17);
-            let settings = get_settings();
-            let (time_data_weekly, storage) = weekly(time_data);
-
-            let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
+            let s = Weekly::new(&get_time_data(6, 17), &get_settings(), now())?;
 
             log::debug!("{}", s);
 
@@ -502,32 +407,30 @@ mod tests {
         #[test]
         fn should_calculate_with_missing_day() -> Result<(), TrackerError> {
             logger();
-            let time_data = [
-                (
-                    Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
-                    Timesheet { data: get_entries(7, 8, 45), ..Default::default() }
-                ),
-                (
-                    Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap(),
-                    Timesheet { data: get_entries(8, 8, 45), ..Default::default() }
-                ),
-                (
-                    Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap(),
-                    Timesheet { data: get_entries(9, 8, 45), ..Default::default() }
-                ),
-                (
-                    Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap(),
-                    Timesheet { data: get_entries(10, 10, 45), ..Default::default() }
-                ),
-                (Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap(), Timesheet::default()),
-                (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap(), Timesheet::default()),
-                (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap(), Timesheet::default()),
-            ].to_vec();
-            let settings = get_settings();
-            let (time_data_weekly, storage) = weekly(time_data);
-
-            let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
+            let time_data = weekly(
+                vec![
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
+                        Timesheet { data: get_entries(7, 8, 45), ..Default::default() }
+                    ),
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap(),
+                        Timesheet { data: get_entries(8, 8, 45), ..Default::default() }
+                    ),
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap(),
+                        Timesheet { data: get_entries(9, 8, 45), ..Default::default() }
+                    ),
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap(),
+                        Timesheet { data: get_entries(10, 10, 45), ..Default::default() }
+                    ),
+                    (Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap(), Timesheet::default()),
+                    (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap(), Timesheet::default()),
+                    (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap(), Timesheet::default())
+                ]
+            );
+            let s = Weekly::new(&time_data, &get_settings(), now())?;
 
             log::debug!("{}", s);
 
@@ -544,23 +447,92 @@ mod tests {
             // Each row shows its own day's overtime, not the running total of the week.
             let rows: Vec<String> = s.entries
                 .iter()
-                .map(|(_, d)| d.overtime.to_string())
+                .map(|(_, d)| d.overtime().to_string())
                 .collect();
             assert_eq!(vec!["00:00", "00:00", "00:00", "02:00", "-08:00", "00:00", "00:00"], rows);
             Ok(())
         }
 
         #[test]
-        fn should_not_crash_on_format_table() -> Result<(), TrackerError> {
-            logger();
-            test_env();
-            let time_data = get_time_data(10, 42);
-            let settings = get_settings();
-            let (time_data_weekly, storage) = weekly(time_data);
+        fn should_reject_day_without_connect() {
+            let time_data = weekly(
+                vec![
+                    (
+                        Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
+                        Timesheet {
+                            data: vec![Entry {
+                                status: Status::End,
+                                time: Utc.with_ymd_and_hms(2022, 3, 7, 8, 0, 0).unwrap(),
+                                note: None,
+                            }],
+                            ..Default::default()
+                        }
+                    )
+                ]
+            );
 
-            let mut b = StatusWeekly::builder();
-            let s = b.data(time_data_weekly).settings(settings).build(&storage)?;
-            s.format_table(None);
+            assert!(Weekly::new(&time_data, &get_settings(), now()).is_err());
+        }
+
+        #[test]
+        fn should_start_with_the_first_day() -> Result<(), TrackerError> {
+            let s = Weekly::new(&get_time_data(9, 45), &get_settings(), now())?;
+
+            assert_eq!(NaiveDate::from_ymd_opt(2022, 3, 7), s.start());
+            Ok(())
+        }
+
+        #[test]
+        fn should_have_no_start_without_days() -> Result<(), TrackerError> {
+            let s = Weekly::new(&TimeDataWeekly::default(), &get_settings(), now())?;
+
+            assert_eq!(None, s.start());
+            Ok(())
+        }
+
+        #[test]
+        fn should_show_a_row_for_each_day_and_the_total_in_the_table() -> Result<(), TrackerError> {
+            logger();
+            let s = Weekly::new(&get_time_data(10, 42), &get_settings(), now())?;
+            let table = s.table();
+
+            for day in ["Mon 07 Mar", "Tue 08 Mar", "Wed 09 Mar", "Thu 10 Mar", "Fri 11 Mar", "Sat 12 Mar", "Sun 13 Mar"] {
+                assert!(table.contains(day), "{day} in {table}");
+            }
+            assert!(table.contains("Total week 10"), "{table}");
+            assert!(table.contains("40:57"), "{table}");
+            assert!(!table.contains("Carried over"), "{table}");
+            Ok(())
+        }
+
+        #[test]
+        fn should_add_the_carry_to_the_table_and_the_cumulated_overtime() -> Result<(), TrackerError> {
+            let carry = StatusTime::from(Duration::hours(2));
+            let s = Weekly::new(&get_time_data(9, 45), &get_settings(), now())?.with_carry(
+                Some(carry)
+            );
+            let table = s.table();
+
+            assert!(table.contains("Carried over"), "{table}");
+            let first_row = table.lines().find(|l| l.contains("Carried over")).unwrap();
+            assert!(first_row.contains("02:00"), "{first_row}");
+            // Monday is 15 minutes short, and the week as a whole is on point, so the cumulated
+            // overtime starts below the carry and ends at it.
+            let monday = table.lines().find(|l| l.contains("Mon 07 Mar")).unwrap();
+            assert!(monday.trim_end().ends_with("01:45"), "{monday}");
+            let sunday = table.lines().find(|l| l.contains("Sun 13 Mar")).unwrap();
+            assert!(sunday.trim_end().ends_with("02:00"), "{sunday}");
+            Ok(())
+        }
+
+        #[test]
+        fn should_remove_the_carry() -> Result<(), TrackerError> {
+            let carry = Some(StatusTime::from(Duration::hours(2)));
+            let s = Weekly::new(&get_time_data(9, 45), &get_settings(), now())?
+                .with_carry(carry)
+                .with_carry(None);
+
+            assert!(!s.table().contains("Carried over"));
             Ok(())
         }
     }

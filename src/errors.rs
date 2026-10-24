@@ -23,8 +23,6 @@ pub enum TrackerError {
     TimeDataWeekCrossesYear { message: String },
     #[error("status error: {message}")]
     StatusError { message: String },
-    #[error("weekly status error: {message}")]
-    StatusWeeklyError { message: String },
     #[error("set takeover error: {message}")]
     TakeoverSetError { message: String },
     #[error("get takeover error: {message}")]
