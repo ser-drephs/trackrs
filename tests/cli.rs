@@ -599,38 +599,6 @@ fn start_updates_old_time_files_to_latest_version(ctx: &mut IntegrationContext) 
     }
 }
 
-/// Runs `test` with `zone` as the timezone of the machine and restores it afterwards. Does
-/// nothing, with a note, if the machine has no timezone database to read the zone from.
-///
-/// chrono reads the timezone again at most once per second, so it is given a moment to notice the
-/// change before and after the test.
-fn in_timezone(zone: &str, test: impl FnOnce()) {
-    let database = env::var_os("TZDIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("/usr/share/zoneinfo"));
-    if !cfg!(unix) || !database.join(zone).exists() {
-        eprintln!("skipping the test in {zone}: no timezone database found at {database:?}");
-        return;
-    }
-
-    let refresh = || {
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        let _ = chrono::Local::now();
-    };
-    let previous = env::var_os("TZ");
-    env::set_var("TZ", zone);
-    refresh();
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(test));
-    match previous {
-        Some(previous) => env::set_var("TZ", previous),
-        None => env::remove_var("TZ"),
-    }
-    refresh();
-    if let Err(panic) = result {
-        std::panic::resume_unwind(panic);
-    }
-}
-
 /// The `time` of each entry of a time file.
 fn entry_times(file: &std::path::Path) -> Vec<String> {
     let content: serde_json::Value = serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
@@ -642,41 +610,38 @@ fn entry_times(file: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
-/// Tracks a day, an absence and an old file with `zone` as the timezone of the machine.
+/// Tracks a day, an absence and an old file in a place with the given offset from UTC.
 ///
-/// `offset` is the offset of the zone today, `None` for a zone with daylight saving, and
-/// `february` its offset in seconds on the 2nd and 7th of February 2022.
-fn check_timezone(ctx: &IntegrationContext, offset: Option<&str>, february: i32) {
+/// The offset has no daylight saving, so it is the same today and in February.
+fn check_timezone(ctx: &IntegrationContext, hours: f64) {
     use chrono::{DateTime, FixedOffset};
 
+    let zone = FixedOffset::east_opt((hours * 3600.0) as i32).unwrap();
+    let offset = zone.to_string();
     let folder = ctx.temp_dir.path().join("trackrs");
-    let today = folder.join(format!("{}.json", chrono::Local::now().format("%Y%m%d")));
-    let february_offset = FixedOffset::east_opt(february).unwrap().to_string();
+    let today = folder.join(format!(
+        "{}.json",
+        chrono::Utc::now().with_timezone(&zone).format("%Y%m%d")
+    ));
 
     // A whole workday ends up in one file, named by the local date, and in the offset of the zone.
-    if let Some(offset) = offset {
-        for command in ["start", "break", "start", "end"] {
-            let c = Cli::parse_from(["trackrs", command].iter());
-            c.execute().unwrap();
-        }
-        let files: Vec<_> = fs::read_dir(&folder).unwrap().map(|f| f.unwrap().path()).collect();
-        assert_eq!(vec![today.clone()], files);
-        let times = entry_times(&today);
-        assert!(times.len() >= 4, "{times:?}");
-        assert!(times.iter().all(|t| t.ends_with(offset)), "{times:?} in {offset}");
-        fs::remove_dir_all(&folder).unwrap();
+    for command in ["start", "break", "start", "end"] {
+        let c = Cli::parse_from(["trackrs", command].iter());
+        c.execute_in(&zone).unwrap();
     }
+    let files: Vec<_> = fs::read_dir(&folder).unwrap().map(|f| f.unwrap().path()).collect();
+    assert_eq!(vec![today.clone()], files);
+    let times = entry_times(&today);
+    assert!(times.len() >= 4, "{times:?}");
+    assert!(times.iter().all(|t| t.ends_with(&offset)), "{times:?} in {offset}");
+    fs::remove_dir_all(&folder).unwrap();
 
     // A Monday has its own target and the absence starts at 08:00 local time.
     let sick = Cli::parse_from(["trackrs", "sick", "2022-02-07"].iter());
-    sick.execute().unwrap();
-    let times = entry_times(&folder.join("20220207.json"));
+    sick.execute_in(&zone).unwrap();
     assert_eq!(
-        vec![
-            format!("2022-02-07T08:00:00{february_offset}"),
-            format!("2022-02-07T16:00:00{february_offset}")
-        ],
-        times
+        vec![format!("2022-02-07T08:00:00{offset}"), format!("2022-02-07T16:00:00{offset}")],
+        entry_times(&folder.join("20220207.json"))
     );
     fs::remove_dir_all(&folder).unwrap();
 
@@ -685,51 +650,36 @@ fn check_timezone(ctx: &IntegrationContext, offset: Option<&str>, february: i32)
     let old = r#"{"data":[{"status":"Connect","time":"2022-02-02T08:00:00Z"},{"status":"End","time":"2022-02-02T09:00:00Z"}],"version":3}"#;
     fs::write(&today, old).unwrap();
     let start = Cli::parse_from(["trackrs", "start"].iter());
-    start.execute().unwrap();
+    start.execute_in(&zone).unwrap();
     let times = entry_times(&today);
     let local = |utc: &str| {
-        DateTime::parse_from_rfc3339(utc)
-            .unwrap()
-            .with_timezone(&FixedOffset::east_opt(february).unwrap())
-            .to_rfc3339()
+        DateTime::parse_from_rfc3339(utc).unwrap().with_timezone(&zone).to_rfc3339()
     };
     assert_eq!(3, times.len(), "{times:?}");
     assert_eq!(local("2022-02-02T08:00:00Z"), times[0]);
     assert_eq!(local("2022-02-02T09:00:00Z"), times[1]);
+    assert!(times[2].ends_with(&offset), "{times:?}");
 }
 
-#[test_context::test_context(IntegrationContext)]
-#[test]
-#[serial]
-fn tracks_in_tokyo(ctx: &mut IntegrationContext) {
-    in_timezone("Asia/Tokyo", || check_timezone(ctx, Some("+09:00"), 9 * 3600));
+macro_rules! tracks_in {
+    ($($name:ident: $hours:expr,)*) => {
+        $(
+            #[test_context::test_context(IntegrationContext)]
+            #[test]
+            #[serial]
+            fn $name(ctx: &mut IntegrationContext) {
+                check_timezone(ctx, $hours);
+            }
+        )*
+    };
 }
 
-#[test_context::test_context(IntegrationContext)]
-#[test]
-#[serial]
-fn tracks_in_kiritimati(ctx: &mut IntegrationContext) {
-    in_timezone("Pacific/Kiritimati", || check_timezone(ctx, Some("+14:00"), 14 * 3600));
-}
-
-#[test_context::test_context(IntegrationContext)]
-#[test]
-#[serial]
-fn tracks_in_pago_pago(ctx: &mut IntegrationContext) {
-    in_timezone("Pacific/Pago_Pago", || check_timezone(ctx, Some("-11:00"), -11 * 3600));
-}
-
-#[test_context::test_context(IntegrationContext)]
-#[test]
-#[serial]
-fn tracks_in_los_angeles(ctx: &mut IntegrationContext) {
-    // The offset of today depends on daylight saving, February is -08:00.
-    in_timezone("America/Los_Angeles", || check_timezone(ctx, None, -8 * 3600));
-}
-
-#[test_context::test_context(IntegrationContext)]
-#[test]
-#[serial]
-fn tracks_in_berlin(ctx: &mut IntegrationContext) {
-    in_timezone("Europe/Berlin", || check_timezone(ctx, None, 3600));
+tracks_in! {
+    tracks_in_tokyo: 9.0,
+    tracks_in_kiritimati: 14.0,
+    tracks_in_pago_pago: -11.0,
+    tracks_in_india: 5.5,
+    tracks_in_nepal: 5.75,
+    tracks_in_berlin_in_winter: 1.0,
+    tracks_in_berlin_in_summer: 2.0,
 }

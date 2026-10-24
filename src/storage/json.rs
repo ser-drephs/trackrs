@@ -1,18 +1,30 @@
 use std::{ fs::{ self, File, OpenOptions }, io::BufReader, path::PathBuf };
 
-use chrono::NaiveDate;
+use chrono::{ Local, NaiveDate, TimeZone };
 
 use crate::{ StorageProvider, Timesheet, TrackerError, Upgrade };
 
 /// Stores the timesheet of each day as `YYYYMMDD.json` in a folder.
+///
+/// Files before version 4 have their times in UTC. They are converted to the offsets of the
+/// timezone of the storage when they are read, which is the timezone of the machine by default.
 #[derive(Clone, Debug)]
-pub struct JsonStorage {
+pub struct JsonStorage<Tz: TimeZone = Local> {
     folder: PathBuf,
+    zone: Tz,
 }
 
 impl JsonStorage {
+    /// Storage in `folder`, converting old files to the timezone of the machine.
     pub fn new(folder: impl Into<PathBuf>) -> Self {
-        Self { folder: folder.into() }
+        Self::in_timezone(folder, Local)
+    }
+}
+
+impl<Tz: TimeZone> JsonStorage<Tz> {
+    /// Storage in `folder`, converting old files to the timezone `zone`.
+    pub fn in_timezone(folder: impl Into<PathBuf>, zone: Tz) -> Self {
+        Self { folder: folder.into(), zone }
     }
 
     fn file(&self, date: NaiveDate) -> PathBuf {
@@ -20,14 +32,14 @@ impl JsonStorage {
     }
 }
 
-impl StorageProvider for JsonStorage {
+impl<Tz: TimeZone> StorageProvider for JsonStorage<Tz> {
     fn load(&self, date: NaiveDate) -> Result<Timesheet, TrackerError> {
         let file = self.file(date);
         if !file.exists() {
             log::info!("file not yet created: {:?}", file);
             return Ok(Timesheet::default());
         }
-        let mut timesheet = Upgrade::upgrade(BufReader::new(File::open(file)?))?;
+        let mut timesheet = Upgrade::upgrade(BufReader::new(File::open(file)?), &self.zone)?;
         timesheet.data.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
         Ok(timesheet)
     }
@@ -54,14 +66,19 @@ mod tests {
     use super::*;
     use crate::Status;
 
+    /// The timezone old files are read in, two hours ahead of UTC.
+    fn zone() -> FixedOffset {
+        FixedOffset::east_opt(2 * 3600).unwrap()
+    }
+
     fn day() -> NaiveDate {
         NaiveDate::from_ymd_opt(2022, 8, 4).unwrap()
     }
 
     /// A storage in a new folder, with `content` as the file of `day()` if given.
-    fn storage(content: Option<&str>) -> (tempfile::TempDir, JsonStorage, PathBuf) {
+    fn storage(content: Option<&str>) -> (tempfile::TempDir, JsonStorage<FixedOffset>, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
-        let storage = JsonStorage::new(dir.path());
+        let storage = JsonStorage::in_timezone(dir.path(), zone());
         let file = storage.file(day());
         if let Some(content) = content {
             fs::write(&file, content).unwrap();
@@ -187,27 +204,34 @@ mod tests {
             "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T08:00:00Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T16:00:00Z\"}],\"version\":2}";
         let v3 =
             "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T08:00:00Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T16:00:00Z\"}],\"version\":3}";
-        let instants = [
-            Utc.with_ymd_and_hms(2022, 8, 4, 8, 0, 0).unwrap(),
-            Utc.with_ymd_and_hms(2022, 8, 4, 16, 0, 0).unwrap(),
-        ];
+        // The same instants, written two hours ahead of UTC and without the ids.
+        let expected =
+            "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T10:00:00+02:00\"},{\"status\":\"End\",\"time\":\"2022-08-04T18:00:00+02:00\"}],\"version\":4}";
 
         for old in [versionless, v1, v2, v3] {
             let (_dir, storage, file) = storage(Some(old));
 
             storage.save(day(), &storage.load(day())?)?;
 
-            let content = fs::read_to_string(&file)?;
-            assert!(!content.contains("\"id\""), "{content}");
-            assert!(content.ends_with("\"version\":4}"), "{content}");
-            // The same instants, written in the local offset of the machine at that moment.
-            let saved = storage.load(day())?;
-            for (entry, instant) in saved.data.iter().zip(instants) {
-                assert_eq!(instant, entry.time, "{content}");
-                let local = Local.offset_from_utc_datetime(&instant.naive_utc());
-                assert_eq!(local, *entry.time.offset(), "{content}");
-            }
+            assert_eq!(expected, fs::read_to_string(&file)?, "{old}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn should_convert_old_files_to_the_timezone_of_the_machine_by_default() -> Result<(), TrackerError> {
+        let dir = tempfile::tempdir()?;
+        let storage = JsonStorage::new(dir.path());
+        fs::write(
+            storage.file(day()),
+            "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T08:00:00Z\"}],\"version\":3}"
+        )?;
+
+        let entry = storage.load(day())?.data.remove(0);
+
+        let instant = Utc.with_ymd_and_hms(2022, 8, 4, 8, 0, 0).unwrap();
+        assert_eq!(instant, entry.time);
+        assert_eq!(Local.offset_from_utc_datetime(&instant.naive_utc()), *entry.time.offset());
         Ok(())
     }
 
