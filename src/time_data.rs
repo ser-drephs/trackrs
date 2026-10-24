@@ -4,8 +4,7 @@ use chrono::{ DateTime, Duration, Utc };
 
 use crate::{ Entries, Entry, Settings, Status, TrackerError, Upgrade };
 
-pub type TimeDataResult = Result<TimeData, TrackerError>;
-pub type TimeDataWriteResult = Result<(), TrackerError>;
+pub(crate) const CURRENT_VERSION: u8 = 3;
 
 
 #[derive(Default, Clone, Debug)]
@@ -65,23 +64,11 @@ impl TimeData {
             return Ok(self);
         }
 
-        let r#break = Entry::builder()
-            .status(Status::Break)
-            .time(start)
-            .note(Some("filled mandatory remaining break".to_owned()))
-            .build()?;
-        let connect = Entry::builder().status(Status::Connect).time(end).build()?;
+        let r#break = Entry::new(Status::Break, start, Some("filled mandatory remaining break".to_owned()));
+        let connect = Entry::new(Status::Connect, end, None);
         log::debug!("fill break with {:?} and {:?}", r#break, connect);
         self.entries.data.splice(anchor + 1..anchor + 1, [r#break, connect]);
-        self.renumber();
         Ok(self)
-    }
-
-    /// ids are positions, so keep them in order after inserting entries.
-    fn renumber(&mut self) {
-        for (i, e) in self.entries.data.iter_mut().enumerate() {
-            e.id = (i + 1) as u8;
-        }
     }
 
     pub fn append(
@@ -91,17 +78,7 @@ impl TimeData {
         note: Option<String>
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
-        let last_id = match self.entries.data.last() {
-            Some(last) => last.id,
-            None => 0,
-        };
-
-        let entry = Entry::builder()
-            .id(last_id)
-            .status(status)
-            .time(time.to_utc())
-            .note(note)
-            .build()?;
+        let entry = Entry::new(status, time.to_utc(), note);
         log::debug!("append time data: {:?}", entry);
         self.entries.data.append(&mut [entry].to_vec());
         Ok(self)
@@ -175,14 +152,9 @@ impl TimeData {
             });
         }
 
-        let entry = Entry::builder()
-            .status(Status::Connect)
-            .time(time)
-            .note(Some(note.to_owned()))
-            .build()?;
+        let entry = Entry::new(Status::Connect, time, Some(note.to_owned()));
         log::debug!("prepend time data: {:?}", entry);
         self.entries.data.insert(0, entry);
-        self.renumber();
         Ok(self)
     }
 
@@ -383,9 +355,7 @@ mod tests {
         fn day(entries: &[(Status, u32, u32)]) -> TimeData {
             let data = entries
                 .iter()
-                .enumerate()
-                .map(|(i, (status, h, m))| Entry {
-                    id: (i + 1) as u8,
+                .map(|(status, h, m)| Entry {
                     status: status.to_owned(),
                     time: at(*h, *m),
                     note: None,
@@ -398,10 +368,10 @@ mod tests {
             }
         }
 
-        fn summary(t: &TimeData) -> Vec<(u8, Status, DateTime<Utc>, Option<String>)> {
+        fn summary(t: &TimeData) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
             t.entries.data
                 .iter()
-                .map(|e| (e.id, e.status.to_owned(), e.time, e.note.to_owned()))
+                .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
         }
 
@@ -420,10 +390,10 @@ mod tests {
 
             assert_eq!(
                 vec![
-                    (1, Status::Connect, at(8, 0), None),
-                    (2, Status::Break, sec(at(8, 0)), filled()),
-                    (3, Status::Connect, sec(at(8, 30)), None),
-                    (4, Status::End, at(16, 30), None)
+                    (Status::Connect, at(8, 0), None),
+                    (Status::Break, sec(at(8, 0)), filled()),
+                    (Status::Connect, sec(at(8, 30)), None),
+                    (Status::End, at(16, 30), None)
                 ],
                 summary(&t)
             );
@@ -443,9 +413,9 @@ mod tests {
             let mut t = day(&[(Status::Connect, 7, 30), (Status::Connect, 8, 0), (Status::End, 16, 30)]);
             t.assert_break(Duration::minutes(30), Duration::zero())?;
 
-            assert_eq!((3, Status::Break, sec(at(8, 0)), filled()), summary(&t)[2]);
-            assert_eq!((4, Status::Connect, sec(at(8, 30)), None), summary(&t)[3]);
-            assert_eq!((5, Status::End, at(16, 30), None), summary(&t)[4]);
+            assert_eq!((Status::Break, sec(at(8, 0)), filled()), summary(&t)[2]);
+            assert_eq!((Status::Connect, sec(at(8, 30)), None), summary(&t)[3]);
+            assert_eq!((Status::End, at(16, 30), None), summary(&t)[4]);
             Ok(())
         }
 
@@ -465,14 +435,14 @@ mod tests {
 
             assert_eq!(
                 vec![
-                    (1, Status::Connect, at(8, 0), None),
-                    (2, Status::Break, at(12, 0), None),
-                    (3, Status::Connect, at(12, 15), None),
-                    (4, Status::Break, sec(at(12, 15)), filled()),
-                    (5, Status::Connect, sec(at(12, 25)), None),
-                    (6, Status::Break, at(14, 0), None),
-                    (7, Status::Connect, at(14, 5), None),
-                    (8, Status::End, at(16, 30), None)
+                    (Status::Connect, at(8, 0), None),
+                    (Status::Break, at(12, 0), None),
+                    (Status::Connect, at(12, 15), None),
+                    (Status::Break, sec(at(12, 15)), filled()),
+                    (Status::Connect, sec(at(12, 25)), None),
+                    (Status::Break, at(14, 0), None),
+                    (Status::Connect, at(14, 5), None),
+                    (Status::End, at(16, 30), None)
                 ],
                 summary(&t)
             );
@@ -494,7 +464,7 @@ mod tests {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 17, 0)]);
             t.assert_break(Duration::minutes(30), Duration::zero())?.takeover(30)?;
 
-            assert_eq!((4, Status::End, at(16, 30), None), summary(&t)[3]);
+            assert_eq!((Status::End, at(16, 30), None), summary(&t)[3]);
             Ok(())
         }
     }
@@ -513,9 +483,7 @@ mod tests {
         fn day(entries: &[(Status, u32, u32)]) -> TimeData {
             let data = entries
                 .iter()
-                .enumerate()
-                .map(|(i, (status, h, m))| Entry {
-                    id: (i + 1) as u8,
+                .map(|(status, h, m)| Entry {
                     status: status.to_owned(),
                     time: at(*h, *m),
                     note: None,
@@ -528,10 +496,10 @@ mod tests {
             }
         }
 
-        fn summary(t: &TimeData) -> Vec<(u8, Status, DateTime<Utc>, Option<String>)> {
+        fn summary(t: &TimeData) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
             t.entries.data
                 .iter()
-                .map(|e| (e.id, e.status.to_owned(), e.time, e.note.to_owned()))
+                .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
         }
 
@@ -542,9 +510,9 @@ mod tests {
 
             assert_eq!(
                 vec![
-                    (1, Status::Connect, at(8, 0), None),
-                    (2, Status::End, at(16, 30), None),
-                    (3, Status::Takeover, at(16, 30) + Duration::seconds(1), Some("takeover".to_owned()))
+                    (Status::Connect, at(8, 0), None),
+                    (Status::End, at(16, 30), None),
+                    (Status::Takeover, at(16, 30) + Duration::seconds(1), Some("takeover".to_owned()))
                 ],
                 summary(&t)
             );
@@ -626,7 +594,7 @@ mod tests {
             let content = fs::read_to_string(&file)?;
             assert!((content.len() as u64) < before, "{content}");
             assert_eq!(
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-07T06:00:00Z\"}],\"version\":2}",
+                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-02-07T06:00:00Z\"}],\"version\":2}",
                 content
             );
             t.read_from_file()?;
@@ -649,9 +617,7 @@ mod tests {
         fn day(entries: &[(Status, u32, u32)]) -> TimeData {
             let data = entries
                 .iter()
-                .enumerate()
-                .map(|(i, (status, h, m))| Entry {
-                    id: (i + 1) as u8,
+                .map(|(status, h, m)| Entry {
                     status: status.to_owned(),
                     time: at(*h, *m),
                     note: None,
@@ -664,10 +630,10 @@ mod tests {
             }
         }
 
-        fn summary(t: &TimeData) -> Vec<(u8, Status, DateTime<Utc>, Option<String>)> {
+        fn summary(t: &TimeData) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
             t.entries.data
                 .iter()
-                .map(|e| (e.id, e.status.to_owned(), e.time, e.note.to_owned()))
+                .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
         }
 
@@ -682,9 +648,9 @@ mod tests {
 
             assert_eq!(
                 vec![
-                    (1, Status::Connect, at(7, 30), added()),
-                    (2, Status::Connect, at(8, 0), None),
-                    (3, Status::Break, at(12, 0), None)
+                    (Status::Connect, at(7, 30), added()),
+                    (Status::Connect, at(8, 0), None),
+                    (Status::Break, at(12, 0), None)
                 ],
                 summary(&t)
             );
@@ -705,11 +671,11 @@ mod tests {
 
             assert_eq!(
                 vec![
-                    (1, Status::Connect, at(7, 15), added()),
-                    (2, Status::Connect, at(8, 0), None),
-                    (3, Status::Break, at(12, 0), None),
-                    (4, Status::Connect, at(12, 30), None),
-                    (5, Status::End, at(16, 30), None)
+                    (Status::Connect, at(7, 15), added()),
+                    (Status::Connect, at(8, 0), None),
+                    (Status::Break, at(12, 0), None),
+                    (Status::Connect, at(12, 30), None),
+                    (Status::End, at(16, 30), None)
                 ],
                 summary(&t)
             );
@@ -721,8 +687,8 @@ mod tests {
             let mut t = day(&[(Status::Connect, 8, 0)]);
             t.prepend(30, "manually added")?.prepend(15, "manually added")?;
 
-            assert_eq!((1, Status::Connect, at(7, 15), added()), summary(&t)[0]);
-            assert_eq!((2, Status::Connect, at(7, 30), added()), summary(&t)[1]);
+            assert_eq!((Status::Connect, at(7, 15), added()), summary(&t)[0]);
+            assert_eq!((Status::Connect, at(7, 30), added()), summary(&t)[1]);
             Ok(())
         }
 
@@ -765,9 +731,7 @@ mod tests {
         fn day(entries: &[(Status, u32, u32)]) -> TimeData {
             let data = entries
                 .iter()
-                .enumerate()
-                .map(|(i, (status, h, m))| Entry {
-                    id: (i + 1) as u8,
+                .map(|(status, h, m)| Entry {
                     status: status.to_owned(),
                     time: at(*h, *m),
                     note: None,
@@ -954,7 +918,7 @@ mod tests {
         fn should_read_time_data() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}],\"version\":1}";
+                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220804.json");
             let mut file = File::create(&time_file)?;
@@ -969,7 +933,6 @@ mod tests {
 
             time_data.read_from_file()?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
 
@@ -977,7 +940,7 @@ mod tests {
         fn should_read_and_write_time_data() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}],\"version\":1}";
+                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220804.json");
             let day = Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap();
@@ -995,7 +958,6 @@ mod tests {
 
             time_data.read_from_file()?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
 
             time_data.append(
                 Status::End,
@@ -1003,7 +965,6 @@ mod tests {
                 None
             )?;
             assert_eq!(3, time_data.entries.data.len());
-            assert_eq!(3, time_data.entries.data.last().unwrap().id);
 
             time_data.write_to_file()?;
             assert!(fs::metadata(&time_file)?.len() > initial_size);
@@ -1014,7 +975,7 @@ mod tests {
         fn should_update_and_write_time_data() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]";
+                "[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220804.json");
             let day = Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap();
@@ -1032,7 +993,6 @@ mod tests {
 
             time_data.read_from_file()?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
 
             time_data.append(
                 Status::End,
@@ -1040,13 +1000,12 @@ mod tests {
                 None
             )?;
             assert_eq!(3, time_data.entries.data.len());
-            assert_eq!(3, time_data.entries.data.last().unwrap().id);
 
             time_data.write_to_file()?;
             assert!(fs::metadata(&time_file)?.len() > initial_size);
 
             let file_content_update =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"id\":3,\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":2}";
+                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":2}";
             let mut update_file = File::open(&time_file).unwrap();
             let mut data = vec![];
             update_file.read_to_end(&mut data)?;
@@ -1060,7 +1019,7 @@ mod tests {
         fn should_assert_long_break_do_nothing() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"Break\",\"time\":\"2022-08-04T00:30:53.523319900Z\"},{\"id\":3,\"status\":\"Connect\",\"time\":\"2022-08-04T02:15:53.523319900Z\"},{\"id\":4,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}],\"version\":1}";
+                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"status\":\"Break\",\"time\":\"2022-08-04T00:30:53.523319900Z\"},{\"status\":\"Connect\",\"time\":\"2022-08-04T02:15:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
@@ -1080,7 +1039,6 @@ mod tests {
                     Duration::hours(1).add(Duration::minutes(15))
                 )?;
             assert_eq!(4, time_data.entries.data.len());
-            assert_eq!(4, time_data.entries.data.last().unwrap().id);
 
             let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
                 Some(c) => c.into(),
@@ -1107,7 +1065,7 @@ mod tests {
         fn should_assert_break_and_do_nothing() -> Result<(), TrackerError> {
             logger();
             let file_content =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}],\"version\":1}";
+                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}],\"version\":1}";
             let temp_dir = tempfile::tempdir()?;
             let time_file = temp_dir.path().join("20220202.json");
             let mut file = File::create(&time_file)?;
@@ -1122,7 +1080,6 @@ mod tests {
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
 
@@ -1145,7 +1102,6 @@ mod tests {
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
 
@@ -1168,7 +1124,6 @@ mod tests {
 
             time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
             assert_eq!(2, time_data.entries.data.len());
-            assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
         }
     }

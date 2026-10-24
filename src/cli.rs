@@ -9,7 +9,7 @@ use usage::{
 };
 
 use crate::{
-    entry::Status, Overtime, Settings, StatusDaily, StatusMonthly, StatusTime, StatusWeekly,
+    Overtime, Settings, Status, StatusDaily, StatusMonthly, StatusTime, StatusWeekly,
     StatusYearly, Takeover, TimeData, TimeDataMonthly, TimeDataWeekly, TimeDataYearly,
     TrackerError,
 };
