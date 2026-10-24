@@ -1,5 +1,5 @@
 
-.PHONY: debug build-release release-linux-musl test clippy clippy-pedantic install install-debug
+.PHONY: debug build-release release-linux-musl test test-timezones clippy clippy-pedantic install install-debug
 
 ARGS=-l
 
@@ -46,6 +46,15 @@ release-mac:
 
 test:
 	cargo test --workspace
+
+# The tests must not depend on the timezone of the machine.
+TIMEZONES=UTC Asia/Tokyo America/Los_Angeles Pacific/Kiritimati Pacific/Pago_Pago
+
+test-timezones:
+	for zone in ${TIMEZONES}; do \
+		echo "== $$zone"; \
+		TZ=$$zone cargo test --workspace || exit 1; \
+	done
 
 fmt:
 	cargo fmt -- --check

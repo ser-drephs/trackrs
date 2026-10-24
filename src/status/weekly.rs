@@ -1,6 +1,6 @@
 use std::{ fmt::Display, ops::Mul };
 
-use chrono::{ DateTime, Duration, NaiveDate, Utc };
+use chrono::{ DateTime, Duration, FixedOffset, NaiveDate };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
@@ -23,7 +23,7 @@ impl Weekly {
     pub fn new(
         data: &TimeDataWeekly,
         settings: &Settings,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<Self, TrackerError> {
         let entries = data.day_data(settings, now)?;
 
@@ -167,7 +167,7 @@ mod tests {
 
     use std::ops::Add;
 
-    use chrono::TimeZone;
+    use chrono::{ TimeZone, Utc };
 
     use crate::{ BreakLimit, Entry, Status, Timesheet };
 
@@ -177,8 +177,8 @@ mod tests {
     }
 
     /// Clock after the days of the tests, which are all ended, so it doesn't matter.
-    fn now() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2022, 3, 14, 12, 0, 0).unwrap()
+    fn now() -> DateTime<FixedOffset> {
+        Utc.with_ymd_and_hms(2022, 3, 14, 12, 0, 0).unwrap().fixed_offset()
     }
 
     mod format {
@@ -259,8 +259,6 @@ mod tests {
     }
 
     mod new {
-        use chrono::Utc;
-
         use super::*;
 
         fn get_settings() -> Settings {
@@ -279,17 +277,17 @@ mod tests {
             [
                     Entry {
                         status: Status::Connect,
-                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
+                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap().fixed_offset(),
                         note: None,
                     },
                     Entry {
                         status: Status::Break,
-                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap(),
+                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap().fixed_offset(),
                         note: None,
                     },
                     Entry {
                         status: Status::Connect,
-                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
+                        time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap().fixed_offset(),
                         note: None,
                     },
                     Entry {
@@ -301,14 +299,14 @@ mod tests {
                             end.into(),
                             end_minutes.into(),
                             0
-                        ).unwrap(),
+                        ).unwrap().fixed_offset(),
                         note: None,
                     },
                 ].to_vec()
         }
 
         /// The days of week 10 of 2022, from Monday on, with their timesheets.
-        fn weekly(days: Vec<(DateTime<Utc>, Timesheet)>) -> TimeDataWeekly {
+        fn weekly(days: Vec<(DateTime<FixedOffset>, Timesheet)>) -> TimeDataWeekly {
             TimeDataWeekly {
                 week: 10,
                 days: days.into_iter().map(|(date, day)| (date.date_naive(), day)).collect(),
@@ -319,30 +317,30 @@ mod tests {
             weekly(
                 vec![
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet { data: get_entries(7, 8, 30), ..Default::default() }
                     ),
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet { data: get_entries(8, 8, 30), ..Default::default() }
                     ),
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet { data: get_entries(9, one_day_end, 30), ..Default::default() }
                     ),
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet {
                             data: get_entries(10, 8, one_day_minute_off),
                             ..Default::default()
                         }
                     ),
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet { data: get_entries(11, 8, 30), ..Default::default() }
                     ),
-                    (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap(), Timesheet::default()),
-                    (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap(), Timesheet::default())
+                    (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap().fixed_offset(), Timesheet::default()),
+                    (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap().fixed_offset(), Timesheet::default())
                 ]
             )
         }
@@ -410,24 +408,24 @@ mod tests {
             let time_data = weekly(
                 vec![
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet { data: get_entries(7, 8, 45), ..Default::default() }
                     ),
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet { data: get_entries(8, 8, 45), ..Default::default() }
                     ),
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet { data: get_entries(9, 8, 45), ..Default::default() }
                     ),
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet { data: get_entries(10, 10, 45), ..Default::default() }
                     ),
-                    (Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap(), Timesheet::default()),
-                    (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap(), Timesheet::default()),
-                    (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap(), Timesheet::default())
+                    (Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap().fixed_offset(), Timesheet::default()),
+                    (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap().fixed_offset(), Timesheet::default()),
+                    (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap().fixed_offset(), Timesheet::default())
                 ]
             );
             let s = Weekly::new(&time_data, &get_settings(), now())?;
@@ -458,11 +456,11 @@ mod tests {
             let time_data = weekly(
                 vec![
                     (
-                        Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap().fixed_offset(),
                         Timesheet {
                             data: vec![Entry {
                                 status: Status::End,
-                                time: Utc.with_ymd_and_hms(2022, 3, 7, 8, 0, 0).unwrap(),
+                                time: Utc.with_ymd_and_hms(2022, 3, 7, 8, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             }],
                             ..Default::default()

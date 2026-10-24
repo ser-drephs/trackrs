@@ -4,7 +4,7 @@ use std::{
     path::{ Path, PathBuf },
 };
 
-use chrono::{ DateTime, Datelike, Months, NaiveDate, Utc };
+use chrono::{ Datelike, DateTime, FixedOffset, Months, NaiveDate };
 use serde::{ Deserialize, Serialize };
 
 use crate::{ Settings, StatusTime, StorageProvider, TimeDataWeekly, TrackerError, Weekly };
@@ -145,7 +145,7 @@ impl Overtime {
         storage: &impl StorageProvider,
         settings: &Settings,
         start: NaiveDate,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<Option<StatusTime>, TrackerError> {
         let entries = self.read()?;
         let Some((k, e)) = entries.range(..key(start.year(), start.month())).next_back() else {

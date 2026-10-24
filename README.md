@@ -43,7 +43,7 @@ It extends your first break, or starts one second after your start if you took n
 Execute `trackrs sick` or `trackrs vacation` to fill the rest of today's target work time, e.g. when you feel unwell during the day.
 Add a date as `YYYY-MM-DD` to do this for another day.
 
-- An empty day starts at 06:00 UTC and lasts the configured work time plus the break for it.
+- An empty day starts at 08:00 local time and lasts the configured work time plus the break for it.
 - A running day continues from now, an ended day from its end.
 - A day that already reached its target work time is left untouched.
 

@@ -49,7 +49,7 @@ impl StorageProvider for JsonStorage {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{ NaiveDate, TimeZone, Utc };
+    use chrono::{ FixedOffset, Local, NaiveDate, TimeZone, Utc };
 
     use super::*;
     use crate::Status;
@@ -130,7 +130,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let storage = JsonStorage::new(dir.path().join("new"));
         let mut timesheet = Timesheet::default();
-        timesheet.append(Status::Connect, Utc.with_ymd_and_hms(2022, 8, 4, 8, 0, 0).unwrap(), None)?;
+        timesheet.append(Status::Connect, Utc.with_ymd_and_hms(2022, 8, 4, 8, 0, 0).unwrap().fixed_offset(), None)?;
 
         storage.save(day(), &timesheet)?;
 
@@ -143,20 +143,37 @@ mod tests {
     fn should_update_stored_file() -> Result<(), TrackerError> {
         let (_dir, storage, file) = storage(
             Some(
-                "[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]"
+                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900+02:00\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900+02:00\"}],\"version\":4}"
             )
         );
         let initial_size = fs::metadata(&file)?.len();
 
         let mut timesheet = storage.load(day())?;
-        timesheet.append(Status::End, Utc.with_ymd_and_hms(2022, 8, 4, 23, 3, 0).unwrap(), None)?;
+        let time = FixedOffset::east_opt(2 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(2022, 8, 4, 23, 3, 0)
+            .unwrap();
+        timesheet.append(Status::End, time, None)?;
         storage.save(day(), &timesheet)?;
 
         assert!(fs::metadata(&file)?.len() > initial_size);
         assert_eq!(
-            "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":3}",
+            "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900+02:00\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900+02:00\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:03:00+02:00\"}],\"version\":4}",
             fs::read_to_string(&file)?
         );
+        Ok(())
+    }
+
+    #[test]
+    fn should_keep_the_offsets_of_the_entries() -> Result<(), TrackerError> {
+        // A day of travelling, each entry keeps the offset it was written with.
+        let content =
+            "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T08:00:00+02:00\"},{\"status\":\"Break\",\"time\":\"2022-08-04T14:00:00-04:00\"}],\"version\":4}";
+        let (_dir, storage, file) = storage(Some(content));
+
+        storage.save(day(), &storage.load(day())?)?;
+
+        assert_eq!(content, fs::read_to_string(&file)?);
         Ok(())
     }
 
@@ -168,17 +185,28 @@ mod tests {
             "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T08:00:00Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T16:00:00Z\"}],\"version\":1}";
         let v2 =
             "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T08:00:00Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T16:00:00Z\"}],\"version\":2}";
-        let expected =
+        let v3 =
             "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T08:00:00Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T16:00:00Z\"}],\"version\":3}";
+        let instants = [
+            Utc.with_ymd_and_hms(2022, 8, 4, 8, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2022, 8, 4, 16, 0, 0).unwrap(),
+        ];
 
-        for old in [versionless, v1, v2] {
+        for old in [versionless, v1, v2, v3] {
             let (_dir, storage, file) = storage(Some(old));
 
             storage.save(day(), &storage.load(day())?)?;
 
             let content = fs::read_to_string(&file)?;
             assert!(!content.contains("\"id\""), "{content}");
-            assert_eq!(expected, content);
+            assert!(content.ends_with("\"version\":4}"), "{content}");
+            // The same instants, written in the local offset of the machine at that moment.
+            let saved = storage.load(day())?;
+            for (entry, instant) in saved.data.iter().zip(instants) {
+                assert_eq!(instant, entry.time, "{content}");
+                let local = Local.offset_from_utc_datetime(&instant.naive_utc());
+                assert_eq!(local, *entry.time.offset(), "{content}");
+            }
         }
         Ok(())
     }
@@ -188,7 +216,7 @@ mod tests {
         // Pretty printed, as after saving it in an editor, longer than written compactly.
         let (_dir, storage, file) = storage(
             Some(
-                "{\n    \"data\": [\n        {\n            \"id\": 1,\n            \"status\": \"Connect\",\n            \"time\": \"2022-02-07T06:00:00Z\"\n        }\n    ],\n    \"version\": 2\n}\n"
+                "{\n    \"data\": [\n        {\n            \"status\": \"Connect\",\n            \"time\": \"2022-02-07T07:00:00+01:00\"\n        }\n    ],\n    \"version\": 4\n}\n"
             )
         );
         let before = fs::metadata(&file)?.len();
@@ -198,7 +226,7 @@ mod tests {
         let content = fs::read_to_string(&file)?;
         assert!((content.len() as u64) < before, "{content}");
         assert_eq!(
-            "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-02-07T06:00:00Z\"}],\"version\":3}",
+            "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-02-07T07:00:00+01:00\"}],\"version\":4}",
             content
         );
         assert_eq!(1, storage.load(day())?.data.len());

@@ -17,7 +17,7 @@ impl MemoryStorage {
             .iter()
             .map(|(status, h, m)| {
                 let time = date.and_time(NaiveTime::from_hms_opt(*h, *m, 0).unwrap());
-                Entry::new(status.to_owned(), Utc.from_utc_datetime(&time), None)
+                Entry::new(status.to_owned(), Utc.from_utc_datetime(&time).fixed_offset(), None)
             })
             .collect();
         self.days.borrow_mut().insert(date, Timesheet { data, ..Default::default() });

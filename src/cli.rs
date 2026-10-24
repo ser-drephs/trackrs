@@ -1,6 +1,6 @@
 use std::{fmt::Display, path::Path, process, str::FromStr};
 
-use chrono::{Datelike, IsoWeek, Local, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, IsoWeek, Local, NaiveDate};
 use log::LevelFilter;
 use usage::{
     error::UsageErr,
@@ -128,7 +128,7 @@ impl Cli {
             name @ ("sick" | "vacation") => Commands::Absence {
                 date: match string(&out, "date") {
                     Some(d) => typed("date", d)?,
-                    None => Utc::now().date_naive(),
+                    None => Local::now().date_naive(),
                 },
                 note: name.to_owned(),
             },
@@ -258,19 +258,24 @@ impl CliExecute for Cli {
     }
 }
 
+/// The current local time with its offset from UTC. Entries and the day they belong to follow it.
+fn local_now() -> DateTime<FixedOffset> {
+    Local::now().fixed_offset()
+}
+
 impl Cli {
     fn invoke_start(&self, note: &Option<String>) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
         let storage = JsonStorage::new(settings.folder.to_owned());
-        let today = Utc::now().date_naive();
+        let now = local_now();
+        let today = now.date_naive();
         let mut time_data = storage.load(today)?;
-        let now = Local::now();
         let first = !time_data
             .data
             .iter()
             .any(|e| e.status == Status::Connect);
-        time_data.append(Status::Connect, now.to_utc(), note.clone())?;
+        time_data.append(Status::Connect, now, note.clone())?;
 
         // A takeover is added before the first start of a day only, and kept if it doesn't fit.
         let takeover = Takeover::new(Path::new(&settings.folder));
@@ -297,9 +302,10 @@ impl Cli {
         log::info!("break executed");
         let settings = Settings::new()?;
         let storage = JsonStorage::new(settings.folder);
-        let today = Utc::now().date_naive();
+        let now = local_now();
+        let today = now.date_naive();
         let mut time_data = storage.load(today)?;
-        time_data.append(Status::Break, Local::now().to_utc(), note.clone())?;
+        time_data.append(Status::Break, now, note.clone())?;
         storage.save(today, &time_data)
     }
 
@@ -307,9 +313,9 @@ impl Cli {
         log::info!("end executed");
         let settings = Settings::new()?;
         let storage = JsonStorage::new(settings.folder.to_owned());
-        let today = Utc::now().date_naive();
+        let now = local_now();
+        let today = now.date_naive();
         let mut time_data = storage.load(today)?;
-        let now = Utc::now();
         let expected_break = time_data.expected_break(&settings, now)?;
         let taken_break = time_data.break_taken();
         time_data
@@ -323,7 +329,7 @@ impl Cli {
         log::info!("add executed");
         let settings = Settings::new()?;
         let storage = JsonStorage::new(settings.folder);
-        let today = Utc::now().date_naive();
+        let today = local_now().date_naive();
         let mut time_data = storage.load(today)?;
         time_data.prepend(*minutes, "manually added")?;
         storage.save(today, &time_data)
@@ -332,12 +338,9 @@ impl Cli {
     fn invoke_absence(&self, date: &NaiveDate, note: &str) -> TrackerResult {
         log::info!("{note} executed for {date}");
         let settings = Settings::new()?;
-        // An empty day starts at 06:00 UTC: a regular workday start across Europe (UTC-1 to UTC+3)
-        // that keeps the whole day on the same date there, in UTC and local time.
-        let start = date.and_hms_opt(6, 0, 0).unwrap().and_utc();
         let storage = JsonStorage::new(settings.folder.to_owned());
         let mut time_data = storage.load(*date)?;
-        time_data.absence(start, note, Local::now().to_utc(), &settings)?;
+        time_data.absence(*date, note, local_now(), &settings)?;
         storage.save(*date, &time_data)
     }
 
@@ -352,13 +355,13 @@ impl Cli {
         log::info!("status executed");
         let settings = Settings::new()?;
         let storage = JsonStorage::new(settings.folder.to_owned());
+        let now = local_now();
 
         if let Some(y) = year {
-            let today = Local::now().date_naive();
-            let time_data = TimeDataYearly::for_year(&storage, *y, today)?;
-            let status = Yearly::new(&time_data, &settings, Utc::now())?;
+            let time_data = TimeDataYearly::for_year(&storage, *y, now.date_naive())?;
+            let status = Yearly::new(&time_data, &settings, now)?;
             if table.unwrap_or(true) {
-                let carry = self.carry(&storage, &settings, status.start())?;
+                let carry = self.carry(&storage, &settings, status.start(), now)?;
                 print!("{}", status.with_carry(carry).table());
             } else {
                 println!("{}", status);
@@ -367,11 +370,10 @@ impl Cli {
         }
 
         if let Some(m) = month {
-            let today = Local::now().date_naive();
-            let time_data = TimeDataMonthly::for_month(&storage, *m, today)?;
-            let status = Monthly::new(&time_data, &settings, Utc::now())?;
+            let time_data = TimeDataMonthly::for_month(&storage, *m, now.date_naive())?;
+            let status = Monthly::new(&time_data, &settings, now)?;
             if table.unwrap_or(true) {
-                let carry = self.carry(&storage, &settings, status.start())?;
+                let carry = self.carry(&storage, &settings, status.start(), now)?;
                 print!("{}", status.with_carry(carry).table());
             } else {
                 println!("{}", status);
@@ -381,20 +383,20 @@ impl Cli {
 
         match week {
             Some(w) => {
-                let cur_week: IsoWeek = Local::now().iso_week();
+                let cur_week: IsoWeek = now.iso_week();
                 // Relative weeks count from the current week, which may belong to another year
                 // around new year, e.g. 1st of January 2027 is in week 53 of 2026.
                 let year = if *w > 0 {
-                    Local::now().year()
+                    now.year()
                 } else {
                     cur_week.year()
                 };
                 let time_data = TimeDataWeekly::for_week(&storage, year.try_into()?, *w, cur_week)?;
-                let status = Weekly::new(&time_data, &settings, Utc::now())?;
+                let status = Weekly::new(&time_data, &settings, now)?;
 
                 if table.unwrap_or(true) {
                     let carry = match time_data.start() {
-                        Some(start) => self.carry(&storage, &settings, start)?,
+                        Some(start) => self.carry(&storage, &settings, start, now)?,
                         None => None,
                     };
                     print!("{}", status.with_carry(carry).table());
@@ -403,15 +405,14 @@ impl Cli {
                 }
             }
             None => {
-                // Day files are named by their UTC date, like today's.
-                let date = status_date(day, Utc::now().date_naive())?;
+                let date = status_date(day, now.date_naive())?;
                 let timesheet = storage.load(date)?;
                 if timesheet.data.is_empty() {
                     return Err(TrackerError::TimeDataError {
                         message: format!("no entries for {date}"),
                     });
                 }
-                let status = Daily::new(&timesheet, &settings, Utc::now())?;
+                let status = Daily::new(&timesheet, &settings, now)?;
                 if table.unwrap_or(false) {
                     print!("{}", status.table());
                 } else {
@@ -429,18 +430,20 @@ impl Cli {
         storage: &impl StorageProvider,
         settings: &Settings,
         start: NaiveDate,
+        now: DateTime<FixedOffset>,
     ) -> Result<Option<StatusTime>, TrackerError> {
         let overtime = Overtime::new(Path::new(&settings.folder));
         for note in overtime.mismatches()? {
             eprintln!("{note}");
         }
-        overtime.carry(storage, settings, start, Utc::now())
+        overtime.carry(storage, settings, start, now)
     }
 
     fn invoke_overtime(&self, month: &i16, force: &bool) -> TrackerResult {
         log::info!("overtime executed");
         let settings = Settings::new()?;
-        let today = Local::now().date_naive();
+        let now = local_now();
+        let today = now.date_naive();
         let (year, month) = TimeDataMonthly::resolve(*month, today)?;
         if (year, month) >= (today.year(), today.month()) {
             return Err(TrackerError::OvertimeError {
@@ -450,7 +453,7 @@ impl Cli {
 
         let storage = JsonStorage::new(settings.folder.to_owned());
         let time_data = TimeDataMonthly::for_year_month(&storage, year, month)?;
-        let status = Monthly::new(&time_data, &settings, Utc::now())?;
+        let status = Monthly::new(&time_data, &settings, now)?;
         let stored = Overtime::new(Path::new(&settings.folder)).store(
             year,
             month,
@@ -490,7 +493,7 @@ impl Cli {
         }
 
         let storage = JsonStorage::new(settings.folder.to_owned());
-        let today = Utc::now().date_naive();
+        let today = local_now().date_naive();
         let mut time_data = storage.load(today)?;
         time_data.takeover(*minutes)?;
 

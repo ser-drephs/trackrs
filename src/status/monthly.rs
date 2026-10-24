@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use chrono::{ DateTime, Month, NaiveDate, Utc };
+use chrono::{ DateTime, FixedOffset, Month, NaiveDate };
 use prettytable::{ format, Table };
 
 use crate::{ Settings, StatusDisplay, StatusTime, TimeDataMonthly, TrackerError, Weekly };
@@ -23,7 +23,7 @@ impl Monthly {
     pub fn new(
         data: &TimeDataMonthly,
         settings: &Settings,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<Self, TrackerError> {
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
@@ -107,7 +107,7 @@ impl Display for Monthly {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{ DateTime, NaiveDate, Utc };
+    use chrono::{ DateTime, FixedOffset, NaiveDate };
 
     use crate::{
         MemoryStorage,
@@ -122,7 +122,7 @@ mod tests {
     use super::*;
 
     /// All days are ended or missing, so the clock doesn't matter.
-    fn now() -> DateTime<Utc> {
+    fn now() -> DateTime<FixedOffset> {
         DateTime::default()
     }
 

@@ -1,6 +1,6 @@
 use std::ops::{ Add, AddAssign, Mul, Sub, SubAssign };
 
-use chrono::{ DateTime, Duration, Local, Timelike, Utc };
+use chrono::{ DateTime, Duration, FixedOffset, Local, Timelike, Utc };
 
 use crate::Entry;
 
@@ -90,7 +90,14 @@ impl std::str::FromStr for StatusTime {
 
 impl From<&Entry> for StatusTime {
     fn from(e: &Entry) -> Self {
-        StatusTime::from(DateTime::<Local>::from(e.time))
+        StatusTime::from(e.time)
+    }
+}
+
+impl From<DateTime<FixedOffset>> for StatusTime {
+    /// The local time of day of the time, in its own offset.
+    fn from(time: DateTime<FixedOffset>) -> Self {
+        StatusTime { duration: Duration::seconds(time.num_seconds_from_midnight().into()) }
     }
 }
 
@@ -218,7 +225,7 @@ mod tests {
         fn should_format_status_time() {
             let data = Entry {
                 status: Status::Connect,
-                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().fixed_offset(),
                 note: None,
             };
             let status = StatusTime::from(&data);
@@ -265,8 +272,11 @@ mod tests {
 
         #[test]
         fn should_create_from_entry() {
-            // The time of day of an entry is its local one.
-            let time = chrono::Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 5).unwrap().to_utc();
+            // The time of day of an entry is its own local one, whatever its offset is.
+            let time = FixedOffset::east_opt(2 * 3600)
+                .unwrap()
+                .with_ymd_and_hms(2022, 2, 2, 8, 3, 5)
+                .unwrap();
             let entry = Entry {
                 status: Status::Disconnect,
                 time,
@@ -277,6 +287,20 @@ mod tests {
             assert_eq!(Duration::seconds(8 * 3600 + 3 * 60 + 5), status.duration);
             assert_eq!(8, status.hours());
             assert_eq!(3, status.minutes());
+        }
+
+        #[test]
+        fn should_create_from_datetime_with_offset() {
+            let time = FixedOffset::east_opt(-5 * 3600)
+                .unwrap()
+                .with_ymd_and_hms(2022, 2, 2, 23, 30, 15)
+                .unwrap();
+            let status = StatusTime::from(time);
+
+            // The time of day in its own offset, not the one in UTC.
+            assert_eq!(Duration::seconds(23 * 3600 + 30 * 60 + 15), status.duration);
+            assert_eq!(23, status.hours());
+            assert_eq!(30, status.minutes());
         }
 
         #[test]

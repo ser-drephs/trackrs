@@ -1,4 +1,4 @@
-use chrono::{ DateTime, Datelike, Duration, IsoWeek, NaiveDate, Utc, Weekday };
+use chrono::{ Datelike, DateTime, Duration, FixedOffset, IsoWeek, NaiveDate, Weekday };
 
 use crate::{ DailyData, Settings, StorageProvider, Timesheet, TrackerError };
 
@@ -44,7 +44,7 @@ impl TimeDataWeekly {
     pub fn day_data(
         &self,
         settings: &Settings,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<Vec<(NaiveDate, DailyData)>, TrackerError> {
         self.days
             .iter()
@@ -102,7 +102,7 @@ mod tests {
 
     /// Week 5 of 2022.
     fn current_week() -> IsoWeek {
-        Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().iso_week()
+        Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().fixed_offset().iso_week()
     }
 
     /// Storage with entries on Monday the 17th and Wednesday the 19th of week 3 of 2022.
@@ -148,7 +148,7 @@ mod tests {
         #[test]
         fn should_resolve_relative_week_zero_to_last_week_of_previous_year() {
             // Week 1 of 2021, one week back is week 53 of 2020.
-            let d = Utc.with_ymd_and_hms(2021, 1, 6, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2021, 1, 6, 0, 0, 0).unwrap().fixed_offset();
 
             assert_eq!((2020, 53), resolve_week(2021, -1, d.iso_week()));
         }
@@ -157,7 +157,7 @@ mod tests {
         fn should_not_take_week_one_of_next_year_as_last_week() {
             // Week 2 of 2025, three weeks back is week 51 of 2024 with its 52 weeks, although
             // 31st of December 2024 is in week 1 of 2025.
-            let d = Utc.with_ymd_and_hms(2025, 1, 8, 0, 0, 0).unwrap();
+            let d = Utc.with_ymd_and_hms(2025, 1, 8, 0, 0, 0).unwrap().fixed_offset();
 
             assert_eq!((2024, 51), resolve_week(2025, -3, d.iso_week()));
         }
@@ -270,14 +270,13 @@ mod tests {
     }
 
     mod day_data {
-        use chrono::Local;
 
         use crate::Entry;
 
         use super::*;
 
-        fn now() -> DateTime<Utc> {
-            Utc.with_ymd_and_hms(2022, 1, 21, 12, 0, 0).unwrap()
+        fn now() -> DateTime<FixedOffset> {
+            Utc.with_ymd_and_hms(2022, 1, 21, 12, 0, 0).unwrap().fixed_offset()
         }
 
         /// The days `days` of January 2022 without entries.
@@ -311,7 +310,7 @@ mod tests {
             let mut data = week(&[17]);
             data.days[0].1.data.push(Entry {
                 status: Status::End,
-                time: Local.with_ymd_and_hms(2022, 1, 17, 17, 0, 0).unwrap().to_utc(),
+                time: Utc.with_ymd_and_hms(2022, 1, 17, 17, 0, 0).unwrap().fixed_offset(),
                 note: None,
             });
 
