@@ -142,14 +142,11 @@ impl StatusWeeklyBuilder {
                     .as_ref()
                     .unwrap()
                     .workperday.from_date(d.date.unwrap());
-                if expected >= &0 {
-                    let exh = expected.to_owned() as i64;
-                    overtime -= StatusTime::from(Duration::minutes(exh));
-                    let missing_status = StatusDaily::builder().empty_with_overtime(
-                        overtime.to_owned()
-                    );
-                    entries.append(&mut [(d.date.unwrap().to_owned(), missing_status)].to_vec());
-                }
+                // A day without entries misses its whole target worktime.
+                let day_overtime = StatusTime::from(Duration::minutes(-(*expected as i64)));
+                overtime += day_overtime.to_owned();
+                let missing_status = StatusDaily::builder().empty_with_overtime(day_overtime);
+                entries.append(&mut [(d.date.unwrap().to_owned(), missing_status)].to_vec());
             }
         });
 
@@ -540,6 +537,13 @@ mod tests {
             assert_eq!(total, s.total);
             assert_eq!(overtime, s.overtime);
             assert_eq!(decimal, s.decimal);
+
+            // Each row shows its own day's overtime, not the running total of the week.
+            let rows: Vec<String> = s.entries
+                .iter()
+                .map(|(_, d)| d.overtime.to_string())
+                .collect();
+            assert_eq!(vec!["00:00", "00:00", "00:00", "02:00", "-08:00", "00:00", "00:00"], rows);
             Ok(())
         }
 
