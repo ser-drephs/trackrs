@@ -32,10 +32,14 @@ cmd "vacation" display_order=6 help="Track vacation for the rest of a day" long_
 cmd "add" display_order=7 help="Add minutes to today" long_help="Adds minutes of work to today, before the first start. Requires a start today, also works after end." {
     arg "<minutes>" help="Minutes to add to today."
 }
-cmd "takeover" display_order=8 help="Take over time to next day" long_help="Moves the end of today back by the given minutes and adds them before the next first start of a day. Today must be ended." {
+cmd "overtime" display_order=8 help="Store the overtime of a past month" long_help="Calculates the overtime of a finished month and stores it with the cumulated overtime in overtime.json of the configured folder. Week, month and year status carry it over." {
+    flag "-m <month>" required=#true help="Month to store" long_help="Either enter the month of the year or a relative value eg. -1" allow_hyphen_values=#true
+    flag "-f --force" help="Replace a stored month, or start over from a month before the first stored one"
+}
+cmd "takeover" display_order=9 help="Take over time to next day" long_help="Moves the end of today back by the given minutes and adds them before the next first start of a day. Today must be ended." {
     arg "<minutes>" help="Minutes to take over to the next day."
 }
-cmd "config" display_order=9 help="Configuration" long_help="List or edit configuration" {
+cmd "config" display_order=10 help="Configuration" long_help="List or edit configuration" {
     flag "-l --list" help="List configuration" conflicts="edit"
     flag "-e --edit" help="Open configuration in default editor" conflicts="list"
 }
