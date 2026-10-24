@@ -4,7 +4,7 @@ use chrono::{ Duration, NaiveDate, NaiveTime };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusDaily, StatusTime, TimeDataWeekly, TrackerError };
+use crate::{ JsonStorage, Settings, StatusDaily, StatusTime, TimeDataWeekly, TrackerError };
 
 #[derive(Clone, Default, Debug)]
 pub struct StatusWeekly {
@@ -146,7 +146,7 @@ impl StatusWeeklyBuilder {
 
         for date in &data.dates {
             log::trace!("processing: {}", date);
-            match StatusDaily::load(&data.folder, &settings, *date)? {
+            match StatusDaily::load(&JsonStorage::new(data.folder.clone()), &settings, *date)? {
                 Some(s) => {
                     log::info!("got {} working time and {} overtime", s.worktime, s.overtime);
                     total += s.worktime.to_owned();
@@ -322,7 +322,9 @@ mod tests {
     mod builder {
         use chrono::Utc;
 
-        use crate::Timesheet;
+        use crate::{ StorageProvider, Timesheet };
+
+        use chrono::DateTime;
 
         use super::*;
 
@@ -371,59 +373,43 @@ mod tests {
         }
 
         /// Write the days with entries to `folder` and return the week of all their dates.
-        fn weekly(days: Vec<Timesheet>, folder: &std::path::Path) -> Result<TimeDataWeekly, TrackerError> {
-            for day in &days {
-                if !day.entries.is_empty() {
-                    let mut t = Timesheet::builder()
-                        .folder(folder.to_path_buf().into())
-                        .date(day.date.unwrap())
-                        .build()?;
-                    t.entries = day.entries.to_owned();
-                    t.write_to_file()?;
+        fn weekly(days: Vec<(DateTime<Utc>, Timesheet)>, folder: &std::path::Path) -> Result<TimeDataWeekly, TrackerError> {
+            for (date, day) in &days {
+                if !day.data.is_empty() {
+                    JsonStorage::new(folder).save(date.date_naive(), day)?;
                 }
             }
             Ok(TimeDataWeekly {
                 folder: folder.to_path_buf().into(),
-                dates: days.iter().map(|d| d.date.unwrap().date_naive()).collect(),
+                dates: days.iter().map(|(d, _)| d.date_naive()).collect(),
                 week: 10,
             })
         }
 
-        fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> Vec<Timesheet> {
+        fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> Vec<(DateTime<Utc>, Timesheet)> {
             [
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap()),
-                    entries: get_entries(7, 8, 30),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap()),
-                    entries: get_entries(8, 8, 30),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap()),
-                    entries: get_entries(9, one_day_end, 30),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap()),
-                    entries: get_entries(10, 8, one_day_minute_off),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap()),
-                    entries: get_entries(11, 8, 30),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap()),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
-                    ..Default::default()
-                },
+                (
+                    Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
+                    Timesheet { data: get_entries(7, 8, 30), ..Default::default() }
+                ),
+                (
+                    Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap(),
+                    Timesheet { data: get_entries(8, 8, 30), ..Default::default() }
+                ),
+                (
+                    Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap(),
+                    Timesheet { data: get_entries(9, one_day_end, 30), ..Default::default() }
+                ),
+                (
+                    Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap(),
+                    Timesheet { data: get_entries(10, 8, one_day_minute_off), ..Default::default() }
+                ),
+                (
+                    Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap(),
+                    Timesheet { data: get_entries(11, 8, 30), ..Default::default() }
+                ),
+                (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap(), Timesheet::default()),
+                (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap(), Timesheet::default()),
             ].to_vec()
         }
 
@@ -506,38 +492,25 @@ mod tests {
         fn should_calculate_with_missing_day() -> Result<(), TrackerError> {
             logger();
             let time_data = [
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap()),
-                    entries: get_entries(7, 8, 45),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap()),
-                    entries: get_entries(8, 8, 45),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap()),
-                    entries: get_entries(9, 8, 45),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap()),
-                    entries: get_entries(10, 10, 45),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap()),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap()),
-                    ..Default::default()
-                },
-                Timesheet {
-                    date: Some(Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap()),
-                    ..Default::default()
-                },
+                (
+                    Utc.with_ymd_and_hms(2022, 3, 7, 0, 0, 0).unwrap(),
+                    Timesheet { data: get_entries(7, 8, 45), ..Default::default() }
+                ),
+                (
+                    Utc.with_ymd_and_hms(2022, 3, 8, 0, 0, 0).unwrap(),
+                    Timesheet { data: get_entries(8, 8, 45), ..Default::default() }
+                ),
+                (
+                    Utc.with_ymd_and_hms(2022, 3, 9, 0, 0, 0).unwrap(),
+                    Timesheet { data: get_entries(9, 8, 45), ..Default::default() }
+                ),
+                (
+                    Utc.with_ymd_and_hms(2022, 3, 10, 0, 0, 0).unwrap(),
+                    Timesheet { data: get_entries(10, 10, 45), ..Default::default() }
+                ),
+                (Utc.with_ymd_and_hms(2022, 3, 11, 0, 0, 0).unwrap(), Timesheet::default()),
+                (Utc.with_ymd_and_hms(2022, 3, 12, 0, 0, 0).unwrap(), Timesheet::default()),
+                (Utc.with_ymd_and_hms(2022, 3, 13, 0, 0, 0).unwrap(), Timesheet::default()),
             ].to_vec();
             let settings = get_settings();
             let temp_dir = tempfile::tempdir()?;

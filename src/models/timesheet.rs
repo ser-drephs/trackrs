@@ -1,47 +1,24 @@
-use std::{ fs::{ self, File, OpenOptions }, io::BufReader, path::PathBuf, str::FromStr };
-
 use chrono::{ DateTime, Duration, Utc };
 use serde::{ Deserialize, Serialize };
 
-use crate::{ Entry, Settings, Status, TrackerError, Upgrade };
+use crate::{ Entry, Settings, Status, TrackerError };
 
 pub(crate) const CURRENT_VERSION: u8 = 3;
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Timesheet {
-    #[serde(rename = "data")]
-    pub entries: Vec<Entry>,
+    pub data: Vec<Entry>,
     pub version: u8,
-    #[serde(skip)]
-    pub(crate) file: PathBuf,
-    #[serde(skip)]
-    pub(crate) build: bool,
-    #[serde(skip)]
-    pub date: Option<DateTime<Utc>>,
 }
 
 impl Default for Timesheet {
     fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-            version: CURRENT_VERSION,
-            file: PathBuf::default(),
-            build: false,
-            date: None,
-        }
+        Self { data: Vec::new(), version: CURRENT_VERSION }
     }
 }
 
 impl Timesheet {
-    pub fn builder() -> TimesheetBuilder {
-        TimesheetBuilder {
-            inner: Timesheet::default(),
-            folder: PathBuf::default(),
-            has_file: false,
-        }
-    }
-
     /// Fill the break missing to the expected break `e_break`, as a break with a note:
     /// - after the first break and connect pair, so that break looks extended,
     /// - or one second after the start, if no break was taken yet. Starts in front of it, like a
@@ -53,11 +30,10 @@ impl Timesheet {
         e_break: Duration,
         a_break: Duration
     ) -> Result<&mut Self, TrackerError> {
-        self.assert_build()?;
         if e_break <= a_break {
             return Ok(self);
         }
-        let data = &self.entries;
+        let data = &self.data;
         let after_break = data
             .windows(2)
             .position(|w| w[0].status == Status::Break && w[1].status == Status::Connect)
@@ -85,7 +61,7 @@ impl Timesheet {
         let r#break = Entry::new(Status::Break, start, Some("filled mandatory remaining break".to_owned()));
         let connect = Entry::new(Status::Connect, end, None);
         log::debug!("fill break with {:?} and {:?}", r#break, connect);
-        self.entries.splice(anchor + 1..anchor + 1, [r#break, connect]);
+        self.data.splice(anchor + 1..anchor + 1, [r#break, connect]);
         Ok(self)
     }
 
@@ -95,27 +71,25 @@ impl Timesheet {
         time: DateTime<Utc>,
         note: Option<String>
     ) -> Result<&mut Self, TrackerError> {
-        self.assert_build()?;
         let entry = Entry::new(status, time.to_utc(), note);
         log::debug!("append time data: {:?}", entry);
-        self.entries.append(&mut [entry].to_vec());
+        self.data.append(&mut [entry].to_vec());
         Ok(self)
     }
 
     /// Fill the remaining target worktime of the day with an absence (`sick` or `vacation`).
     ///
-    /// The absence starts at the default start (`date` of this time data) for an empty day, at the
+    /// The absence starts at the default start (`day`) for an empty day, at the
     /// end of an ended day (whose end is replaced), and otherwise at `now`, or at the last entry if
     /// the day is not today. It lasts until the day's worktime reaches the target with its break.
     pub fn absence(
         &mut self,
+        day: DateTime<Utc>,
         note: &str,
         now: DateTime<Utc>,
         settings: &Settings
     ) -> Result<&mut Self, TrackerError> {
-        self.assert_build()?;
-        let day = self.date.unwrap();
-        let mut data = self.entries.clone();
+        let mut data = self.data.clone();
         let from = match data.last().map(|e| (e.status.to_owned(), e.time)) {
             None => day,
             Some((Status::End, time)) => {
@@ -150,14 +124,13 @@ impl Timesheet {
             });
         }
 
-        self.entries = data;
+        self.data = data;
         self.append(Status::Connect, from, Some(note.to_owned()))?.append(Status::End, end, None)
     }
 
     /// Prepend a connect entry `minutes` before the first connect of the day.
     pub fn prepend(&mut self, minutes: u16, note: &str) -> Result<&mut Self, TrackerError> {
-        self.assert_build()?;
-        let first = self.entries
+        let first = self.data
             .iter()
             .find(|e| e.status == Status::Connect)
             .ok_or_else(|| TrackerError::TimeDataError {
@@ -172,15 +145,14 @@ impl Timesheet {
 
         let entry = Entry::new(Status::Connect, time, Some(note.to_owned()));
         log::debug!("prepend time data: {:?}", entry);
-        self.entries.insert(0, entry);
+        self.data.insert(0, entry);
         Ok(self)
     }
 
     /// Take over `minutes` of an ended day to the next start: move its end back by `minutes` and
     /// mark it with a takeover entry one second later.
     pub fn takeover(&mut self, minutes: u16) -> Result<&mut Self, TrackerError> {
-        self.assert_build()?;
-        let data = &mut self.entries;
+        let data = &mut self.data;
         match data.last().map(|e| &e.status) {
             Some(Status::End) => {}
             Some(Status::Takeover) => {
@@ -215,124 +187,11 @@ impl Timesheet {
         log::debug!("moved end back to {}", end);
         self.append(Status::Takeover, end + Duration::seconds(1), Some("takeover".to_owned()))
     }
-
-    pub fn read_from_file(&mut self) -> Result<&mut Self, TrackerError> {
-        self.assert_build()?;
-        if self.file.exists() {
-            let f = File::open(&self.file)?;
-            let loaded = Upgrade::upgrade(BufReader::new(f))?;
-            self.entries = loaded.entries;
-            self.version = loaded.version;
-
-            self.entries.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
-        } else {
-            log::info!("file not yet created: {:?}", &self.file);
-        }
-
-        Ok(self)
-    }
-
-    pub fn write_to_file(&self) -> Result<(), TrackerError> {
-        self.assert_build()?;
-        log::debug!("write data to time file at {:?}", &self.file);
-        let w = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(false)
-            // The file may be longer than the new content, e.g. after being reformatted by hand.
-            .truncate(true)
-            .open(&self.file)?;
-        Ok(serde_json::to_writer(w, self)?)
-    }
-
-    fn assert_build(&self) -> Result<(), TrackerError> {
-        if !self.build {
-            Err(TrackerError::TimeDataError {
-                message: "time data not build".to_string(),
-            })
-        } else {
-            Ok(())
-        }
-    }
-}
-
-pub struct TimesheetBuilder {
-    inner: Timesheet,
-    folder: PathBuf,
-    has_file: bool,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Folder {
-    inner: PathBuf,
-}
-
-impl From<PathBuf> for Folder {
-    fn from(path: PathBuf) -> Self {
-        Folder { inner: path }
-    }
-}
-
-impl From<&str> for Folder {
-    fn from(str: &str) -> Self {
-        Folder {
-            inner: PathBuf::from_str(str).unwrap(),
-        }
-    }
-}
-
-impl From<String> for Folder {
-    fn from(str: String) -> Self {
-        Folder {
-            inner: PathBuf::from_str(&str).unwrap(),
-        }
-    }
-}
-
-impl From<Folder> for PathBuf {
-    fn from(val: Folder) -> Self {
-        val.inner
-    }
-}
-
-impl TimesheetBuilder {
-    pub fn folder(&mut self, folder: Folder) -> &mut Self {
-        log::debug!("set time data folder to: {:?}", &folder);
-        fs::create_dir_all(&folder.inner).unwrap();
-        self.folder = folder.into();
-        self
-    }
-
-    pub fn today(&mut self) -> &mut Self {
-        self.date(Utc::now())
-    }
-
-    pub fn date(&mut self, date: DateTime<Utc>) -> &mut Self {
-        let df = date.format("%Y%m%d");
-        let file = self.folder.join(format!("{}.json", df));
-        log::debug!("set time data file to: {:?}", &file);
-        self.inner.file = file;
-        self.has_file = true;
-        self.inner.date = Some(date);
-        self
-    }
-
-    pub fn build(&mut self) -> Result<Timesheet, TrackerError> {
-        if !self.has_file {
-            Err(TrackerError::TimeDataError {
-                message: "time data file is not defined".to_string(),
-            })
-        } else {
-            self.inner.build = true;
-            log::debug!("build time data: {:?}", &self.inner);
-            Ok(self.inner.clone())
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{ fs::{ self, File }, io::Write, ops::Add };
+    use std::ops::Add;
 
     use chrono::{ Duration, TimeZone, Timelike };
 
@@ -341,24 +200,6 @@ mod tests {
     fn logger() {
         // std::env::set_var("RUST_LOG", "debug");
         let _ = env_logger::builder().is_test(true).try_init();
-    }
-
-    mod builder {
-        use super::*;
-
-        #[test]
-        fn should_error_with_file_not_set() {
-            logger();
-            let time_data = Timesheet::builder().build();
-            assert!(time_data.is_err());
-        }
-
-        #[test]
-        fn should_error_with_date_not_set() {
-            logger();
-            let time_data = Timesheet::builder().folder("".into()).build();
-            assert!(time_data.is_err());
-        }
     }
 
     mod fill_break {
@@ -381,14 +222,13 @@ mod tests {
                 })
                 .collect();
             Timesheet {
-                entries: data,
-                build: true,
+                data,
                 ..Default::default()
             }
         }
 
         fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
-            t.entries
+            t.data
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
@@ -508,14 +348,13 @@ mod tests {
                 })
                 .collect();
             Timesheet {
-                entries: data,
-                build: true,
+                data,
                 ..Default::default()
             }
         }
 
         fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
-            t.entries
+            t.data
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
@@ -549,7 +388,7 @@ mod tests {
         fn should_reject_empty_day() {
             let mut t = day(&[]);
             assert!(t.takeover(30).is_err());
-            assert!(t.entries.is_empty());
+            assert!(t.data.is_empty());
         }
 
         #[test]
@@ -587,40 +426,6 @@ mod tests {
         }
     }
 
-    mod write {
-        use chrono::Utc;
-
-        use super::*;
-
-        #[test]
-        fn should_replace_longer_file() -> Result<(), TrackerError> {
-            let temp_dir = tempfile::tempdir()?;
-            let file = temp_dir.path().join("20220207.json");
-            // Pretty printed, as after saving it in an editor, longer than written compactly.
-            fs::write(
-                &file,
-                "{\n    \"data\": [\n        {\n            \"id\": 1,\n            \"status\": \"Connect\",\n            \"time\": \"2022-02-07T06:00:00Z\"\n        }\n    ],\n    \"version\": 2\n}\n"
-            )?;
-            let before = fs::metadata(&file)?.len();
-
-            let mut t = Timesheet::builder()
-                .folder(temp_dir.path().to_path_buf().into())
-                .date(Utc.with_ymd_and_hms(2022, 2, 7, 0, 0, 0).unwrap())
-                .build()?;
-            t.read_from_file()?.write_to_file()?;
-
-            let content = fs::read_to_string(&file)?;
-            assert!((content.len() as u64) < before, "{content}");
-            assert_eq!(
-                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-02-07T06:00:00Z\"}],\"version\":2}",
-                content
-            );
-            t.read_from_file()?;
-            assert_eq!(1, t.entries.len());
-            Ok(())
-        }
-    }
-
     mod prepend {
         use chrono::{ DateTime, Utc };
 
@@ -641,14 +446,13 @@ mod tests {
                 })
                 .collect();
             Timesheet {
-                entries: data,
-                build: true,
+                data,
                 ..Default::default()
             }
         }
 
         fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
-            t.entries
+            t.data
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
@@ -713,7 +517,7 @@ mod tests {
         fn should_reject_without_start() {
             let mut t = day(&[]);
             assert!(t.prepend(30, "manually added").is_err());
-            assert!(t.entries.is_empty());
+            assert!(t.data.is_empty());
         }
 
         #[test]
@@ -755,15 +559,13 @@ mod tests {
                 })
                 .collect();
             Timesheet {
-                entries: data,
-                build: true,
-                date: Some(at(6, 0)),
+                data,
                 ..Default::default()
             }
         }
 
         fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
-            t.entries
+            t.data
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
@@ -785,7 +587,7 @@ mod tests {
         #[test]
         fn should_fill_empty_day() -> Result<(), TrackerError> {
             let mut t = day(&[]);
-            t.absence("sick", at(9, 0), &settings())?;
+            t.absence(at(6, 0), "sick", at(9, 0), &settings())?;
 
             assert_eq!(
                 vec![(Status::Connect, at(6, 0), sick()), (Status::End, at(14, 30), None)],
@@ -798,7 +600,7 @@ mod tests {
         #[test]
         fn should_extend_running_day_from_now() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0)]);
-            t.absence("sick", at(10, 0), &settings())?;
+            t.absence(at(6, 0), "sick", at(10, 0), &settings())?;
 
             assert_eq!(
                 vec![
@@ -815,7 +617,7 @@ mod tests {
         #[test]
         fn should_extend_ended_day_from_its_end() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 10, 0)]);
-            t.absence("sick", at(15, 0), &settings())?;
+            t.absence(at(6, 0), "sick", at(15, 0), &settings())?;
 
             assert_eq!(
                 vec![
@@ -834,7 +636,7 @@ mod tests {
             let mut t = day(
                 &[(Status::Connect, 8, 0), (Status::Break, 12, 0), (Status::Connect, 13, 0)]
             );
-            t.absence("sick", at(14, 0), &settings())?;
+            t.absence(at(6, 0), "sick", at(14, 0), &settings())?;
 
             assert_eq!((Status::End, at(17, 0), None), summary(&t)[4]);
             assert_eq!("08:00", worktime(&t));
@@ -844,7 +646,7 @@ mod tests {
         #[test]
         fn should_end_running_break() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::Break, 12, 0)]);
-            t.absence("sick", at(12, 15), &settings())?;
+            t.absence(at(6, 0), "sick", at(12, 15), &settings())?;
 
             assert_eq!(
                 vec![
@@ -862,7 +664,7 @@ mod tests {
         #[test]
         fn should_extend_past_day_from_last_entry() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0)]);
-            t.absence("sick", Utc.with_ymd_and_hms(2022, 2, 9, 9, 0, 0).unwrap(), &settings())?;
+            t.absence(at(6, 0), "sick", Utc.with_ymd_and_hms(2022, 2, 9, 9, 0, 0).unwrap(), &settings())?;
 
             assert_eq!((Status::Connect, at(8, 0), sick()), summary(&t)[1]);
             assert_eq!((Status::End, at(16, 30), None), summary(&t)[2]);
@@ -874,7 +676,7 @@ mod tests {
             let mut t = day(&[(Status::Connect, 6, 0), (Status::End, 14, 30)]);
             let before = summary(&t);
 
-            assert!(t.absence("vacation", at(15, 0), &settings()).is_err());
+            assert!(t.absence(at(6, 0), "vacation", at(15, 0), &settings()).is_err());
             assert_eq!(before, summary(&t));
         }
 
@@ -883,264 +685,53 @@ mod tests {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 10, 0), (Status::Takeover, 10, 0)]);
             let before = summary(&t);
 
-            assert!(t.absence("sick", at(11, 0), &settings()).is_err());
+            assert!(t.absence(at(6, 0), "sick", at(11, 0), &settings()).is_err());
             assert_eq!(before, summary(&t));
         }
     }
 
-    mod time_data {
-        use std::{ io::Read, process::Command };
-
-        use chrono::{ NaiveTime, Utc };
-
+    mod assert_break {
         use super::*;
 
-        fn wait() {
-            let mut child = Command::new("sleep").arg("1").spawn().unwrap();
-            let _result = child.wait().unwrap();
+        fn timesheet(json: &str) -> Timesheet {
+            serde_json::from_str(json).unwrap()
         }
 
         #[test]
-        fn should_write_time_data() -> Result<(), TrackerError> {
+        fn should_do_nothing_with_long_break() -> Result<(), TrackerError> {
             logger();
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
-            let day = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
-            let mut time_data = Timesheet::builder()
-                .folder(temp_dir.into_path().into())
-                .date(day)
-                .build()?;
-            time_data
-                .read_from_file()?
-                .append(
-                    Status::Connect,
-                    day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap()).unwrap(),
-                    None
-                )?
-                .append(
-                    Status::End,
-                    day.with_time(NaiveTime::from_hms_opt(4, 1, 0).unwrap()).unwrap(),
-                    None
-                )?
-                .write_to_file()?;
+            let mut time_data = timesheet(
+                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"status\":\"Break\",\"time\":\"2022-08-04T00:30:53.523319900Z\"},{\"status\":\"Connect\",\"time\":\"2022-08-04T02:15:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}],\"version\":1}"
+            );
 
-            wait();
-
-            assert!(&time_file.exists());
-            assert!(fs::metadata(&time_file)?.len() > 0);
-            Ok(())
-        }
-
-        #[test]
-        fn should_read_time_data() -> Result<(), TrackerError> {
-            logger();
-            let file_content =
-                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}],\"version\":1}";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220804.json");
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            wait();
-
-            let mut time_data = Timesheet::builder()
-                .folder(temp_dir.into_path().into())
-                .date(Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap())
-                .build()?;
-
-            time_data.read_from_file()?;
-            assert_eq!(2, time_data.entries.len());
-            Ok(())
-        }
-
-        #[test]
-        fn should_read_and_write_time_data() -> Result<(), TrackerError> {
-            logger();
-            let file_content =
-                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}],\"version\":1}";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220804.json");
-            let day = Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap();
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            wait();
-
-            let initial_size = fs::metadata(&time_file)?.len();
-
-            let mut time_data = Timesheet::builder()
-                .folder(temp_dir.into_path().into())
-                .date(day)
-                .build()?;
-
-            time_data.read_from_file()?;
-            assert_eq!(2, time_data.entries.len());
-
-            time_data.append(
-                Status::End,
-                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap(),
-                None
+            time_data.assert_break(
+                Duration::minutes(45),
+                Duration::hours(1).add(Duration::minutes(15))
             )?;
-            assert_eq!(3, time_data.entries.len());
+            assert_eq!(4, time_data.data.len());
 
-            time_data.write_to_file()?;
-            assert!(fs::metadata(&time_file)?.len() > initial_size);
-            Ok(())
-        }
-
-        #[test]
-        fn should_update_and_write_time_data() -> Result<(), TrackerError> {
-            logger();
-            let file_content =
-                "[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"}]";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220804.json");
-            let day = Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap();
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            wait();
-
-            let initial_size = fs::metadata(&time_file)?.len();
-
-            let mut time_data = Timesheet::builder()
-                .folder(temp_dir.into_path().into())
-                .date(day)
-                .build()?;
-
-            time_data.read_from_file()?;
-            assert_eq!(2, time_data.entries.len());
-
-            time_data.append(
-                Status::End,
-                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap(),
-                None
-            )?;
-            assert_eq!(3, time_data.entries.len());
-
-            time_data.write_to_file()?;
-            assert!(fs::metadata(&time_file)?.len() > initial_size);
-
-            let file_content_update =
-                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":2}";
-            let mut update_file = File::open(&time_file).unwrap();
-            let mut data = vec![];
-            update_file.read_to_end(&mut data)?;
-            let repr = String::from_utf8(data).unwrap();
-
-            assert_eq!(repr, file_content_update, "text compare");
-            Ok(())
-        }
-
-        #[test]
-        fn should_assert_long_break_do_nothing() -> Result<(), TrackerError> {
-            logger();
-            let file_content =
-                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"status\":\"Break\",\"time\":\"2022-08-04T00:30:53.523319900Z\"},{\"status\":\"Connect\",\"time\":\"2022-08-04T02:15:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}],\"version\":1}";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            wait();
-
-            let mut time_data = Timesheet::builder()
-                .folder(temp_dir.into_path().into())
-                .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
-                .build()?;
-
-            time_data
-                .read_from_file()?
-                .assert_break(
-                    Duration::minutes(45),
-                    Duration::hours(1).add(Duration::minutes(15))
-                )?;
-            assert_eq!(4, time_data.entries.len());
-
-            let r#break = match time_data.entries.iter().find(|x| x.status == Status::Break) {
-                Some(c) => c.into(),
-                None => None,
-            };
-
-            let connects = time_data.entries
+            let r#break = time_data.data.iter().find(|x| x.status == Status::Break).unwrap();
+            let connect = time_data.data
                 .iter()
                 .filter(|x| x.status == Status::Connect)
-                .cloned()
-                .collect::<Vec<Entry>>();
-            let connect = connects.last();
+                .last()
+                .unwrap();
 
-            assert!(r#break.is_some(), "break should be set");
-            assert!(connect.is_some(), "connect should be set");
-
-            let duration_b = r#break.unwrap().time.num_seconds_from_midnight();
-            let duration_c = connect.unwrap().time.num_seconds_from_midnight();
+            let duration_b = r#break.time.num_seconds_from_midnight();
+            let duration_c = connect.time.num_seconds_from_midnight();
             assert_eq!(6300, duration_c - duration_b, "total break duration should be 30 minutes");
             Ok(())
         }
 
         #[test]
-        fn should_assert_break_and_do_nothing() -> Result<(), TrackerError> {
+        fn should_do_nothing_with_enough_break() -> Result<(), TrackerError> {
             logger();
-            let file_content =
-                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}],\"version\":1}";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
+            let mut time_data = timesheet(
+                "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}],\"version\":1}"
+            );
 
-            wait();
-
-            let mut time_data = Timesheet::builder()
-                .folder(temp_dir.into_path().into())
-                .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
-                .build()?;
-
-            time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
-            assert_eq!(2, time_data.entries.len());
-            Ok(())
-        }
-
-        #[test]
-        fn should_read_from_pretty_json() -> Result<(), TrackerError> {
-            logger();
-            let file_content =
-                "{\"data\":[\n    {\n        \"id\": 1,\n        \"status\": \"Connect\",\n        \"time\": \"2022-08-04T00:00:53.523319900Z\"\n    },\n    {\n        \"id\": 2,\n        \"status\": \"End\",\n        \"time\": \"2022-08-04T04:00:53.523332900Z\"\n    }\n], \"version\":1 \n}";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            wait();
-
-            let mut time_data = Timesheet::builder()
-                .folder(temp_dir.into_path().into())
-                .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
-                .build()?;
-
-            time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
-            assert_eq!(2, time_data.entries.len());
-            Ok(())
-        }
-
-        #[test]
-        fn should_read_from_pretty_json_carriage_return() -> Result<(), TrackerError> {
-            logger();
-            let file_content =
-                "{\r\n    \"data\": [\r\n        {\r\n            \"id\": 1,\r\n            \"status\": \"Connect\",\r\n            \"time\": \"2022-08-04T00:00:53.523319900Z\"\r\n        },\r\n        {\r\n            \"id\": 2,\r\n            \"status\": \"End\",\r\n            \"time\": \"2022-08-04T04:00:53.523332900Z\"\r\n        }\r\n    ],\r\n    \"version\": 1\r\n}";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            wait();
-
-            let mut time_data = Timesheet::builder()
-                .folder(temp_dir.into_path().into())
-                .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
-                .build()?;
-
-            time_data.read_from_file()?.assert_break(Duration::minutes(15), Duration::minutes(45))?;
-            assert_eq!(2, time_data.entries.len());
+            time_data.assert_break(Duration::minutes(15), Duration::minutes(45))?;
+            assert_eq!(2, time_data.data.len());
             Ok(())
         }
     }
