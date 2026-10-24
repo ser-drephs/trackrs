@@ -1,3 +1,31 @@
+## [3.0.0](https://github.com/ser-drephs/trackrs/compare/v2.0.0...v3.0.0) (2026-10-24)
+
+### ⚠ BREAKING CHANGES
+
+* use `start` instead of `continue` and `break` instead of `disconnect`.
+
+### Features
+
+* add `add` command ([72bd10c](https://github.com/ser-drephs/trackrs/commit/72bd10c190c4886db2559802c4b0c6cd039838b6))
+* add `sick` and `vacation` subcommands ([cd1126e](https://github.com/ser-drephs/trackrs/commit/cd1126ee8330070a7e08234da7d5aa1381ef0f1d))
+* add cumulated column to status table ([fc78a27](https://github.com/ser-drephs/trackrs/commit/fc78a27d7f0d9642aa8bf7a45a8c60ca8f519d93))
+* add day status to show the status of another day ([a5bd047](https://github.com/ser-drephs/trackrs/commit/a5bd04789e1956fc57afbb385d61974e869be831))
+* add monthly status ([8f1b51a](https://github.com/ser-drephs/trackrs/commit/8f1b51ac6b3bef7f94b05d7d0ded0da722fcf02e))
+* add notes to entry ([ba1e283](https://github.com/ser-drephs/trackrs/commit/ba1e2836919535b028d015a268b13e7886b05b7f))
+* add overtime generation and consideration for status ([e532a20](https://github.com/ser-drephs/trackrs/commit/e532a20ce7cb1e2f23b3f8f7dab770fdd25666cd))
+* add year status ([e5bcf2d](https://github.com/ser-drephs/trackrs/commit/e5bcf2d192d3ac76710ac7efecd610e75bed2dec))
+* use table layout for week by default ([a7d6889](https://github.com/ser-drephs/trackrs/commit/a7d68893c45cd4dde58736fafa8081efbdfc453e))
+
+### Bug Fixes
+
+* command `takeover` and fill break calculation ([dbb6270](https://github.com/ser-drephs/trackrs/commit/dbb6270716d6e1822d16860177412bede006b66a))
+* empty weekly status entries show overall overtime ([ff8d318](https://github.com/ser-drephs/trackrs/commit/ff8d3188f40fb403783ccf8f3ba80f363183d6c0))
+* keep time files valid after editing them by hand ([c1377c8](https://github.com/ser-drephs/trackrs/commit/c1377c88d23c4bd599da002665e912de93cc0f95))
+
+### Code Refactoring
+
+* remove `continue` and `disconnect` subcommands ([2e34a05](https://github.com/ser-drephs/trackrs/commit/2e34a0513f65168a85e0129285555abcccc2e920))
+
 ## [2.0.0](https://github.com/ser-drephs/trackrs/compare/v1.4.1...v2.0.0) (2025-03-25)
 
 
