@@ -147,7 +147,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.data[0].time).to_owned().into());
+            let w = Duration::minutes(s.workperday.minutes_on(d.data[0].time).into());
 
             self.exp_worktime = Some(StatusTime::from(w));
 
@@ -203,7 +203,7 @@ impl StatusDaily {
             let d = self.data.as_ref().unwrap();
             let s = self.settings.as_ref().unwrap();
             // get work per day as based on the first entry of time data
-            let w = Duration::minutes(s.workperday.from(d.data[0].time).to_owned().into());
+            let w = Duration::minutes(s.workperday.minutes_on(d.data[0].time).into());
 
             let e = if self.r#break.to_owned().unwrap() > self.exp_break.to_owned().unwrap() {
                 w.add(self.r#break.to_owned().unwrap().into())
@@ -411,7 +411,7 @@ mod tests {
         StatusDaily,
         StatusTime,
         Timesheet,
-        WorkPerDayInMinutes,
+        WorkPerDay,
     };
     use crate::MemoryStorage;
 
@@ -864,7 +864,7 @@ mod tests {
                         minutes: 30,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     saturday: 8 * 60,
                     sunday: 8 * 60,
                     ..Default::default()
@@ -945,7 +945,7 @@ mod tests {
                         minutes: 45,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     wednesday: 6 * 60,
                     ..Default::default()
                 },
@@ -1022,7 +1022,7 @@ mod tests {
                         minutes: 45,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     wednesday: 6 * 60,
                     ..Default::default()
                 },
@@ -1398,7 +1398,7 @@ mod tests {
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     wednesday: 8 * 60,
                     ..Default::default()
                 },
@@ -1465,7 +1465,7 @@ mod tests {
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     wednesday: 8 * 60,
                     ..Default::default()
                 },
@@ -1532,7 +1532,7 @@ mod tests {
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     wednesday: 8 * 60,
                     ..Default::default()
                 },
@@ -1597,7 +1597,7 @@ mod tests {
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     wednesday: 8 * 60,
                     ..Default::default()
                 },
@@ -1660,7 +1660,7 @@ mod tests {
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     wednesday: 6 * 60,
                     ..Default::default()
                 },
@@ -1731,7 +1731,7 @@ mod tests {
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     wednesday: 7 * 60,
                     ..Default::default()
                 },
@@ -1776,7 +1776,7 @@ mod tests {
                         minutes: 45,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     wednesday: 6 * 60,
                     ..Default::default()
                 },
@@ -1887,7 +1887,7 @@ mod tests {
                         minutes: 30,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     monday: 510,
                     ..Default::default()
                 },
@@ -1942,7 +1942,7 @@ mod tests {
                         minutes: 45,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     monday: 360,
                     ..Default::default()
                 },
@@ -2215,7 +2215,7 @@ mod tests {
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     friday: 6 * 60,
                     ..Default::default()
                 },
@@ -2278,7 +2278,7 @@ mod tests {
                         minutes: 60,
                     },
                 ].to_vec(),
-                workperday: WorkPerDayInMinutes {
+                workperday: WorkPerDay {
                     friday: 6 * 60,
                     ..Default::default()
                 },
