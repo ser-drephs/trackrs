@@ -10,7 +10,7 @@ use usage::{
 
 use crate::{
     Daily, JsonStorage, Overtime, Settings, StorageProvider, Status, StatusDisplay, StatusTime,
-    Yearly, Takeover, TimeDataMonthly, TimeDataWeekly, TimeDataYearly, Weekly, Monthly,
+    Yearly, Takeover, MonthlyData, WeeklyData, YearlyData, Weekly, Monthly,
     TrackerError,
 };
 
@@ -373,7 +373,7 @@ impl Cli {
         let now = now_in(zone);
 
         if let Some(y) = year {
-            let time_data = TimeDataYearly::for_year(&storage, *y, now.date_naive())?;
+            let time_data = YearlyData::for_year(&storage, *y, now.date_naive())?;
             let status = Yearly::new(&time_data, &settings, now)?;
             if table.unwrap_or(true) {
                 let carry = self.carry(&storage, &settings, status.start(), now)?;
@@ -385,7 +385,7 @@ impl Cli {
         }
 
         if let Some(m) = month {
-            let time_data = TimeDataMonthly::for_month(&storage, *m, now.date_naive())?;
+            let time_data = MonthlyData::for_month(&storage, *m, now.date_naive())?;
             let status = Monthly::new(&time_data, &settings, now)?;
             if table.unwrap_or(true) {
                 let carry = self.carry(&storage, &settings, status.start(), now)?;
@@ -406,7 +406,7 @@ impl Cli {
                 } else {
                     cur_week.year()
                 };
-                let time_data = TimeDataWeekly::for_week(&storage, year.try_into()?, *w, cur_week)?;
+                let time_data = WeeklyData::for_week(&storage, year.try_into()?, *w, cur_week)?;
                 let status = Weekly::new(&time_data, &settings, now)?;
 
                 if table.unwrap_or(true) {
@@ -459,7 +459,7 @@ impl Cli {
         let settings = Settings::new()?;
         let now = now_in(zone);
         let today = now.date_naive();
-        let (year, month) = TimeDataMonthly::resolve(*month, today)?;
+        let (year, month) = MonthlyData::resolve(*month, today)?;
         if (year, month) >= (today.year(), today.month()) {
             return Err(TrackerError::OvertimeError {
                 message: format!("{year:04}-{month:02} isn't finished yet"),
@@ -467,7 +467,7 @@ impl Cli {
         }
 
         let storage = JsonStorage::in_timezone(settings.folder.to_owned(), zone.clone());
-        let time_data = TimeDataMonthly::for_year_month(&storage, year, month)?;
+        let time_data = MonthlyData::for_year_month(&storage, year, month)?;
         let status = Monthly::new(&time_data, &settings, now)?;
         let stored = Overtime::new(Path::new(&settings.folder)).store(
             year,

@@ -4,7 +4,7 @@ use chrono::{ DateTime, Duration, FixedOffset, NaiveDate };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
-use crate::{ DailyData, Settings, StatusDisplay, StatusTime, TimeDataWeekly, TrackerError };
+use crate::{ DailyData, Settings, StatusDisplay, StatusTime, WeeklyData, TrackerError };
 
 /// The status of a week, or of its days within a month, calculated from its timesheets.
 #[derive(Clone, Default, Debug)]
@@ -21,7 +21,7 @@ pub struct Weekly {
 impl Weekly {
     /// Status of `data` at `now`, which ends a day that is still running.
     pub fn new(
-        data: &TimeDataWeekly,
+        data: &WeeklyData,
         settings: &Settings,
         now: DateTime<FixedOffset>
     ) -> Result<Self, TrackerError> {
@@ -306,14 +306,14 @@ mod tests {
         }
 
         /// The days of week 10 of 2022, from Monday on, with their timesheets.
-        fn weekly(days: Vec<(DateTime<FixedOffset>, Timesheet)>) -> TimeDataWeekly {
-            TimeDataWeekly {
+        fn weekly(days: Vec<(DateTime<FixedOffset>, Timesheet)>) -> WeeklyData {
+            WeeklyData {
                 week: 10,
                 days: days.into_iter().map(|(date, day)| (date.date_naive(), day)).collect(),
             }
         }
 
-        fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> TimeDataWeekly {
+        fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> WeeklyData {
             weekly(
                 vec![
                     (
@@ -482,7 +482,7 @@ mod tests {
 
         #[test]
         fn should_have_no_start_without_days() -> Result<(), TrackerError> {
-            let s = Weekly::new(&TimeDataWeekly::default(), &get_settings(), now())?;
+            let s = Weekly::new(&WeeklyData::default(), &get_settings(), now())?;
 
             assert_eq!(None, s.start());
             Ok(())

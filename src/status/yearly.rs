@@ -3,7 +3,7 @@ use std::fmt::Display;
 use chrono::{ DateTime, FixedOffset, NaiveDate };
 use prettytable::{ format, Table };
 
-use crate::{ Monthly, Settings, StatusDisplay, StatusTime, TimeDataYearly, TrackerError };
+use crate::{ Monthly, Settings, StatusDisplay, StatusTime, YearlyData, TrackerError };
 
 /// Status of a year, made of the monthly status of each of its months.
 #[derive(Clone, Debug)]
@@ -20,7 +20,7 @@ pub struct Yearly {
 impl Yearly {
     /// Status of `data` at `now`, which ends a day that is still running.
     pub fn new(
-        data: &TimeDataYearly,
+        data: &YearlyData,
         settings: &Settings,
         now: DateTime<FixedOffset>
     ) -> Result<Self, TrackerError> {
@@ -98,7 +98,7 @@ mod tests {
         Status,
         StatusDisplay,
         StatusTime,
-        TimeDataYearly,
+        YearlyData,
         TrackerError,
     };
 
@@ -113,7 +113,7 @@ mod tests {
             )
         });
         let today = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
-        let data = TimeDataYearly::for_year(&storage, 2022, today)?;
+        let data = YearlyData::for_year(&storage, 2022, today)?;
         // All days are ended or missing, so the clock doesn't matter.
         Yearly::new(&data, &Settings::default(), DateTime::default())
     }

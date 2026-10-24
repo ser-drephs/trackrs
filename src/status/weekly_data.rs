@@ -4,12 +4,12 @@ use crate::{ DailyData, Settings, StorageProvider, Timesheet, TrackerError };
 
 /// The days of a week, or of its days within a month, with their timesheets.
 #[derive(Default, Clone)]
-pub struct TimeDataWeekly {
+pub struct WeeklyData {
     pub week: i16,
     pub days: Vec<(NaiveDate, Timesheet)>,
 }
 
-impl TimeDataWeekly {
+impl WeeklyData {
     /// Load the ISO week `week` of `year`. A week of 0 or less counts back from `current_week`,
     /// e.g. -1 for last week, also across the new year.
     pub fn for_week(
@@ -32,7 +32,7 @@ impl TimeDataWeekly {
             .into_iter()
             .map(|date| Ok((date, storage.load(date)?)))
             .collect::<Result<_, TrackerError>>()?;
-        Ok(TimeDataWeekly { week, days })
+        Ok(WeeklyData { week, days })
     }
 
     /// First day of the week, or of its days that were loaded.
@@ -212,7 +212,7 @@ mod tests {
         #[test]
         fn should_load_the_timesheets_of_the_week() -> Result<(), TrackerError> {
             logger();
-            let t = TimeDataWeekly::for_week(&storage(), 2022, -2, current_week())?;
+            let t = WeeklyData::for_week(&storage(), 2022, -2, current_week())?;
 
             assert_eq!(3, t.week);
             assert_eq!(7, t.days.len());
@@ -225,7 +225,7 @@ mod tests {
 
         #[test]
         fn should_load_the_given_week_of_the_year() -> Result<(), TrackerError> {
-            let t = TimeDataWeekly::for_week(&storage(), 2022, 3, current_week())?;
+            let t = WeeklyData::for_week(&storage(), 2022, 3, current_week())?;
 
             assert_eq!(3, t.week);
             assert_eq!(NaiveDate::from_ymd_opt(2022, 1, 17), t.start());
@@ -234,7 +234,7 @@ mod tests {
 
         #[test]
         fn should_reject_week_not_in_year() {
-            let err = TimeDataWeekly::for_week(&storage(), 2022, 60, current_week()).err().unwrap();
+            let err = WeeklyData::for_week(&storage(), 2022, 60, current_week()).err().unwrap();
 
             assert_eq!("time data error: week 60 doesn't exist in 2022", err.to_string());
         }
@@ -249,7 +249,7 @@ mod tests {
                 NaiveDate::from_ymd_opt(2022, 1, 19).unwrap(),
                 NaiveDate::from_ymd_opt(2022, 1, 20).unwrap()
             ];
-            let t = TimeDataWeekly::for_dates(&storage(), 3, dates)?;
+            let t = WeeklyData::for_dates(&storage(), 3, dates)?;
 
             assert_eq!(3, t.week);
             assert_eq!(2, t.days.len());
@@ -261,7 +261,7 @@ mod tests {
 
         #[test]
         fn should_have_no_start_without_dates() -> Result<(), TrackerError> {
-            let t = TimeDataWeekly::for_dates(&storage(), 3, Vec::new())?;
+            let t = WeeklyData::for_dates(&storage(), 3, Vec::new())?;
 
             assert!(t.days.is_empty());
             assert_eq!(None, t.start());
@@ -280,8 +280,8 @@ mod tests {
         }
 
         /// The days `days` of January 2022 without entries.
-        fn week(days: &[u32]) -> TimeDataWeekly {
-            TimeDataWeekly {
+        fn week(days: &[u32]) -> WeeklyData {
+            WeeklyData {
                 week: 3,
                 days: days
                     .iter()
