@@ -147,21 +147,9 @@ impl StatusDaily {
                 (w, Duration::seconds(0))
             };
 
-            let mut bl = s.limits.to_owned();
-            bl.sort_by(|x, y| y.start.partial_cmp(&x.start).unwrap());
-
-            self.exp_break = match
-                bl.iter_mut().find(|x| tft - t >= Duration::minutes(x.start.to_owned().into()))
-            {
-                Some(eb) => {
-                    log::debug!("should take a break of {}", eb.minutes);
-                    Some(Duration::minutes(eb.minutes.into()).into())
-                }
-                None => {
-                    log::debug!("should not take a break");
-                    Some(Duration::minutes(0).into())
-                }
-            };
+            let eb = s.break_for(tft - t);
+            log::debug!("should take a break of {}", eb.num_minutes());
+            self.exp_break = Some(eb.into());
         }
         self
     }

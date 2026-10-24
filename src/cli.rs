@@ -1,6 +1,6 @@
 use std::{fmt::Display, process, str::FromStr};
 
-use chrono::{Datelike, IsoWeek, Local};
+use chrono::{Datelike, IsoWeek, Local, NaiveDate, Utc};
 use log::LevelFilter;
 use usage::{
     error::UsageErr,
@@ -32,6 +32,8 @@ pub enum Commands {
     Start { note: Option<String> },
     Break { note: Option<String> },
     End,
+    /// Full day of `sick` or `vacation`, named by the note.
+    Absence { date: NaiveDate, note: String },
     Takeover { minutes: u16 },
     Config { list: bool, edit: bool },
 }
@@ -89,6 +91,13 @@ impl Cli {
             "start" => Commands::Start { note: string(&out, "note").map(str::to_owned) },
             "break" => Commands::Break { note: string(&out, "note").map(str::to_owned) },
             "end" => Commands::End,
+            name @ ("sick" | "vacation") => Commands::Absence {
+                date: match string(&out, "date") {
+                    Some(d) => typed("date", d)?,
+                    None => Utc::now().date_naive(),
+                },
+                note: name.to_owned(),
+            },
             "takeover" => Commands::Takeover {
                 minutes: typed("minutes", string(&out, "minutes").unwrap_or_default())?,
             },
@@ -158,6 +167,7 @@ impl CliExecute for Cli {
         match &self.command {
             Commands::Break { note } => self.invoke_break(note),
             Commands::End => self.invoke_end(),
+            Commands::Absence { date, note } => self.invoke_absence(date, note),
             Commands::Status { week, table } => self.invoke_status(week, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
@@ -237,6 +247,22 @@ impl Cli {
             )?
             .write_to_file()?;
         self.invoke_status(&None, &None)
+    }
+
+    fn invoke_absence(&self, date: &NaiveDate, note: &str) -> TrackerResult {
+        log::info!("{note} executed for {date}");
+        let settings = Settings::new()?;
+        // An empty day starts at 06:00 UTC: a regular workday start across Europe (UTC-1 to UTC+3)
+        // that keeps the whole day on the same date there, in UTC and local time.
+        let start = date.and_hms_opt(6, 0, 0).unwrap().and_utc();
+        let mut time_data = TimeData::builder()
+            .folder(settings.folder.to_owned().into())
+            .date(start)
+            .build()?;
+        time_data
+            .read_from_file()?
+            .absence(note, Local::now().to_utc(), &settings)?
+            .write_to_file()
     }
 
     fn invoke_status(&self, week: &Option<i8>, table: &Option<bool>) -> TrackerResult {
