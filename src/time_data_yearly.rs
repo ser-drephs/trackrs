@@ -50,7 +50,7 @@ mod tests {
         let days: usize = y.months
             .iter()
             .flat_map(|m| &m.weeks)
-            .map(|w| w.entries.len())
+            .map(|w| w.dates.len())
             .sum();
         assert_eq!(365, days);
         assert_eq!(2022, y.year);

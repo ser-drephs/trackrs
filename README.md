@@ -63,7 +63,8 @@ Takeover is refused if the moved end would collide with earlier entries, or if a
 
 Execute `trackrs status` to get the current tracking status.
 Add `-t` to list today's work and break ranges with their notes as table.
-Use `-w <week>` for a week, `-m <month>` for a month and `-y <year>` for a year, either as number or relative like `-m -1` for the previous month.
+Use `-d <day>` for another day, `-w <week>` for a week, `-m <month>` for a month and `-y <year>` for a year, either as number or relative like `-m -1` for the previous month.
+A day can also be a date like `-d 2026-10-20`; as number it's the day of the current month, e.g. `-d 5`, and `-d -1` is yesterday.
 The month table shows the work time and overtime of each week, the year table of each month; add `--no-table` for the total only.
 The tables also show the overtime cumulated up to each row, starting with the overtime carried over from stored months (see below).
 
