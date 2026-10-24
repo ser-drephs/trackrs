@@ -1,6 +1,6 @@
 use std::{ env, fmt::Display, ops::Mul };
 
-use chrono::{ DateTime, Duration, Utc };
+use chrono::{ DateTime, Duration, NaiveDate, Utc };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
@@ -22,7 +22,13 @@ impl StatusWeekly {
         }
     }
 
-    pub fn format_table(&self) {
+    /// First day of the week, or of its days that were loaded.
+    pub fn start(&self) -> Option<NaiveDate> {
+        self.entries.first().map(|(d, _)| d.date_naive())
+    }
+
+    /// Print the table; `carry` is the overtime accumulated before the week.
+    pub fn format_table(&self, carry: Option<StatusTime>) {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_COLSEP);
 
@@ -53,7 +59,13 @@ impl StatusWeekly {
 
         log::trace!("iterate over entries");
 
-        let cumulated = StatusTime::cumulated(self.entries.iter().map(|(_, s)| &s.overtime));
+        if let Some(carry) = &carry {
+            table.add_row(row!["Carried over", "", "", "", "", "", carry]);
+        }
+        let cumulated = StatusTime::cumulated(
+            carry.unwrap_or_default(),
+            self.entries.iter().map(|(_, s)| &s.overtime)
+        );
         self.entries.iter().zip(cumulated).for_each(|((date, status), cumulated)| {
             table.add_row(
                 row![
@@ -564,7 +576,7 @@ mod tests {
 
             let mut b = StatusWeekly::builder();
             let s = b.data(time_data_weekly).settings(settings).build()?;
-            s.format_table();
+            s.format_table(None);
             Ok(())
         }
     }

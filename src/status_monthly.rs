@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use chrono::Month;
+use chrono::{ Month, NaiveDate };
 use prettytable::{ format, Table };
 
 use crate::{ Settings, StatusTime, StatusWeekly, TimeDataMonthly, TrackerError };
@@ -40,12 +40,23 @@ impl StatusMonthly {
         format!("{} {}", self.month_name(), self.year)
     }
 
-    pub fn format_table(&self) {
+    pub fn start(&self) -> NaiveDate {
+        NaiveDate::from_ymd_opt(self.year, self.month, 1).unwrap()
+    }
+
+    /// Print the table; `carry` is the overtime accumulated before the month.
+    pub fn format_table(&self, carry: Option<StatusTime>) {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_COLSEP);
         table.set_titles(row!["Week", "Work time", "Overtime", "Cumulated"]);
 
-        let cumulated = StatusTime::cumulated(self.weeks.iter().map(|w| &w.overtime));
+        if let Some(carry) = &carry {
+            table.add_row(row!["Carried over", "", "", carry]);
+        }
+        let cumulated = StatusTime::cumulated(
+            carry.unwrap_or_default(),
+            self.weeks.iter().map(|w| &w.overtime)
+        );
         for (week, cumulated) in self.weeks.iter().zip(cumulated) {
             table.add_row(row![week.week, week.total, week.overtime, cumulated]);
         }

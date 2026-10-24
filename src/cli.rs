@@ -9,8 +9,9 @@ use usage::{
 };
 
 use crate::{
-    entry::Status, Settings, StatusDaily, StatusMonthly, StatusWeekly, StatusYearly, Takeover,
-    TimeData, TimeDataMonthly, TimeDataWeekly, TimeDataYearly, TrackerError,
+    entry::Status, Overtime, Settings, StatusDaily, StatusMonthly, StatusTime, StatusWeekly,
+    StatusYearly, Takeover, TimeData, TimeDataMonthly, TimeDataWeekly, TimeDataYearly,
+    TrackerError,
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -49,6 +50,10 @@ pub enum Commands {
     },
     Add {
         minutes: u16,
+    },
+    Overtime {
+        month: i16,
+        force: bool,
     },
     Takeover {
         minutes: u16,
@@ -127,6 +132,10 @@ impl Cli {
             },
             "add" => Commands::Add {
                 minutes: typed("minutes", string(&out, "minutes").unwrap_or_default())?,
+            },
+            "overtime" => Commands::Overtime {
+                month: typed("month", string(&out, "m").unwrap_or_default())?,
+                force: flag(&out, "force"),
             },
             "takeover" => Commands::Takeover {
                 minutes: typed("minutes", string(&out, "minutes").unwrap_or_default())?,
@@ -217,6 +226,7 @@ impl CliExecute for Cli {
             } => self.invoke_status(week, month, year, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Add { minutes } => self.invoke_add(minutes),
+            Commands::Overtime { month, force } => self.invoke_overtime(month, force),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
             Commands::Start { note } => self.invoke_start(note),
         }
@@ -362,7 +372,7 @@ impl Cli {
             let time_data = TimeDataYearly::load(settings.folder.to_owned().into(), *y, today)?;
             let status = StatusYearly::new(time_data, &settings)?;
             if table.unwrap_or(true) {
-                status.format_table();
+                status.format_table(self.carry(&settings, status.start())?);
             } else {
                 println!("{}", status);
             }
@@ -374,7 +384,7 @@ impl Cli {
             let time_data = TimeDataMonthly::load(settings.folder.to_owned().into(), *m, today)?;
             let status = StatusMonthly::new(time_data, &settings)?;
             if table.unwrap_or(true) {
-                status.format_table();
+                status.format_table(self.carry(&settings, status.start())?);
             } else {
                 println!("{}", status);
             }
@@ -399,11 +409,15 @@ impl Cli {
 
                 let status = StatusWeekly::builder()
                     .data(time_data)
-                    .settings(settings)
+                    .settings(settings.to_owned())
                     .build()?;
 
                 if table.unwrap_or(true) {
-                    status.format_table();
+                    let carry = match status.start() {
+                        Some(start) => self.carry(&settings, start)?,
+                        None => None,
+                    };
+                    status.format_table(carry);
                 } else {
                     println!("{}", status);
                 }
@@ -425,6 +439,47 @@ impl Cli {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Overtime accumulated before `start` from the stored monthly overtime, noting stored months
+    /// that don't add up.
+    fn carry(
+        &self,
+        settings: &Settings,
+        start: NaiveDate,
+    ) -> Result<Option<StatusTime>, TrackerError> {
+        let overtime = Overtime::new(Path::new(&settings.folder));
+        for note in overtime.mismatches()? {
+            eprintln!("{note}");
+        }
+        overtime.carry(settings.folder.to_owned().into(), settings, start)
+    }
+
+    fn invoke_overtime(&self, month: &i16, force: &bool) -> TrackerResult {
+        log::info!("overtime executed");
+        let settings = Settings::new()?;
+        let today = Local::now().date_naive();
+        let (year, month) = TimeDataMonthly::resolve(*month, today)?;
+        if (year, month) >= (today.year(), today.month()) {
+            return Err(TrackerError::OvertimeError {
+                message: format!("{year:04}-{month:02} isn't finished yet"),
+            });
+        }
+
+        let time_data =
+            TimeDataMonthly::load_month(settings.folder.to_owned().into(), year, month)?;
+        let status = StatusMonthly::new(time_data, &settings)?;
+        let stored = Overtime::new(Path::new(&settings.folder)).store(
+            year,
+            month,
+            status.overtime.to_owned(),
+            *force,
+        )?;
+        println!(
+            "{year:04}-{month:02}: overtime {}, cumulated {}",
+            stored.overtime, stored.cumulated
+        );
         Ok(())
     }
 

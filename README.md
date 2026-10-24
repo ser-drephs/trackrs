@@ -65,6 +65,7 @@ Execute `trackrs status` to get the current tracking status.
 Add `-t` to list today's work and break ranges with their notes as table.
 Use `-w <week>` for a week, `-m <month>` for a month and `-y <year>` for a year, either as number or relative like `-m -1` for the previous month.
 The month table shows the work time and overtime of each week, the year table of each month; add `--no-table` for the total only.
+The tables also show the overtime cumulated up to each row, starting with the overtime carried over from stored months (see below).
 
 Status:
 ```
@@ -75,6 +76,30 @@ Break:       00:10 (-00:20)
 Started:     08:00
 End:         16:30 (est.)
 ```
+
+### Stored overtime
+
+Execute `trackrs overtime -m <month>` to calculate the overtime of a finished month and store it, e.g. `trackrs overtime -m -1` for the previous month.
+The months are stored in `overtime.json` in the configured folder, each with its overtime and the overtime cumulated up to and including it, as `HH:mm`:
+
+```json
+{
+  "2025-11": { "overtime": "-02:15", "cumulated": "10:30" },
+  "2025-12": { "overtime": "04:00", "cumulated": "14:30" }
+}
+```
+
+The cumulated overtime of a month is the cumulated overtime of the stored month before it plus its own overtime.
+The first stored month is the exception: its cumulated overtime is free, so it can include overtime from before, e.g. from another system.
+In the example, `2025-11` carries 12:45 hours from before.
+
+- Only finished months can be calculated.
+- A stored month is only replaced with `--force`.
+- A month before the first stored month, or the first stored month itself, is only calculated with `--force`. It then starts over: its cumulated overtime is its own overtime, and the overtime from before is dropped.
+- Calculating a month updates the cumulated overtime of all later stored months.
+- You can edit the file by hand, e.g. to enter the overtime of another system. Status notes months whose cumulated overtime doesn't match the month before.
+
+Week, month and year status start their cumulated overtime with the cumulated overtime of the last stored month before them, plus the overtime of the days between that month and the start of the week, month or year.
 
 ## Configuration
 
