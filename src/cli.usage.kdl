@@ -8,9 +8,10 @@ arg_required_else_help #true
 flag "-v --verbose" help="Increase logging verbosity" global=#true count=#true
 flag "-q --quiet" help="Decrease logging verbosity" global=#true count=#true conflicts="verbose"
 
-cmd "status" display_order=1 help="Get the status of current tracking" long_help="Get the status for either a day or a week. Not providing additional options will return status for today." {
+cmd "status" display_order=1 help="Get the status of current tracking" long_help="Get the status for either a day, a week or a month. Not providing additional options will return status for today." {
     flag "-w <week>" help="Week to show the status for" long_help="Either enter the correct week of the year or a relative value eg. -1" allow_hyphen_values=#true
-    flag "-t --table" help="Format status as table. Default for week status, which --no-table turns off." negate="--no-table"
+    flag "-m <month>" help="Month to show the status for" long_help="Either enter the month of the year or a relative value eg. -1" allow_hyphen_values=#true conflicts="w"
+    flag "-t --table" help="Format status as table. Default for week and month status, which --no-table turns off." negate="--no-table"
 }
 cmd "start" display_order=2 help="Start tracking work" long_help="Starts tracking work for today. Run again to continue after a break." {
     flag "-n --note <note>" help="Note to save with the entry"

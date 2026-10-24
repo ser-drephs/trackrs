@@ -49,8 +49,17 @@ impl TimeDataWeeklyBuilder {
         self
     }
 
+    /// Use only these dates of `week`, e.g. the days of a week within a month.
+    pub fn week_dates(&mut self, week: i8, dates: Vec<DateTime<Utc>>) -> &mut Self {
+        self.week = Some(week);
+        self.inner.week = week;
+        self.dates = Some(dates);
+        self
+    }
+
     pub fn build(&mut self) -> Result<TimeDataWeekly, TrackerError> {
-        if self.year.is_none() {
+        let given_dates = self.dates.is_some();
+        if self.year.is_none() && !given_dates {
             return Err(TrackerError::TimeDataError {
                 message: "year not defined".to_owned(),
             });
@@ -66,7 +75,10 @@ impl TimeDataWeeklyBuilder {
             });
         }
 
-        self.assert_relative_week().set_dates()?.set_files()?;
+        if !given_dates {
+            self.assert_relative_week().set_dates()?;
+        }
+        self.set_files()?;
         Ok(self.inner.clone())
     }
 

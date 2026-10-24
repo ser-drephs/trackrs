@@ -63,6 +63,8 @@ Takeover is refused if the moved end would collide with earlier entries, or if a
 
 Execute `trackrs status` to get the current tracking status.
 Add `-t` to list today's work and break ranges with their notes as table.
+Use `-w <week>` for a week and `-m <month>` for a month, either as number or relative like `-m -1` for the previous month.
+The month table shows the work time and overtime of each week; add `--no-table` for the month's total only.
 
 Status:
 ```
