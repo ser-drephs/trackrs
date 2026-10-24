@@ -39,7 +39,8 @@ impl StatusWeekly {
                 format!("{:width$}", "End"),
                 format!("{:width$}", "Break"),
                 format!("{:width$}", "Worktime"),
-                format!("{:width$}", "Overtime")
+                format!("{:width$}", "Overtime"),
+                format!("{:width$}", "Cumulated")
             ]
         );
 
@@ -52,7 +53,8 @@ impl StatusWeekly {
 
         log::trace!("iterate over entries");
 
-        self.entries.iter().for_each(|(date, status)| {
+        let cumulated = StatusTime::cumulated(self.entries.iter().map(|(_, s)| &s.overtime));
+        self.entries.iter().zip(cumulated).for_each(|((date, status), cumulated)| {
             table.add_row(
                 row![
                     date.to_owned().format("%a %d %b"),
@@ -60,7 +62,8 @@ impl StatusWeekly {
                     format!("{}", status_unwrap(status.end.to_owned())),
                     format!("{}", status_unwrap(status.r#break.to_owned())),
                     format!("{}", status.worktime),
-                    format!("{}", status.overtime)
+                    format!("{}", status.overtime),
+                    format!("{}", cumulated)
                 ]
             );
         });
@@ -76,7 +79,8 @@ impl StatusWeekly {
                 "",
                 self.decimal,
                 self.total,
-                self.overtime
+                self.overtime,
+                ""
             ]
         );
 
