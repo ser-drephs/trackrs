@@ -1,10 +1,10 @@
 use std::ops::{ Add, Mul };
 
-use chrono::{ DateTime, Duration, Local, Utc };
+use chrono::{ DateTime, Duration, Local, NaiveDate, NaiveTime, Utc };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
-use crate::{ Entry, Settings, Status, StatusTime, TimeData, TrackerError };
+use crate::{ Entry, Folder, Settings, Status, StatusTime, TimeData, TrackerError };
 
 #[derive(Default, Clone, Debug)]
 pub struct StatusDaily {
@@ -30,6 +30,23 @@ pub struct StatusDaily {
 }
 
 impl StatusDaily {
+    /// Status of `date` from its time data file in `folder`, `None` if it has no entries.
+    pub fn load(
+        folder: &Folder,
+        settings: &Settings,
+        date: NaiveDate
+    ) -> Result<Option<StatusDaily>, TrackerError> {
+        let mut data = TimeData::builder()
+            .folder(folder.to_owned())
+            .date(date.and_time(NaiveTime::MIN).and_utc())
+            .build()?;
+        data.read_from_file()?;
+        if data.entries.data.is_empty() {
+            return Ok(None);
+        }
+        StatusDaily::builder().data(data).settings(settings.to_owned()).build().map(Some)
+    }
+
     pub fn builder() -> StatusDailyBuilder {
         StatusDailyBuilder {
             inner: StatusDaily::default(),
@@ -410,6 +427,50 @@ mod tests {
     fn logger() {
         // std::env::set_var("RUST_LOG", "debug");
         let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    mod load {
+        use chrono::NaiveDate;
+
+        use super::*;
+
+        /// Write a day from `start` to `end` UTC with a break from 12:00 to 12:30.
+        fn write_day(folder: &std::path::Path, date: &str, start: &str, end: &str) {
+            let file = folder.join(format!("{}.json", date.replace('-', "")));
+            let content = format!(
+                "{{\"data\":[{{\"id\":1,\"status\":\"Connect\",\"time\":\"{date}T{start}:00Z\"}},{{\"id\":2,\"status\":\"Break\",\"time\":\"{date}T12:00:00Z\"}},{{\"id\":3,\"status\":\"Connect\",\"time\":\"{date}T12:30:00Z\"}},{{\"id\":4,\"status\":\"End\",\"time\":\"{date}T{end}:00Z\"}}],\"version\":2}}"
+            );
+            std::fs::write(file, content).unwrap();
+        }
+
+        fn load(folder: &std::path::Path, date: &str) -> Option<StatusDaily> {
+            let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap();
+            StatusDaily::load(&folder.to_path_buf().into(), &Settings::default(), date).unwrap()
+        }
+
+        #[test]
+        fn should_load_the_given_day() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            write_day(temp_dir.path(), "2022-03-07", "07:00", "15:30");
+            write_day(temp_dir.path(), "2022-03-08", "06:00", "16:30");
+
+            let monday = load(temp_dir.path(), "2022-03-07").unwrap();
+            assert_eq!("08:00", monday.worktime.to_string());
+            assert_eq!("00:30", monday.r#break.unwrap().to_string());
+
+            let tuesday = load(temp_dir.path(), "2022-03-08").unwrap();
+            assert_eq!("10:00", tuesday.worktime.to_string());
+            assert_eq!("02:00", tuesday.overtime.to_string());
+        }
+
+        #[test]
+        fn should_load_nothing_for_day_without_entries() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            write_day(temp_dir.path(), "2022-03-07", "07:00", "15:30");
+
+            assert!(load(temp_dir.path(), "2022-03-06").is_none());
+            assert!(load(temp_dir.path(), "2022-03-08").is_none());
+        }
     }
 
     mod ranges {

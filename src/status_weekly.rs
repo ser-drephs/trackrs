@@ -1,10 +1,10 @@
 use std::{ env, fmt::Display, ops::Mul };
 
-use chrono::{ DateTime, Duration, NaiveDate, Utc };
+use chrono::{ Duration, NaiveDate, NaiveTime };
 use colored::Colorize;
 use prettytable::{ format, Table };
 
-use crate::{ Settings, StatusDaily, StatusTime, TimeData, TimeDataWeekly, TrackerError };
+use crate::{ Settings, StatusDaily, StatusTime, TimeDataWeekly, TrackerError };
 
 #[derive(Clone, Default, Debug)]
 pub struct StatusWeekly {
@@ -12,7 +12,7 @@ pub struct StatusWeekly {
     pub(crate) total: StatusTime,
     pub(crate) overtime: StatusTime,
     decimal: f64,
-    entries: Vec<(DateTime<Utc>, StatusDaily)>,
+    entries: Vec<(NaiveDate, StatusDaily)>,
 }
 
 impl StatusWeekly {
@@ -24,7 +24,7 @@ impl StatusWeekly {
 
     /// First day of the week, or of its days that were loaded.
     pub fn start(&self) -> Option<NaiveDate> {
-        self.entries.first().map(|(d, _)| d.date_naive())
+        self.entries.first().map(|(d, _)| *d)
     }
 
     /// Print the table; `carry` is the overtime accumulated before the week.
@@ -139,32 +139,32 @@ impl StatusWeeklyBuilder {
             }
         };
 
-        let mut entries: Vec<(DateTime<Utc>, StatusDaily)> = Vec::new();
+        let mut entries: Vec<(NaiveDate, StatusDaily)> = Vec::new();
 
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();
 
-        data.entries.iter().for_each(|d: &TimeData| {
-            log::trace!("processing: {:?}", d);
-            let mut b = StatusDaily::builder();
-            if !d.entries.data.is_empty() {
-                let s = b.data(d.to_owned()).settings(settings.clone()).build().unwrap();
-                log::info!("got {} working time and {} overtime", s.worktime, s.overtime);
-                entries.append(&mut [(d.date.unwrap().to_owned(), s.to_owned())].to_vec());
-                total += s.worktime;
-                overtime += s.overtime;
-            } else {
-                let expected = self.settings
-                    .as_ref()
-                    .unwrap()
-                    .workperday.from_date(d.date.unwrap());
-                // A day without entries misses its whole target worktime.
-                let day_overtime = StatusTime::from(Duration::minutes(-(*expected as i64)));
-                overtime += day_overtime.to_owned();
-                let missing_status = StatusDaily::builder().empty_with_overtime(day_overtime);
-                entries.append(&mut [(d.date.unwrap().to_owned(), missing_status)].to_vec());
+        for date in &data.dates {
+            log::trace!("processing: {}", date);
+            match StatusDaily::load(&data.folder, &settings, *date)? {
+                Some(s) => {
+                    log::info!("got {} working time and {} overtime", s.worktime, s.overtime);
+                    total += s.worktime.to_owned();
+                    overtime += s.overtime.to_owned();
+                    entries.push((*date, s));
+                }
+                None => {
+                    let expected = settings.workperday.from_date(
+                        date.and_time(NaiveTime::MIN).and_utc()
+                    );
+                    // A day without entries misses its whole target worktime.
+                    let day_overtime = StatusTime::from(Duration::minutes(-(*expected as i64)));
+                    overtime += day_overtime.to_owned();
+                    let missing_status = StatusDaily::builder().empty_with_overtime(day_overtime);
+                    entries.push((*date, missing_status));
+                }
             }
-        });
+        }
 
         log::info!("totally {} working time and {} overtime", total, overtime);
 
@@ -322,7 +322,7 @@ mod tests {
     mod builder {
         use chrono::Utc;
 
-        use crate::Entries;
+        use crate::{ Entries, TimeData };
 
         use super::*;
 
@@ -377,6 +377,25 @@ mod tests {
             }
         }
 
+        /// Write the days with entries to `folder` and return the week of all their dates.
+        fn weekly(days: Vec<TimeData>, folder: &std::path::Path) -> Result<TimeDataWeekly, TrackerError> {
+            for day in &days {
+                if !day.entries.data.is_empty() {
+                    let mut t = TimeData::builder()
+                        .folder(folder.to_path_buf().into())
+                        .date(day.date.unwrap())
+                        .build()?;
+                    t.entries = day.entries.to_owned();
+                    t.write_to_file()?;
+                }
+            }
+            Ok(TimeDataWeekly {
+                folder: folder.to_path_buf().into(),
+                dates: days.iter().map(|d| d.date.unwrap().date_naive()).collect(),
+                week: 10,
+            })
+        }
+
         fn get_time_data(one_day_end: u8, one_day_minute_off: u8) -> Vec<TimeData> {
             [
                 TimeData {
@@ -420,10 +439,8 @@ mod tests {
             logger();
             let time_data = get_time_data(10, 42);
             let settings = get_settings();
-            let time_data_weekly = TimeDataWeekly {
-                entries: time_data,
-                week: 10,
-            };
+            let temp_dir = tempfile::tempdir()?;
+            let time_data_weekly = weekly(time_data, temp_dir.path())?;
 
             let mut b = StatusWeekly::builder();
             let s = b.data(time_data_weekly).settings(settings).build()?;
@@ -447,10 +464,8 @@ mod tests {
             logger();
             let time_data = get_time_data(9, 45);
             let settings = get_settings();
-            let time_data_weekly = TimeDataWeekly {
-                entries: time_data,
-                week: 10,
-            };
+            let temp_dir = tempfile::tempdir()?;
+            let time_data_weekly = weekly(time_data, temp_dir.path())?;
 
             let mut b = StatusWeekly::builder();
             let s = b.data(time_data_weekly).settings(settings).build()?;
@@ -474,10 +489,8 @@ mod tests {
             logger();
             let time_data = get_time_data(6, 17);
             let settings = get_settings();
-            let time_data_weekly = TimeDataWeekly {
-                entries: time_data,
-                week: 10,
-            };
+            let temp_dir = tempfile::tempdir()?;
+            let time_data_weekly = weekly(time_data, temp_dir.path())?;
 
             let mut b = StatusWeekly::builder();
             let s = b.data(time_data_weekly).settings(settings).build()?;
@@ -534,10 +547,8 @@ mod tests {
                 },
             ].to_vec();
             let settings = get_settings();
-            let time_data_weekly = TimeDataWeekly {
-                entries: time_data,
-                week: 10,
-            };
+            let temp_dir = tempfile::tempdir()?;
+            let time_data_weekly = weekly(time_data, temp_dir.path())?;
 
             let mut b = StatusWeekly::builder();
             let s = b.data(time_data_weekly).settings(settings).build()?;
@@ -569,10 +580,8 @@ mod tests {
             test_env();
             let time_data = get_time_data(10, 42);
             let settings = get_settings();
-            let time_data_weekly = TimeDataWeekly {
-                entries: time_data,
-                week: 10,
-            };
+            let temp_dir = tempfile::tempdir()?;
+            let time_data_weekly = weekly(time_data, temp_dir.path())?;
 
             let mut b = StatusWeekly::builder();
             let s = b.data(time_data_weekly).settings(settings).build()?;
