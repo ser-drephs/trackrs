@@ -1,0 +1,26 @@
+name "trackrs"
+bin "trackrs"
+about "Simple time tracker using CLI."
+long_about "A simple time tracker using the CLI. Writes an entry with the current timestamp for each command that is invoked."
+subcommand_required #true
+arg_required_else_help #true
+
+flag "-v --verbose" help="Increase logging verbosity" global=#true count=#true
+flag "-q --quiet" help="Decrease logging verbosity" global=#true count=#true conflicts="verbose"
+
+cmd "status" display_order=1 help="Get the status of current tracking" long_help="Get the status for either a day or a week. Not providing additional options will return status for today." {
+    flag "-w <week>" help="Week to show the status for" long_help="Either enter the correct week of the year or a relative value eg. -1" allow_hyphen_values=#true
+    flag "-t --table" help="Format week status as table."
+}
+cmd "start" display_order=2 help="Start tracking work" long_help="Starts tracking work for today."
+cmd "break" display_order=3 help="Take a break" long_help="Breaks current tracking."
+cmd "end" display_order=4 help="End tracking work" long_help="End tracking work for today."
+cmd "disconnect" display_order=5 help="Disconnect from work" long_help="Simple disconnect from work. This will only create a disconnect entry in the tracking history."
+cmd "continue" display_order=6 help="Continue tracking work" long_help="Continue tracking work for today."
+cmd "takeover" display_order=7 help="Take over time to next day" long_help="Takes over defined minutes to next day, whenever next connect is executed." {
+    arg "<minutes>" help="Minutes to take over to next day."
+}
+cmd "config" display_order=8 help="Configuration" long_help="List or edit configuration" {
+    flag "-l --list" help="List configuration" conflicts="edit"
+    flag "-e --edit" help="Open configuration in default editor" conflicts="list"
+}

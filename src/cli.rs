@@ -1,6 +1,12 @@
+use std::{fmt::Display, process, str::FromStr};
+
 use chrono::{Datelike, IsoWeek, Local};
-use clap::{Parser, Subcommand};
 use log::LevelFilter;
+use usage::{
+    error::UsageErr,
+    parse::{ParseOutput, ParseValue},
+    Spec,
+};
 
 use crate::{
     entry::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
@@ -8,85 +14,136 @@ use crate::{
 
 type TrackerResult = Result<(), TrackerError>;
 
+/// Usage spec describing the commands and options of the CLI.
+const SPEC: &str = include_str!("cli.usage.kdl");
+
 /// Simple time tracker using CLI.
 ///
 /// A simple time tracker using the CLI. Writes an entry with the current timestamp for each command that is invoked.
-#[derive(Parser, Debug)]
-#[clap(author, version, about)]
-#[clap(propagate_version = true)]
+#[derive(Debug)]
 pub struct Cli {
-    #[clap(subcommand)]
     command: Commands,
-
-    #[clap(flatten)]
-    verbose: clap_verbosity_flag::Verbosity,
+    verbosity: LevelFilter,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Debug)]
 pub enum Commands {
-    /// Get the status of current tracking
-    ///
-    /// Get the status for either a day or a week. Not providing additional options will return status for today.
-    #[clap(display_order = 1)]
-    Status {
-        /// Week to show the status for
-        ///
-        /// Either enter the correct week of the year or a relative value eg. -1
-        #[clap(short, value_parser, allow_hyphen_values = true)]
-        week: Option<i8>,
-
-        /// Format week status as table.
-        #[clap(short, long)]
-        table: bool,
-    },
-    /// Start tracking work
-    ///
-    /// Starts tracking work for today.
-    #[clap(display_order = 2)]
+    Status { week: Option<i8>, table: bool },
     Start,
-    /// Take a break
-    ///
-    /// Breaks current tracking.
-    #[clap(display_order = 3)]
     Break,
-    /// End tracking work
-    ///
-    /// End tracking work for today.
-    #[clap(display_order = 4)]
     End,
-    /// Disconnect from work
-    ///
-    /// Simple disconnect from work. This will only create a disconnect entry in the tracking history.
-    #[clap(display_order = 5)]
     Disconnect,
-    /// Continue tracking work
-    ///
-    /// Continue tracking work for today.
-    #[clap(display_order = 6)]
     Continue,
-    /// Take over time to next day
-    ///
-    /// Takes over defined minutes to next day, whenever next connect is executed.
-    #[clap(display_order = 7)]
-    Takeover {
-        /// Minutes to take over to next day.
-        #[clap()]
-        minutes: u16,
-    },
-    /// Configuration
-    ///
-    /// List or edit configuration
-    #[clap(display_order = 8)]
-    Config {
-        /// List configuration
-        #[clap(short, long, conflicts_with = "edit")]
-        list: bool,
-        /// Open configuration in default editor
-        #[clap(short, long, conflicts_with = "list")]
-        edit: bool,
-    },
+    Takeover { minutes: u16 },
+    Config { list: bool, edit: bool },
 }
 
+/// Message to print and exit code to terminate with, when parsing does not yield a command.
+type ParseExit = (String, i32);
+
+impl Cli {
+    /// Parse the process arguments, exiting on help, version or invalid input.
+    pub fn parse() -> Self {
+        Self::parse_from(std::env::args())
+    }
+
+    /// Parse the given arguments, exiting on help, version or invalid input.
+    pub fn parse_from<I, T>(args: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: ToString,
+    {
+        let args: Vec<String> = args.into_iter().map(|a| a.to_string()).collect();
+        Self::try_parse(&args).unwrap_or_else(|(msg, code)| {
+            if code == 0 {
+                println!("{msg}");
+            } else {
+                eprintln!("{msg}");
+            }
+            process::exit(code)
+        })
+    }
+
+    fn try_parse(args: &[String]) -> Result<Self, ParseExit> {
+        let mut spec: Spec = SPEC.parse().expect("cli usage spec is valid");
+        spec.version = Some(env!("CARGO_PKG_VERSION").to_owned());
+
+        let out = usage::Parser::new(&spec)
+            .explain(args)
+            .map_err(|e| (e.to_string(), 2))?;
+        if let Some(e) = out
+            .errors
+            .iter()
+            .find(|e| matches!(e, UsageErr::Help(_) | UsageErr::Version(_)))
+        {
+            return Err((e.to_string(), 0));
+        }
+        if !out.errors.is_empty() {
+            let msg = out.errors.iter().map(ToString::to_string);
+            return Err((msg.collect::<Vec<_>>().join("\n"), 2));
+        }
+
+        let command = match out.cmd.name.as_str() {
+            "status" => Commands::Status {
+                week: string(&out, "w").map(|w| typed("week", w)).transpose()?,
+                table: flag(&out, "table"),
+            },
+            "start" => Commands::Start,
+            "break" => Commands::Break,
+            "end" => Commands::End,
+            "disconnect" => Commands::Disconnect,
+            "continue" => Commands::Continue,
+            "takeover" => Commands::Takeover {
+                minutes: typed("minutes", string(&out, "minutes").unwrap_or_default())?,
+            },
+            "config" => Commands::Config {
+                list: flag(&out, "list"),
+                edit: flag(&out, "edit"),
+            },
+            other => return Err((format!("unrecognized subcommand '{other}'"), 2)),
+        };
+
+        // Same mapping as clap-verbosity-flag: errors by default, -v/-q step up/down.
+        let level = (1 + count(&out, "verbose")).saturating_sub(count(&out, "quiet"));
+        let verbosity = LevelFilter::iter()
+            .nth(level)
+            .unwrap_or(LevelFilter::Trace);
+
+        Ok(Cli { command, verbosity })
+    }
+}
+
+fn value<'a>(out: &'a ParseOutput, name: &str) -> Option<&'a ParseValue> {
+    let flag = out.flags.iter().find(|(f, _)| f.name == name).map(|(_, v)| v);
+    flag.or_else(|| out.args.iter().find(|(a, _)| a.name == name).map(|(_, v)| v))
+}
+
+fn flag(out: &ParseOutput, name: &str) -> bool {
+    matches!(value(out, name), Some(ParseValue::Bool(true)))
+}
+
+fn count(out: &ParseOutput, name: &str) -> usize {
+    match value(out, name) {
+        Some(ParseValue::MultiBool(v)) => v.iter().filter(|b| **b).count(),
+        _ => 0,
+    }
+}
+
+fn string<'a>(out: &'a ParseOutput, name: &str) -> Option<&'a str> {
+    match value(out, name) {
+        Some(ParseValue::String(s)) => Some(s),
+        _ => None,
+    }
+}
+
+fn typed<T>(name: &str, raw: &str) -> Result<T, ParseExit>
+where
+    T: FromStr,
+    T::Err: Display,
+{
+    raw.parse()
+        .map_err(|e| (format!("error: invalid value '{raw}' for '<{name}>': {e}"), 2))
+}
 pub trait CliExecute {
     fn execute(&self) -> TrackerResult;
     fn init_logger(&self) -> TrackerResult;
@@ -107,7 +164,7 @@ impl CliExecute for Cli {
     }
 
     fn init_logger(&self) -> TrackerResult {
-        let verbosity = self.verbose.log_level_filter();
+        let verbosity = self.verbosity;
 
         let mut builder = env_logger::builder();
         let logger = builder.filter_level(verbosity).format_target(false);
