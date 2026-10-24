@@ -28,9 +28,9 @@ pub struct Cli {
 
 #[derive(Debug)]
 pub enum Commands {
-    Status { week: Option<i8>, table: bool },
-    Start,
-    Break,
+    Status { week: Option<i8>, table: Option<bool> },
+    Start { note: Option<String> },
+    Break { note: Option<String> },
     End,
     Takeover { minutes: u16 },
     Config { list: bool, edit: bool },
@@ -84,10 +84,10 @@ impl Cli {
         let command = match out.cmd.name.as_str() {
             "status" => Commands::Status {
                 week: string(&out, "w").map(|w| typed("week", w)).transpose()?,
-                table: flag(&out, "table"),
+                table: opt_flag(&out, "table"),
             },
-            "start" => Commands::Start,
-            "break" => Commands::Break,
+            "start" => Commands::Start { note: string(&out, "note").map(str::to_owned) },
+            "break" => Commands::Break { note: string(&out, "note").map(str::to_owned) },
             "end" => Commands::End,
             "takeover" => Commands::Takeover {
                 minutes: typed("minutes", string(&out, "minutes").unwrap_or_default())?,
@@ -116,6 +116,14 @@ fn value<'a>(out: &'a ParseOutput, name: &str) -> Option<&'a ParseValue> {
 
 fn flag(out: &ParseOutput, name: &str) -> bool {
     matches!(value(out, name), Some(ParseValue::Bool(true)))
+}
+
+/// `None` when the flag is absent, so the caller can pick its own default.
+fn opt_flag(out: &ParseOutput, name: &str) -> Option<bool> {
+    match value(out, name) {
+        Some(ParseValue::Bool(b)) => Some(*b),
+        _ => None,
+    }
 }
 
 fn count(out: &ParseOutput, name: &str) -> usize {
@@ -148,12 +156,12 @@ pub trait CliExecute {
 impl CliExecute for Cli {
     fn execute(&self) -> TrackerResult {
         match &self.command {
-            Commands::Break => self.invoke_break(),
+            Commands::Break { note } => self.invoke_break(note),
             Commands::End => self.invoke_end(),
             Commands::Status { week, table } => self.invoke_status(week, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
-            Commands::Start => self.invoke_start(),
+            Commands::Start { note } => self.invoke_start(note),
         }
     }
 
@@ -181,7 +189,7 @@ impl CliExecute for Cli {
 }
 
 impl Cli {
-    fn invoke_start(&self) -> TrackerResult {
+    fn invoke_start(&self, note: &Option<String>) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
         let mut time_data = TimeData::builder()
@@ -192,11 +200,11 @@ impl Cli {
         time_data
             .read_from_file()?
             .assert_takeover(now.to_utc())?
-            .append(Status::Connect, now.to_utc())?
+            .append(Status::Connect, now.to_utc(), note.clone())?
             .write_to_file()
     }
 
-    fn invoke_break(&self) -> TrackerResult {
+    fn invoke_break(&self, note: &Option<String>) -> TrackerResult {
         log::info!("break executed");
         let settings = Settings::new()?;
         let mut time_data = TimeData::builder()
@@ -206,7 +214,7 @@ impl Cli {
         let now = Local::now();
         time_data
             .read_from_file()?
-            .append(Status::Break, now.to_utc())?
+            .append(Status::Break, now.to_utc(), note.clone())?
             .write_to_file()
     }
 
@@ -222,16 +230,16 @@ impl Cli {
             .build()?;
         let now = Local::now();
         time_data
-            .append(Status::End, now.to_utc())?
+            .append(Status::End, now.to_utc(), None)?
             .assert_break(
                 status.exp_break.unwrap().duration,
                 status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
-        self.invoke_status(&None, &false)
+        self.invoke_status(&None, &None)
     }
 
-    fn invoke_status(&self, week: &Option<i8>, table: &bool) -> TrackerResult {
+    fn invoke_status(&self, week: &Option<i8>, table: &Option<bool>) -> TrackerResult {
         log::info!("status executed");
         let settings = Settings::new()?;
 
@@ -250,7 +258,7 @@ impl Cli {
                     .settings(settings)
                     .build()?;
 
-                if *table {
+                if table.unwrap_or(true) {
                     status.format_table();
                 } else {
                     println!("{}", status);
@@ -266,7 +274,11 @@ impl Cli {
                     .data(time_data)
                     .settings(settings)
                     .build()?;
-                println!("{}", status);
+                if table.unwrap_or(false) {
+                    status.format_ranges_table();
+                } else {
+                    println!("{}", status);
+                }
             }
         }
         Ok(())
@@ -297,12 +309,12 @@ impl Cli {
             .build()?;
         let now = Local::now();
         time_data
-            .append(Status::End, now.to_utc())?
+            .append(Status::End, now.to_utc(), None)?
             .assert_break(
                 status.exp_break.unwrap().duration,
                 status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
-        self.invoke_status(&None, &false)
+        self.invoke_status(&None, &None)
     }
 }

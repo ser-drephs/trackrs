@@ -29,6 +29,7 @@ After this the status is available.
 ### Take a break
 
 Execute `trackrs break` to add a break entry.
+Add an optional note with `-n`, e.g. `trackrs break -n lunch`. This works for `trackrs start` too.
 Don't forget to continue after your break by executing `trackrs start` again.
 
 ### End tracking
@@ -38,6 +39,7 @@ Execute `trackrs end` to add an end entry and show the status for this day.
 ### Status
 
 Execute `trackrs status` to get the current tracking status.
+Add `-t` to list today's work and break ranges with their notes as table.
 
 Status:
 ```
