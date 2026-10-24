@@ -4,6 +4,7 @@ on:
   push:
     branches: [ main ]
     paths: [ src/** ]
+  workflow_dispatch:
 
 # Only checkout and cache use the automatic token; the release uses the SEMREL_TOKEN secret.
 permissions:
