@@ -1,4 +1,4 @@
-use chrono::{ DateTime, Duration, FixedOffset, Local, NaiveDate, NaiveTime, TimeZone };
+use chrono::{ DateTime, Duration, FixedOffset, NaiveDate, NaiveTime, TimeZone };
 use serde::{ Deserialize, Serialize };
 
 use crate::{ Entry, Settings, Status, StatusTime, TrackerError };
@@ -202,11 +202,12 @@ impl Timesheet {
 
     /// Fill the remaining target worktime of the day with an absence (`sick` or `vacation`).
     ///
-    /// The absence starts at 08:00 local time of `date` for an empty day, at the end of an ended
-    /// day (whose end is replaced), and otherwise at `now`, or at the last entry if the day is not
-    /// today. It lasts until the day's worktime reaches the target with its break.
-    pub fn absence(
+    /// The absence starts at 08:00 of `date` in the timezone `zone` for an empty day, at the end
+    /// of an ended day (whose end is replaced), and otherwise at `now`, or at the last entry if the
+    /// day is not today. It lasts until the day's worktime reaches the target with its break.
+    pub fn absence<Tz: TimeZone>(
         &mut self,
+        zone: &Tz,
         date: NaiveDate,
         note: &str,
         now: DateTime<FixedOffset>,
@@ -214,7 +215,7 @@ impl Timesheet {
     ) -> Result<&mut Self, TrackerError> {
         let mut data = self.data.clone();
         let from = match data.last().map(|e| (e.status.to_owned(), e.time)) {
-            None => Self::default_start(date)?,
+            None => Self::default_start(zone, date)?,
             Some((Status::End, time)) => {
                 data.pop();
                 time
@@ -251,10 +252,13 @@ impl Timesheet {
         self.append(Status::Connect, from, Some(note.to_owned()))?.append(Status::End, end, None)
     }
 
-    /// 08:00 local time of `date`, with the offset the machine has at that moment.
-    fn default_start(date: NaiveDate) -> Result<DateTime<FixedOffset>, TrackerError> {
+    /// 08:00 of `date` in the timezone `zone`, with the offset it has at that moment.
+    fn default_start<Tz: TimeZone>(
+        zone: &Tz,
+        date: NaiveDate
+    ) -> Result<DateTime<FixedOffset>, TrackerError> {
         let start = date.and_time(NaiveTime::from_hms_opt(8, 0, 0).unwrap());
-        Local.from_local_datetime(&start)
+        zone.from_local_datetime(&start)
             .earliest()
             .map(|start| start.fixed_offset())
             .ok_or_else(|| TrackerError::TimeDataError {
@@ -724,16 +728,14 @@ mod tests {
         #[test]
         fn should_fill_empty_day() -> Result<(), TrackerError> {
             let mut t = day(&[]);
-            t.absence(date(), "sick", at(9, 0), &settings())?;
+            t.absence(&Utc, date(), "sick", at(9, 0), &settings())?;
 
-            // Starts at 08:00 local time of the day, and ends after the target and the break.
-            let (start, end) = (t.data[0].time, t.data[1].time);
-            assert_eq!(2, t.data.len());
-            assert_eq!(date(), start.date_naive());
-            assert_eq!("08:00", start.format("%H:%M").to_string());
-            assert_eq!(Duration::hours(8) + Duration::minutes(30), end - start);
-            assert_eq!((Status::Connect, sick()), (t.data[0].status.clone(), t.data[0].note.clone()));
-            assert_eq!((Status::End, None), (t.data[1].status.clone(), t.data[1].note.clone()));
+            // Starts at 08:00 of the day in the given timezone, and ends after the target and the
+            // break.
+            assert_eq!(
+                vec![(Status::Connect, at(8, 0), sick()), (Status::End, at(16, 30), None)],
+                summary(&t)
+            );
             assert_eq!("08:00", worktime(&t));
             Ok(())
         }
@@ -741,7 +743,7 @@ mod tests {
         #[test]
         fn should_extend_running_day_from_now() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0)]);
-            t.absence(date(), "sick", at(10, 0), &settings())?;
+            t.absence(&Utc, date(), "sick", at(10, 0), &settings())?;
 
             assert_eq!(
                 vec![
@@ -758,7 +760,7 @@ mod tests {
         #[test]
         fn should_extend_ended_day_from_its_end() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 10, 0)]);
-            t.absence(date(), "sick", at(15, 0), &settings())?;
+            t.absence(&Utc, date(), "sick", at(15, 0), &settings())?;
 
             assert_eq!(
                 vec![
@@ -777,7 +779,7 @@ mod tests {
             let mut t = day(
                 &[(Status::Connect, 8, 0), (Status::Break, 12, 0), (Status::Connect, 13, 0)]
             );
-            t.absence(date(), "sick", at(14, 0), &settings())?;
+            t.absence(&Utc, date(), "sick", at(14, 0), &settings())?;
 
             assert_eq!((Status::End, at(17, 0), None), summary(&t)[4]);
             assert_eq!("08:00", worktime(&t));
@@ -787,7 +789,7 @@ mod tests {
         #[test]
         fn should_end_running_break() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::Break, 12, 0)]);
-            t.absence(date(), "sick", at(12, 15), &settings())?;
+            t.absence(&Utc, date(), "sick", at(12, 15), &settings())?;
 
             assert_eq!(
                 vec![
@@ -805,7 +807,7 @@ mod tests {
         #[test]
         fn should_extend_past_day_from_last_entry() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0)]);
-            t.absence(date(), "sick", Utc.with_ymd_and_hms(2022, 2, 9, 9, 0, 0).unwrap().fixed_offset(), &settings())?;
+            t.absence(&Utc, date(), "sick", Utc.with_ymd_and_hms(2022, 2, 9, 9, 0, 0).unwrap().fixed_offset(), &settings())?;
 
             assert_eq!((Status::Connect, at(8, 0), sick()), summary(&t)[1]);
             assert_eq!((Status::End, at(16, 30), None), summary(&t)[2]);
@@ -817,7 +819,7 @@ mod tests {
             let mut t = day(&[(Status::Connect, 6, 0), (Status::End, 14, 30)]);
             let before = summary(&t);
 
-            assert!(t.absence(date(), "vacation", at(15, 0), &settings()).is_err());
+            assert!(t.absence(&Utc, date(), "vacation", at(15, 0), &settings()).is_err());
             assert_eq!(before, summary(&t));
         }
 
@@ -826,7 +828,7 @@ mod tests {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 10, 0), (Status::Takeover, 10, 0)]);
             let before = summary(&t);
 
-            assert!(t.absence(date(), "sick", at(11, 0), &settings()).is_err());
+            assert!(t.absence(&Utc, date(), "sick", at(11, 0), &settings()).is_err());
             assert_eq!(before, summary(&t));
         }
     }
@@ -2227,6 +2229,19 @@ mod tests {
         }
 
         #[test]
+        fn should_start_an_absence_at_eight_in_the_given_zone() {
+            for (offset, hours) in [(9, "+09:00"), (-11, "-11:00"), (1, "+01:00"), (2, "+02:00")] {
+                let zone = FixedOffset::east_opt(offset * 3600).unwrap();
+                let date = NaiveDate::from_ymd_opt(2022, 2, 7).unwrap();
+                let mut t = Timesheet::default();
+                t.absence(&zone, date, "sick", at(0, 1, 1, 0, 0), &Settings::default()).unwrap();
+
+                assert_eq!(at(offset, 2, 7, 8, 0), t.data[0].time, "{hours}");
+                assert_eq!(at(offset, 2, 7, 16, 0), t.data[1].time, "{hours}");
+            }
+        }
+
+        #[test]
         fn should_start_an_absence_at_eight_local_time_with_the_offset_of_that_day() {
             // On the 7th of February the machine has the offset of its winter time, on the 8th of
             // August the one of its summer time, whatever the offsets are.
@@ -2235,7 +2250,7 @@ mod tests {
                 NaiveDate::from_ymd_opt(2022, 8, 8).unwrap(),
             ] {
                 let mut t = Timesheet::default();
-                t.absence(date, "sick", at(0, 1, 1, 0, 0), &Settings::default()).unwrap();
+                t.absence(&Local, date, "sick", at(0, 1, 1, 0, 0), &Settings::default()).unwrap();
 
                 let start = t.data[0].time;
                 assert_eq!(date, start.date_naive());

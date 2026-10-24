@@ -1,6 +1,6 @@
 use std::{fmt::Display, path::Path, process, str::FromStr};
 
-use chrono::{DateTime, Datelike, FixedOffset, IsoWeek, Local, NaiveDate};
+use chrono::{DateTime, Datelike, FixedOffset, IsoWeek, Local, NaiveDate, TimeZone, Utc};
 use log::LevelFilter;
 use usage::{
     error::UsageErr,
@@ -46,7 +46,8 @@ pub enum Commands {
     End,
     /// Full day of `sick` or `vacation`, named by the note.
     Absence {
-        date: NaiveDate,
+        /// Today if not given.
+        date: Option<NaiveDate>,
         note: String,
     },
     Add {
@@ -126,10 +127,7 @@ impl Cli {
             },
             "end" => Commands::End,
             name @ ("sick" | "vacation") => Commands::Absence {
-                date: match string(&out, "date") {
-                    Some(d) => typed("date", d)?,
-                    None => Local::now().date_naive(),
-                },
+                date: string(&out, "date").map(|d| typed("date", d)).transpose()?,
                 note: name.to_owned(),
             },
             "add" => Commands::Add {
@@ -210,28 +208,36 @@ where
     })
 }
 pub trait CliExecute {
-    fn execute(&self) -> TrackerResult;
+    /// Execute the command in the timezone of the machine.
+    fn execute(&self) -> TrackerResult {
+        self.execute_in(&Local)
+    }
+
+    /// Execute the command in the timezone `zone`: the time of the entries and the day they belong
+    /// to follow it, and old time files are converted to it.
+    fn execute_in<Tz: TimeZone + Clone>(&self, zone: &Tz) -> TrackerResult;
+
     fn init_logger(&self) -> TrackerResult;
 }
 
 impl CliExecute for Cli {
-    fn execute(&self) -> TrackerResult {
+    fn execute_in<Tz: TimeZone + Clone>(&self, zone: &Tz) -> TrackerResult {
         match &self.command {
-            Commands::Break { note } => self.invoke_break(note),
-            Commands::End => self.invoke_end(),
-            Commands::Absence { date, note } => self.invoke_absence(date, note),
+            Commands::Break { note } => self.invoke_break(zone, note),
+            Commands::End => self.invoke_end(zone),
+            Commands::Absence { date, note } => self.invoke_absence(zone, date, note),
             Commands::Status {
                 day,
                 week,
                 month,
                 year,
                 table,
-            } => self.invoke_status(day, week, month, year, table),
+            } => self.invoke_status(zone, day, week, month, year, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
-            Commands::Add { minutes } => self.invoke_add(minutes),
-            Commands::Overtime { month, force } => self.invoke_overtime(month, force),
-            Commands::Takeover { minutes } => self.invoke_takeover(minutes),
-            Commands::Start { note } => self.invoke_start(note),
+            Commands::Add { minutes } => self.invoke_add(zone, minutes),
+            Commands::Overtime { month, force } => self.invoke_overtime(zone, month, force),
+            Commands::Takeover { minutes } => self.invoke_takeover(zone, minutes),
+            Commands::Start { note } => self.invoke_start(zone, note),
         }
     }
 
@@ -258,17 +264,18 @@ impl CliExecute for Cli {
     }
 }
 
-/// The current local time with its offset from UTC. Entries and the day they belong to follow it.
-fn local_now() -> DateTime<FixedOffset> {
-    Local::now().fixed_offset()
+/// The current time in the timezone `zone` with its offset from UTC. Entries and the day they
+/// belong to follow it.
+fn now_in<Tz: TimeZone>(zone: &Tz) -> DateTime<FixedOffset> {
+    Utc::now().with_timezone(zone).fixed_offset()
 }
 
 impl Cli {
-    fn invoke_start(&self, note: &Option<String>) -> TrackerResult {
+    fn invoke_start<Tz: TimeZone + Clone>(&self, zone: &Tz, note: &Option<String>) -> TrackerResult {
         log::info!("start executed");
         let settings = Settings::new()?;
-        let storage = JsonStorage::new(settings.folder.to_owned());
-        let now = local_now();
+        let storage = JsonStorage::in_timezone(settings.folder.to_owned(), zone.clone());
+        let now = now_in(zone);
         let today = now.date_naive();
         let mut time_data = storage.load(today)?;
         let first = !time_data
@@ -298,22 +305,22 @@ impl Cli {
         Ok(())
     }
 
-    fn invoke_break(&self, note: &Option<String>) -> TrackerResult {
+    fn invoke_break<Tz: TimeZone + Clone>(&self, zone: &Tz, note: &Option<String>) -> TrackerResult {
         log::info!("break executed");
         let settings = Settings::new()?;
-        let storage = JsonStorage::new(settings.folder);
-        let now = local_now();
+        let storage = JsonStorage::in_timezone(settings.folder, zone.clone());
+        let now = now_in(zone);
         let today = now.date_naive();
         let mut time_data = storage.load(today)?;
         time_data.append(Status::Break, now, note.clone())?;
         storage.save(today, &time_data)
     }
 
-    fn invoke_end(&self) -> TrackerResult {
+    fn invoke_end<Tz: TimeZone + Clone>(&self, zone: &Tz) -> TrackerResult {
         log::info!("end executed");
         let settings = Settings::new()?;
-        let storage = JsonStorage::new(settings.folder.to_owned());
-        let now = local_now();
+        let storage = JsonStorage::in_timezone(settings.folder.to_owned(), zone.clone());
+        let now = now_in(zone);
         let today = now.date_naive();
         let mut time_data = storage.load(today)?;
         let expected_break = time_data.expected_break(&settings, now)?;
@@ -322,30 +329,38 @@ impl Cli {
             .append(Status::End, now, None)?
             .assert_break(expected_break.duration, taken_break.duration)?;
         storage.save(today, &time_data)?;
-        self.invoke_status(&None, &None, &None, &None, &None)
+        self.invoke_status(zone, &None, &None, &None, &None, &None)
     }
 
-    fn invoke_add(&self, minutes: &u16) -> TrackerResult {
+    fn invoke_add<Tz: TimeZone + Clone>(&self, zone: &Tz, minutes: &u16) -> TrackerResult {
         log::info!("add executed");
         let settings = Settings::new()?;
-        let storage = JsonStorage::new(settings.folder);
-        let today = local_now().date_naive();
+        let storage = JsonStorage::in_timezone(settings.folder, zone.clone());
+        let today = now_in(zone).date_naive();
         let mut time_data = storage.load(today)?;
         time_data.prepend(*minutes, "manually added")?;
         storage.save(today, &time_data)
     }
 
-    fn invoke_absence(&self, date: &NaiveDate, note: &str) -> TrackerResult {
-        log::info!("{note} executed for {date}");
+    fn invoke_absence<Tz: TimeZone + Clone>(
+        &self,
+        zone: &Tz,
+        date: &Option<NaiveDate>,
+        note: &str
+    ) -> TrackerResult {
         let settings = Settings::new()?;
-        let storage = JsonStorage::new(settings.folder.to_owned());
-        let mut time_data = storage.load(*date)?;
-        time_data.absence(*date, note, local_now(), &settings)?;
-        storage.save(*date, &time_data)
+        let storage = JsonStorage::in_timezone(settings.folder.to_owned(), zone.clone());
+        let now = now_in(zone);
+        let date = date.unwrap_or_else(|| now.date_naive());
+        log::info!("{note} executed for {date}");
+        let mut time_data = storage.load(date)?;
+        time_data.absence(zone, date, note, now, &settings)?;
+        storage.save(date, &time_data)
     }
 
-    fn invoke_status(
+    fn invoke_status<Tz: TimeZone + Clone>(
         &self,
+        zone: &Tz,
         day: &Option<Day>,
         week: &Option<i16>,
         month: &Option<i16>,
@@ -354,8 +369,8 @@ impl Cli {
     ) -> TrackerResult {
         log::info!("status executed");
         let settings = Settings::new()?;
-        let storage = JsonStorage::new(settings.folder.to_owned());
-        let now = local_now();
+        let storage = JsonStorage::in_timezone(settings.folder.to_owned(), zone.clone());
+        let now = now_in(zone);
 
         if let Some(y) = year {
             let time_data = TimeDataYearly::for_year(&storage, *y, now.date_naive())?;
@@ -439,10 +454,10 @@ impl Cli {
         overtime.carry(storage, settings, start, now)
     }
 
-    fn invoke_overtime(&self, month: &i16, force: &bool) -> TrackerResult {
+    fn invoke_overtime<Tz: TimeZone + Clone>(&self, zone: &Tz, month: &i16, force: &bool) -> TrackerResult {
         log::info!("overtime executed");
         let settings = Settings::new()?;
-        let now = local_now();
+        let now = now_in(zone);
         let today = now.date_naive();
         let (year, month) = TimeDataMonthly::resolve(*month, today)?;
         if (year, month) >= (today.year(), today.month()) {
@@ -451,7 +466,7 @@ impl Cli {
             });
         }
 
-        let storage = JsonStorage::new(settings.folder.to_owned());
+        let storage = JsonStorage::in_timezone(settings.folder.to_owned(), zone.clone());
         let time_data = TimeDataMonthly::for_year_month(&storage, year, month)?;
         let status = Monthly::new(&time_data, &settings, now)?;
         let stored = Overtime::new(Path::new(&settings.folder)).store(
@@ -480,7 +495,7 @@ impl Cli {
         Ok(())
     }
 
-    fn invoke_takeover(&self, minutes: &u16) -> TrackerResult {
+    fn invoke_takeover<Tz: TimeZone + Clone>(&self, zone: &Tz, minutes: &u16) -> TrackerResult {
         log::info!("takeover {} minutes", minutes);
         let settings = Settings::new()?;
         let takeover = Takeover::new(Path::new(&settings.folder));
@@ -492,8 +507,8 @@ impl Cli {
             });
         }
 
-        let storage = JsonStorage::new(settings.folder.to_owned());
-        let today = local_now().date_naive();
+        let storage = JsonStorage::in_timezone(settings.folder.to_owned(), zone.clone());
+        let today = now_in(zone).date_naive();
         let mut time_data = storage.load(today)?;
         time_data.takeover(*minutes)?;
 
@@ -503,7 +518,7 @@ impl Cli {
             takeover.remove()?;
             return Err(e);
         }
-        self.invoke_status(&None, &None, &None, &None, &None)
+        self.invoke_status(zone, &None, &None, &None, &None, &None)
     }
 }
 
