@@ -1,4 +1,4 @@
-use std::{fmt::Display, process, str::FromStr};
+use std::{fmt::Display, path::Path, process, str::FromStr};
 
 use chrono::{Datelike, IsoWeek, Local, NaiveDate, Utc};
 use log::LevelFilter;
@@ -9,7 +9,7 @@ use usage::{
 };
 
 use crate::{
-    entry::Status, Settings, StatusDaily, StatusWeekly, TimeData, TimeDataWeekly, TrackerError,
+    entry::Status, Settings, StatusDaily, StatusWeekly, Takeover, TimeData, TimeDataWeekly, TrackerError,
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -208,15 +208,31 @@ impl Cli {
         log::info!("start executed");
         let settings = Settings::new()?;
         let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
+            .folder(settings.folder.to_owned().into())
             .today()
             .build()?;
         let now = Local::now();
-        time_data
-            .read_from_file()?
-            .assert_takeover(now.to_utc())?
-            .append(Status::Connect, now.to_utc(), note.clone())?
-            .write_to_file()
+        time_data.read_from_file()?;
+        let first = !time_data.entries.data.iter().any(|e| e.status == Status::Connect);
+        time_data.append(Status::Connect, now.to_utc(), note.clone())?;
+
+        // A takeover is added before the first start of a day only, and kept if it doesn't fit.
+        let takeover = Takeover::new(Path::new(&settings.folder));
+        let mut taken = None;
+        if first {
+            if let Some(minutes) = takeover.get()? {
+                match time_data.prepend(minutes, "takeover") {
+                    Ok(_) => taken = Some(minutes),
+                    Err(e) => eprintln!("keeping takeover of {minutes} minutes for the next start: {e}"),
+                }
+            }
+        }
+
+        time_data.write_to_file()?;
+        if taken.is_some() {
+            takeover.remove()?;
+        }
+        Ok(())
     }
 
     fn invoke_break(&self, note: &Option<String>) -> TrackerResult {
@@ -344,21 +360,25 @@ impl Cli {
     fn invoke_takeover(&self, minutes: &u16) -> TrackerResult {
         log::info!("takeover {} minutes", minutes);
         let settings = Settings::new()?;
-        let folder: &str = settings.folder.as_ref();
-        let mut time_data = TimeData::builder().folder(folder.into()).today().build()?;
-        time_data.read_from_file()?;
-        let status = StatusDaily::builder()
-            .data(time_data.clone())
-            .settings(settings)
+        let takeover = Takeover::new(Path::new(&settings.folder));
+        if let Some(pending) = takeover.get()? {
+            return Err(TrackerError::TakeoverSetError {
+                message: format!("a takeover of {pending} minutes is still pending for the next start"),
+            });
+        }
+
+        let mut time_data = TimeData::builder()
+            .folder(settings.folder.to_owned().into())
+            .today()
             .build()?;
-        let now = Local::now();
-        time_data
-            .append(Status::End, now.to_utc(), None)?
-            .assert_break(
-                status.exp_break.unwrap().duration,
-                status.r#break.unwrap().duration,
-            )?
-            .write_to_file()?;
+        time_data.read_from_file()?.takeover(*minutes)?;
+
+        // Store the minutes first, so they're never lost; undo that if the day can't be saved.
+        takeover.set(*minutes)?;
+        if let Err(e) = time_data.write_to_file() {
+            takeover.remove()?;
+            return Err(e);
+        }
         self.invoke_status(&None, &None)
     }
 }
