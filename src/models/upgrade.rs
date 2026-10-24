@@ -1,5 +1,6 @@
 use std::io;
 
+use chrono::Local;
 use serde_json::Value;
 
 use super::timesheet::CURRENT_VERSION;
@@ -23,6 +24,9 @@ impl Upgrade {
         if timesheet.version == 2 {
             timesheet = Self::to_v3(timesheet);
         }
+        if timesheet.version == 3 {
+            timesheet = Self::to_v4(timesheet);
+        }
         if timesheet.version != CURRENT_VERSION {
             return Err(UpgradeError::UnsupportedVersion(timesheet.version));
         }
@@ -45,10 +49,22 @@ impl Upgrade {
     fn to_v3(timesheet: Timesheet) -> Timesheet {
         Timesheet { version: 3, ..timesheet }
     }
+
+    /// v4 stores the time of an entry as local time with its offset from UTC, instead of in UTC.
+    /// The instant of an entry stays the same, it is written in the local offset of that moment.
+    /// This is the only place that reads the timezone of the machine to read a file.
+    fn to_v4(timesheet: Timesheet) -> Timesheet {
+        let data = timesheet.data
+            .into_iter()
+            .map(|e| Entry { time: e.time.with_timezone(&Local).fixed_offset(), ..e })
+            .collect();
+        Timesheet { data, version: 4 }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use chrono::{ Local, TimeZone, Utc };
     use serde_json::json;
 
     use super::{ Upgrade, UpgradeError };
@@ -57,6 +73,8 @@ mod tests {
         "[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-02-02T08:00:53.523332900Z\"}]";
     const V2: &str =
         "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53Z\"},{\"id\":2,\"status\":\"Break\",\"time\":\"2022-02-02T04:00:53Z\",\"note\":\"lunch\"}],\"version\":2}";
+    const V3: &str =
+        "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53Z\"},{\"status\":\"End\",\"time\":\"2022-07-02T08:00:53Z\"}],\"version\":3}";
     const V1: &str =
         "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-02-02T08:00:53.523332900Z\"}],\"version\":1}";
 
@@ -89,7 +107,7 @@ mod tests {
     #[test]
     fn should_upgrade_versionless_to_current() {
         let ent = Upgrade::upgrade(VERSIONLESS.as_bytes()).unwrap();
-        assert_eq!(ent.version, 3);
+        assert_eq!(ent.version, 4);
         assert_eq!(ent.data.len(), 2);
         assert!(ent.data.iter().all(|e| e.note.is_none()));
     }
@@ -97,14 +115,14 @@ mod tests {
     #[test]
     fn should_upgrade_v1_to_current() {
         let ent = Upgrade::upgrade(V1.as_bytes()).unwrap();
-        assert_eq!(ent.version, 3);
+        assert_eq!(ent.version, 4);
         assert_eq!(ent.data.len(), 2);
     }
 
     #[test]
     fn should_upgrade_v2_to_current() {
         let ent = Upgrade::upgrade(V2.as_bytes()).unwrap();
-        assert_eq!(ent.version, 3);
+        assert_eq!(ent.version, 4);
         assert_eq!(ent.data.len(), 2);
         assert_eq!(ent.data[1].note.as_deref(), Some("lunch"));
     }
@@ -115,20 +133,61 @@ mod tests {
             let ent = Upgrade::upgrade(old.as_bytes()).unwrap();
             let written = serde_json::to_string(&ent).unwrap();
             assert!(!written.contains("\"id\""), "{written}");
-            assert!(written.ends_with("\"version\":3}"), "{written}");
+            assert!(written.ends_with("\"version\":4}"), "{written}");
         }
     }
 
     #[test]
     fn should_keep_current_version() {
         let content = json!({
-            "data": [{"status": "Break", "time": "2022-02-02T00:00:53Z", "note": "lunch"}],
-            "version": 3
+            "data": [{"status": "Break", "time": "2022-02-02T00:00:53+05:30", "note": "lunch"}],
+            "version": 4
         })
         .to_string();
         let ent = Upgrade::upgrade(content.as_bytes()).unwrap();
-        assert_eq!(ent.version, 3);
+        assert_eq!(ent.version, 4);
         assert_eq!(ent.data[0].note.as_deref(), Some("lunch"));
+        // The offset of a current file is kept as it is.
+        assert_eq!(5 * 3600 + 30 * 60, ent.data[0].time.offset().local_minus_utc());
+    }
+
+    #[test]
+    fn should_upgrade_v3_to_v4() {
+        let v3 = serde_json::from_str(V3).unwrap();
+        let ent = Upgrade::to_v4(v3);
+
+        assert_eq!(ent.version, 4);
+        assert_eq!(ent.data.len(), 2);
+    }
+
+    #[test]
+    fn should_keep_the_instants_and_use_the_local_offset_when_upgrading_v3() {
+        let ent = Upgrade::upgrade(V3.as_bytes()).unwrap();
+
+        assert_eq!(ent.version, 4);
+        let utc = [
+            Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 53).unwrap(),
+            Utc.with_ymd_and_hms(2022, 7, 2, 8, 0, 53).unwrap(),
+        ];
+        for (entry, utc) in ent.data.iter().zip(utc) {
+            // The same instant, in the offset the machine has at that moment.
+            assert_eq!(utc, entry.time);
+            let local = Local.offset_from_utc_datetime(&utc.naive_utc());
+            assert_eq!(local, *entry.time.offset());
+        }
+    }
+
+    #[test]
+    fn should_upgrade_old_versions_to_local_offsets() {
+        for old in [VERSIONLESS, V1, V2, V3] {
+            let ent = Upgrade::upgrade(old.as_bytes()).unwrap();
+
+            assert_eq!(ent.version, 4);
+            for entry in &ent.data {
+                let local = Local.offset_from_utc_datetime(&entry.time.naive_utc());
+                assert_eq!(local, *entry.time.offset(), "{old}");
+            }
+        }
     }
 
     #[test]

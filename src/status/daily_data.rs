@@ -1,4 +1,4 @@
-use chrono::{ DateTime, Duration, NaiveDate, Utc };
+use chrono::{ DateTime, Duration, FixedOffset, NaiveDate };
 
 use crate::{ Settings, StatusTime, Timesheet, TrackerError };
 
@@ -19,7 +19,7 @@ impl DailyData {
         date: NaiveDate,
         timesheet: &Timesheet,
         settings: &Settings,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<Self, TrackerError> {
         if timesheet.data.is_empty() {
             let expected = settings.workperday.minutes_on(date);
@@ -65,14 +65,14 @@ impl DailyData {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{ Local, TimeZone };
+    use chrono::{ TimeZone, Utc };
 
     use crate::{ BreakLimit, Entry, Status };
 
     use super::*;
 
-    fn at(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-        Local.with_ymd_and_hms(2022, 1, day, hour, minute, 0).unwrap().to_utc()
+    fn at(day: u32, hour: u32, minute: u32) -> DateTime<FixedOffset> {
+        Utc.with_ymd_and_hms(2022, 1, day, hour, minute, 0).unwrap().fixed_offset()
     }
 
     fn date(day: u32) -> NaiveDate {

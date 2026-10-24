@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use chrono::{ DateTime, NaiveDate, Utc };
+use chrono::{ DateTime, FixedOffset, NaiveDate };
 use prettytable::{ format, Table };
 
 use crate::{ Monthly, Settings, StatusDisplay, StatusTime, TimeDataYearly, TrackerError };
@@ -22,7 +22,7 @@ impl Yearly {
     pub fn new(
         data: &TimeDataYearly,
         settings: &Settings,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<Self, TrackerError> {
         let mut total = StatusTime::default();
         let mut overtime = StatusTime::default();

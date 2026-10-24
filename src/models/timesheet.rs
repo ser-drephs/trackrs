@@ -1,9 +1,9 @@
-use chrono::{ DateTime, Duration, Local, Utc };
+use chrono::{ DateTime, Duration, FixedOffset, Local, NaiveDate, NaiveTime, TimeZone };
 use serde::{ Deserialize, Serialize };
 
 use crate::{ Entry, Settings, Status, StatusTime, TrackerError };
 
-pub(crate) const CURRENT_VERSION: u8 = 3;
+pub(crate) const CURRENT_VERSION: u8 = 4;
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -48,14 +48,14 @@ impl Timesheet {
     }
 
     /// Start of the first break of the day.
-    pub fn first_break(&self) -> Option<DateTime<Local>> {
-        self.data.iter().find(|e| e.status == Status::Break).map(|e| DateTime::from(e.time))
+    pub fn first_break(&self) -> Option<DateTime<FixedOffset>> {
+        self.data.iter().find(|e| e.status == Status::Break).map(|e| e.time)
     }
 
     /// Time from the start to the end of the day, or to `now` while the day is still running.
-    pub fn online(&self, now: DateTime<Utc>) -> Result<StatusTime, TrackerError> {
-        let end = self.end().unwrap_or_else(|| StatusTime::from(now.with_timezone(&Local)));
-        Ok(end - self.started()?)
+    pub fn online(&self, now: DateTime<FixedOffset>) -> Result<StatusTime, TrackerError> {
+        let end = self.end_time().unwrap_or(now);
+        Ok(StatusTime::from(end - self.start_time()?))
     }
 
     /// Target worktime of the day, by the weekday of its first entry.
@@ -70,7 +70,7 @@ impl Timesheet {
     pub fn expected_break(
         &self,
         settings: &Settings,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<StatusTime, TrackerError> {
         let online = self.online(now)?;
         let worktime = self.expected_worktime(settings)?;
@@ -84,16 +84,16 @@ impl Timesheet {
         Ok(expected.into())
     }
 
-    /// Time of day the target worktime is reached with the break taken or the expected break,
-    /// whichever is longer.
+    /// When the target worktime is reached with the break taken or the expected break, whichever
+    /// is longer.
     pub fn estimated_end(
         &self,
         settings: &Settings,
-        now: DateTime<Utc>
-    ) -> Result<StatusTime, TrackerError> {
+        now: DateTime<FixedOffset>
+    ) -> Result<DateTime<FixedOffset>, TrackerError> {
         let worktime = self.expected_worktime(settings)?;
         let r#break = self.longer_break(settings, now)?;
-        Ok(self.started()? + StatusTime::from(worktime.duration + r#break.duration))
+        Ok(self.start_time()? + worktime.duration + r#break.duration)
     }
 
     /// Time worked, the online time less the break taken or the expected break, whichever is
@@ -101,7 +101,7 @@ impl Timesheet {
     pub fn worktime(
         &self,
         settings: &Settings,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<StatusTime, TrackerError> {
         Ok(self.online(now)? - self.longer_break(settings, now)?)
     }
@@ -110,7 +110,7 @@ impl Timesheet {
     pub fn overtime(
         &self,
         settings: &Settings,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<StatusTime, TrackerError> {
         Ok(self.worktime(settings, now)? - self.expected_worktime(settings)?)
     }
@@ -118,18 +118,28 @@ impl Timesheet {
     fn longer_break(
         &self,
         settings: &Settings,
-        now: DateTime<Utc>
+        now: DateTime<FixedOffset>
     ) -> Result<StatusTime, TrackerError> {
         let taken = self.break_taken();
         let expected = self.expected_break(settings, now)?;
         Ok(if taken >= expected { taken } else { expected })
     }
 
-    fn started(&self) -> Result<StatusTime, TrackerError> {
+    /// When the first connect of the day happened.
+    fn start_time(&self) -> Result<DateTime<FixedOffset>, TrackerError> {
         if self.data.is_empty() {
             return Err(invalid("data not added to status"));
         }
-        self.start().ok_or_else(|| invalid("no initial connect found in data"))
+        self.data
+            .iter()
+            .find(|e| e.status == Status::Connect)
+            .map(|e| e.time)
+            .ok_or_else(|| invalid("no initial connect found in data"))
+    }
+
+    /// When the first end of the day happened, `None` while the day is still running.
+    fn end_time(&self) -> Option<DateTime<FixedOffset>> {
+        self.data.iter().find(|e| e.status == Status::End).map(|e| e.time)
     }
 
     /// Fill the break missing to the expected break `e_break`, as a break with a note:
@@ -181,10 +191,10 @@ impl Timesheet {
     pub fn append(
         &mut self,
         status: Status,
-        time: DateTime<Utc>,
+        time: DateTime<FixedOffset>,
         note: Option<String>
     ) -> Result<&mut Self, TrackerError> {
-        let entry = Entry::new(status, time.to_utc(), note);
+        let entry = Entry::new(status, time, note);
         log::debug!("append time data: {:?}", entry);
         self.data.append(&mut [entry].to_vec());
         Ok(self)
@@ -192,25 +202,25 @@ impl Timesheet {
 
     /// Fill the remaining target worktime of the day with an absence (`sick` or `vacation`).
     ///
-    /// The absence starts at the default start (`day`) for an empty day, at the
-    /// end of an ended day (whose end is replaced), and otherwise at `now`, or at the last entry if
-    /// the day is not today. It lasts until the day's worktime reaches the target with its break.
+    /// The absence starts at 08:00 local time of `date` for an empty day, at the end of an ended
+    /// day (whose end is replaced), and otherwise at `now`, or at the last entry if the day is not
+    /// today. It lasts until the day's worktime reaches the target with its break.
     pub fn absence(
         &mut self,
-        day: DateTime<Utc>,
+        date: NaiveDate,
         note: &str,
-        now: DateTime<Utc>,
+        now: DateTime<FixedOffset>,
         settings: &Settings
     ) -> Result<&mut Self, TrackerError> {
         let mut data = self.data.clone();
         let from = match data.last().map(|e| (e.status.to_owned(), e.time)) {
-            None => day,
+            None => Self::default_start(date)?,
             Some((Status::End, time)) => {
                 data.pop();
                 time
             }
             Some((Status::Connect | Status::Break, time)) => {
-                if now.date_naive() == day.date_naive() { now.max(time) } else { time }
+                if now.date_naive() == date { now.max(time) } else { time }
             }
             Some((status, _)) => {
                 return Err(TrackerError::TimeDataError {
@@ -239,6 +249,17 @@ impl Timesheet {
 
         self.data = data;
         self.append(Status::Connect, from, Some(note.to_owned()))?.append(Status::End, end, None)
+    }
+
+    /// 08:00 local time of `date`, with the offset the machine has at that moment.
+    fn default_start(date: NaiveDate) -> Result<DateTime<FixedOffset>, TrackerError> {
+        let start = date.and_time(NaiveTime::from_hms_opt(8, 0, 0).unwrap());
+        Local.from_local_datetime(&start)
+            .earliest()
+            .map(|start| start.fixed_offset())
+            .ok_or_else(|| TrackerError::TimeDataError {
+                message: format!("{start} doesn't exist in the local time"),
+            })
     }
 
     /// Prepend a connect entry `minutes` before the first connect of the day.
@@ -291,7 +312,7 @@ impl Timesheet {
             return Err(TrackerError::TimeDataError {
                 message: format!(
                     "taking over {minutes} minutes would move the end to {} and collide with existing entries",
-                    DateTime::<chrono::Local>::from(end).format("%H:%M")
+                    end.format("%H:%M")
                 ),
             });
         }
@@ -310,7 +331,7 @@ fn invalid(message: &str) -> TrackerError {
 mod tests {
     use std::ops::Add;
 
-    use chrono::{ Duration, TimeZone, Timelike };
+    use chrono::{ DateTime, Duration, Local, NaiveDate, TimeZone, Timelike };
 
     use crate::{ Entry, Status, Timesheet, TrackerError };
 
@@ -320,13 +341,13 @@ mod tests {
     }
 
     mod fill_break {
-        use chrono::{ DateTime, Utc };
+        use chrono::{ DateTime, FixedOffset, Utc };
 
 
         use super::*;
 
-        fn at(hour: u32, minute: u32) -> DateTime<Utc> {
-            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
+        fn at(hour: u32, minute: u32) -> DateTime<FixedOffset> {
+            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap().fixed_offset()
         }
 
         fn day(entries: &[(Status, u32, u32)]) -> Timesheet {
@@ -344,7 +365,7 @@ mod tests {
             }
         }
 
-        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
+        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<FixedOffset>, Option<String>)> {
             t.data
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
@@ -355,7 +376,7 @@ mod tests {
             Some("filled mandatory remaining break".to_owned())
         }
 
-        fn sec(t: DateTime<Utc>) -> DateTime<Utc> {
+        fn sec(t: DateTime<FixedOffset>) -> DateTime<FixedOffset> {
             t + Duration::seconds(1)
         }
 
@@ -379,7 +400,7 @@ mod tests {
                 ..Default::default()
             };
             assert_eq!("00:30", t.break_taken().to_string());
-            assert_eq!("08:00", t.worktime(&settings, chrono::Utc::now())?.to_string());
+            assert_eq!("08:00", t.worktime(&settings, chrono::Utc::now().fixed_offset())?.to_string());
             Ok(())
         }
 
@@ -445,13 +466,13 @@ mod tests {
     }
 
     mod takeover {
-        use chrono::{ DateTime, Utc };
+        use chrono::{ DateTime, FixedOffset, Utc };
 
 
         use super::*;
 
-        fn at(hour: u32, minute: u32) -> DateTime<Utc> {
-            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
+        fn at(hour: u32, minute: u32) -> DateTime<FixedOffset> {
+            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap().fixed_offset()
         }
 
         fn day(entries: &[(Status, u32, u32)]) -> Timesheet {
@@ -469,7 +490,7 @@ mod tests {
             }
         }
 
-        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
+        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<FixedOffset>, Option<String>)> {
             t.data
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
@@ -543,13 +564,13 @@ mod tests {
     }
 
     mod prepend {
-        use chrono::{ DateTime, Utc };
+        use chrono::{ DateTime, FixedOffset, Utc };
 
 
         use super::*;
 
-        fn at(hour: u32, minute: u32) -> DateTime<Utc> {
-            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
+        fn at(hour: u32, minute: u32) -> DateTime<FixedOffset> {
+            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap().fixed_offset()
         }
 
         fn day(entries: &[(Status, u32, u32)]) -> Timesheet {
@@ -567,7 +588,7 @@ mod tests {
             }
         }
 
-        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
+        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<FixedOffset>, Option<String>)> {
             t.data
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
@@ -647,14 +668,14 @@ mod tests {
     }
 
     mod absence {
-        use chrono::{ DateTime, Utc };
+        use chrono::{ DateTime, FixedOffset, NaiveDate, Utc };
 
         use crate::{ BreakLimit, Settings };
 
         use super::*;
 
-        fn at(hour: u32, minute: u32) -> DateTime<Utc> {
-            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
+        fn at(hour: u32, minute: u32) -> DateTime<FixedOffset> {
+            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap().fixed_offset()
         }
 
         fn settings() -> Settings {
@@ -680,11 +701,16 @@ mod tests {
             }
         }
 
-        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<Utc>, Option<String>)> {
+        fn summary(t: &Timesheet) -> Vec<(Status, DateTime<FixedOffset>, Option<String>)> {
             t.data
                 .iter()
                 .map(|e| (e.status.to_owned(), e.time, e.note.to_owned()))
                 .collect()
+        }
+
+        /// The day of `at`.
+        fn date() -> NaiveDate {
+            NaiveDate::from_ymd_opt(2022, 2, 7).unwrap()
         }
 
         fn worktime(t: &Timesheet) -> String {
@@ -698,12 +724,16 @@ mod tests {
         #[test]
         fn should_fill_empty_day() -> Result<(), TrackerError> {
             let mut t = day(&[]);
-            t.absence(at(6, 0), "sick", at(9, 0), &settings())?;
+            t.absence(date(), "sick", at(9, 0), &settings())?;
 
-            assert_eq!(
-                vec![(Status::Connect, at(6, 0), sick()), (Status::End, at(14, 30), None)],
-                summary(&t)
-            );
+            // Starts at 08:00 local time of the day, and ends after the target and the break.
+            let (start, end) = (t.data[0].time, t.data[1].time);
+            assert_eq!(2, t.data.len());
+            assert_eq!(date(), start.date_naive());
+            assert_eq!("08:00", start.format("%H:%M").to_string());
+            assert_eq!(Duration::hours(8) + Duration::minutes(30), end - start);
+            assert_eq!((Status::Connect, sick()), (t.data[0].status.clone(), t.data[0].note.clone()));
+            assert_eq!((Status::End, None), (t.data[1].status.clone(), t.data[1].note.clone()));
             assert_eq!("08:00", worktime(&t));
             Ok(())
         }
@@ -711,7 +741,7 @@ mod tests {
         #[test]
         fn should_extend_running_day_from_now() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0)]);
-            t.absence(at(6, 0), "sick", at(10, 0), &settings())?;
+            t.absence(date(), "sick", at(10, 0), &settings())?;
 
             assert_eq!(
                 vec![
@@ -728,7 +758,7 @@ mod tests {
         #[test]
         fn should_extend_ended_day_from_its_end() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 10, 0)]);
-            t.absence(at(6, 0), "sick", at(15, 0), &settings())?;
+            t.absence(date(), "sick", at(15, 0), &settings())?;
 
             assert_eq!(
                 vec![
@@ -747,7 +777,7 @@ mod tests {
             let mut t = day(
                 &[(Status::Connect, 8, 0), (Status::Break, 12, 0), (Status::Connect, 13, 0)]
             );
-            t.absence(at(6, 0), "sick", at(14, 0), &settings())?;
+            t.absence(date(), "sick", at(14, 0), &settings())?;
 
             assert_eq!((Status::End, at(17, 0), None), summary(&t)[4]);
             assert_eq!("08:00", worktime(&t));
@@ -757,7 +787,7 @@ mod tests {
         #[test]
         fn should_end_running_break() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::Break, 12, 0)]);
-            t.absence(at(6, 0), "sick", at(12, 15), &settings())?;
+            t.absence(date(), "sick", at(12, 15), &settings())?;
 
             assert_eq!(
                 vec![
@@ -775,7 +805,7 @@ mod tests {
         #[test]
         fn should_extend_past_day_from_last_entry() -> Result<(), TrackerError> {
             let mut t = day(&[(Status::Connect, 8, 0)]);
-            t.absence(at(6, 0), "sick", Utc.with_ymd_and_hms(2022, 2, 9, 9, 0, 0).unwrap(), &settings())?;
+            t.absence(date(), "sick", Utc.with_ymd_and_hms(2022, 2, 9, 9, 0, 0).unwrap().fixed_offset(), &settings())?;
 
             assert_eq!((Status::Connect, at(8, 0), sick()), summary(&t)[1]);
             assert_eq!((Status::End, at(16, 30), None), summary(&t)[2]);
@@ -787,7 +817,7 @@ mod tests {
             let mut t = day(&[(Status::Connect, 6, 0), (Status::End, 14, 30)]);
             let before = summary(&t);
 
-            assert!(t.absence(at(6, 0), "vacation", at(15, 0), &settings()).is_err());
+            assert!(t.absence(date(), "vacation", at(15, 0), &settings()).is_err());
             assert_eq!(before, summary(&t));
         }
 
@@ -796,7 +826,7 @@ mod tests {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 10, 0), (Status::Takeover, 10, 0)]);
             let before = summary(&t);
 
-            assert!(t.absence(at(6, 0), "sick", at(11, 0), &settings()).is_err());
+            assert!(t.absence(date(), "sick", at(11, 0), &settings()).is_err());
             assert_eq!(before, summary(&t));
         }
     }
@@ -850,15 +880,20 @@ mod tests {
     mod calculation {
         use std::ops::Sub;
 
-        use chrono::{ DateTime, Local, Utc };
+        use chrono::{ DateTime, FixedOffset, Utc };
 
         use crate::{ BreakLimit, Settings, WorkPerDay };
 
         use super::*;
 
+        /// The start of the days of the tests.
+        fn midnight() -> DateTime<FixedOffset> {
+            Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().fixed_offset()
+        }
+
         /// Clock for days that are ended, so it doesn't matter.
-        fn now() -> DateTime<Utc> {
-            Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap().to_utc()
+        fn now() -> DateTime<FixedOffset> {
+            Utc.with_ymd_and_hms(2022, 2, 2, 12, 0, 0).unwrap().fixed_offset()
         }
 
         #[test]
@@ -868,14 +903,14 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -892,7 +927,7 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -910,23 +945,23 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 10, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 10, 10, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -944,13 +979,13 @@ mod tests {
                 data: vec![
                     Entry {
                         status: Status::Connect,
-                        time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                        time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().fixed_offset(),
                         note: None,
                     },
                 ],
                 ..Default::default()
             };
-            let now = Local.with_ymd_and_hms(2022, 2, 2, 9, 30, 0).unwrap().to_utc();
+            let now = Utc.with_ymd_and_hms(2022, 2, 2, 9, 30, 0).unwrap().fixed_offset();
 
             assert!(data.end().is_none());
             let online = data.online(now).unwrap();
@@ -965,23 +1000,23 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1001,72 +1036,72 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 5)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 40, 5)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 9, 40, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 55)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 9, 40, 55)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 9, 55, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 9, 55, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 55)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 10, 0, 55)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 56)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 10, 0, 56)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 1, 56)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 10, 1, 56)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1086,14 +1121,14 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1114,31 +1149,31 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 45, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 3, 45, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1169,7 +1204,7 @@ mod tests {
             };
             let est_end = data.estimated_end(&settings, now()).unwrap();
             let expected_end = Duration::hours(8).add(Duration::minutes(45));
-            assert_eq!(expected_end, est_end.duration);
+            assert_eq!(expected_end, (est_end - midnight()));
         }
 
         #[test]
@@ -1179,33 +1214,33 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 3, 15, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1238,7 +1273,7 @@ mod tests {
             let est_end = data.estimated_end(&settings, now()).unwrap();
 
             let expected_end = Duration::hours(8).add(Duration::minutes(45));
-            assert_eq!(expected_end, est_end.duration);
+            assert_eq!(expected_end, (est_end - midnight()));
         }
 
         #[test]
@@ -1248,31 +1283,31 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1304,7 +1339,7 @@ mod tests {
 
             let est_end = data.estimated_end(&settings, now()).unwrap();
             let expected_end = Duration::hours(9);
-            assert_eq!(expected_end, est_end.duration);
+            assert_eq!(expected_end, (est_end - midnight()));
         }
 
         #[test]
@@ -1314,30 +1349,30 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 15, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 13, 15, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1371,7 +1406,7 @@ mod tests {
             let expected_end = Duration::hours(10).add(
                 Duration::hours(8).add(Duration::minutes(45))
             );
-            assert_eq!(expected_end, est_end.duration);
+            assert_eq!(expected_end, (est_end - midnight()));
         }
 
         #[test]
@@ -1381,30 +1416,30 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1435,7 +1470,7 @@ mod tests {
             let expected_end = Duration::hours(10).add(Duration::hours(6));
             assert_eq!(
                 expected_end,
-                est_end.duration,
+                (est_end - midnight()),
                 "expected end at 6:00 but got {}",
                 est_end
             );
@@ -1448,30 +1483,30 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Disconnect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1505,7 +1540,7 @@ mod tests {
             let expected_end = Duration::hours(10).add(
                 Duration::hours(7).add(Duration::minutes(30))
             );
-            assert_eq!(expected_end, est_end.duration);
+            assert_eq!(expected_end, (est_end - midnight()));
         }
 
         #[test]
@@ -1515,16 +1550,16 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1551,7 +1586,7 @@ mod tests {
             let expected_end = Duration::hours(14).add(Duration::minutes(22));
             assert_eq!(
                 expected_end,
-                est_end.duration,
+                (est_end - midnight()),
                 "expected to end at 14:22 but got {}",
                 est_end
             );
@@ -1571,65 +1606,65 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 8, 55, 46)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 56, 15)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 8, 56, 15)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 25, 57)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 12, 25, 57)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 26, 46)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 12, 26, 46)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 28, 7)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 12, 28, 7)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 58, 7)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 12, 58, 7)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 17, 0, 7)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 17, 0, 7)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 17, 15, 7)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 17, 15, 7)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 18, 27, 40)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 18, 27, 40)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1670,16 +1705,16 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 8, 22, 11)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 7, 12, 16, 32)
+                                time: Utc.with_ymd_and_hms(2022, 2, 7, 12, 16, 32)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1724,28 +1759,28 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 30, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 12, 30, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 17, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 17, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1796,28 +1831,28 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 21, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 21, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1868,28 +1903,28 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Break,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 23, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 23, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -1940,14 +1975,14 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 4, 14, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 4, 14, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -2003,14 +2038,14 @@ mod tests {
                     [
                             Entry {
                                 status: Status::Connect,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().fixed_offset(),
                                 note: None,
                             },
                             Entry {
                                 status: Status::End,
-                                time: Local.with_ymd_and_hms(2022, 2, 2, 14, 0, 0)
+                                time: Utc.with_ymd_and_hms(2022, 2, 2, 14, 0, 0)
                                     .unwrap()
-                                    .to_utc(),
+                                    .fixed_offset(),
                                 note: None,
                             },
                         ].to_vec()
@@ -2049,6 +2084,168 @@ mod tests {
                 "expected 0:45 hour break but was {}",
                 exp_break
             );
+        }
+    }
+
+    mod local_time {
+        use chrono::FixedOffset;
+
+        use crate::Settings;
+
+        use super::*;
+
+        /// The time `hour`:`minute` of the day `month`/`day` of 2022 at `offset` hours from UTC.
+        fn at(offset: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateTime<FixedOffset> {
+            FixedOffset::east_opt(offset * 3600)
+                .unwrap()
+                .with_ymd_and_hms(2022, month, day, hour, minute, 0)
+                .unwrap()
+        }
+
+        fn timesheet(entries: &[(Status, DateTime<FixedOffset>)]) -> Timesheet {
+            let data = entries
+                .iter()
+                .map(|(status, time)| Entry { status: status.to_owned(), time: *time, note: None })
+                .collect();
+            Timesheet { data, ..Default::default() }
+        }
+
+        #[test]
+        fn should_measure_online_time_across_a_timezone_change() {
+            // 08:00 in Berlin to 17:00 in New York is 07:00 to 22:00 UTC.
+            let t = timesheet(
+                &[(Status::Connect, at(1, 2, 7, 8, 0)), (Status::End, at(-5, 2, 7, 17, 0))]
+            );
+
+            assert_eq!("15:00", t.online(at(0, 2, 8, 0, 0)).unwrap().to_string());
+        }
+
+        #[test]
+        fn should_measure_breaks_across_a_timezone_change() {
+            let t = timesheet(
+                &[
+                    (Status::Connect, at(1, 2, 7, 8, 0)),
+                    (Status::Break, at(1, 2, 7, 12, 0)),
+                    // 11:30 in New York is 17:30 in Berlin, 5 hours and 30 minutes later.
+                    (Status::Connect, at(-5, 2, 7, 11, 30)),
+                ]
+            );
+
+            assert_eq!("05:30", t.break_taken().to_string());
+        }
+
+        #[test]
+        fn should_measure_online_time_across_daylight_saving() {
+            // On the 27th of March 2022 the clocks in Berlin go from 02:00 to 03:00, so 01:00 to
+            // 04:00 is two hours.
+            let t = timesheet(
+                &[(Status::Connect, at(1, 3, 27, 1, 0)), (Status::End, at(2, 3, 27, 4, 0))]
+            );
+
+            assert_eq!("02:00", t.online(at(2, 3, 28, 0, 0)).unwrap().to_string());
+        }
+
+        #[test]
+        fn should_measure_a_day_crossing_midnight() {
+            let t = timesheet(
+                &[(Status::Connect, at(1, 2, 7, 22, 0)), (Status::End, at(1, 2, 8, 2, 0))]
+            );
+
+            assert_eq!("04:00", t.online(at(1, 2, 8, 12, 0)).unwrap().to_string());
+        }
+
+        #[test]
+        fn should_end_a_running_day_crossing_midnight_at_now() {
+            let t = timesheet(&[(Status::Connect, at(1, 2, 7, 22, 0))]);
+
+            assert_eq!("03:30", t.online(at(1, 2, 8, 1, 30)).unwrap().to_string());
+        }
+
+        #[test]
+        fn should_estimate_the_end_of_a_day_crossing_midnight() {
+            // Monday has a target of 8 hours, which are reached on Tuesday at 06:00.
+            let t = timesheet(&[(Status::Connect, at(1, 2, 7, 22, 0))]);
+            let end = t.estimated_end(&Settings::default(), at(1, 2, 8, 1, 0)).unwrap();
+
+            assert_eq!(at(1, 2, 8, 6, 0), end);
+            assert_eq!("06:00", end.format("%H:%M").to_string());
+        }
+
+        #[test]
+        fn should_take_the_weekday_target_from_the_local_date() {
+            // 00:30 on Monday in Tokyo is still Sunday in UTC, but the target is the one of Monday.
+            let t = timesheet(
+                &[(Status::Connect, at(9, 2, 7, 0, 30)), (Status::End, at(9, 2, 7, 8, 30))]
+            );
+            let now = at(9, 2, 7, 12, 0);
+
+            assert_eq!("08:00", t.expected_worktime(&Settings::default()).unwrap().to_string());
+            assert_eq!("00:00", t.overtime(&Settings::default(), now).unwrap().to_string());
+        }
+
+        #[test]
+        fn should_take_the_weekday_target_of_a_day_that_is_the_day_before_in_utc() {
+            // 20:00 on Monday in Los Angeles is already Tuesday in UTC.
+            let t = timesheet(
+                &[(Status::Connect, at(-8, 2, 7, 20, 0)), (Status::End, at(-8, 2, 7, 23, 0))]
+            );
+            let now = at(-8, 2, 8, 12, 0);
+
+            assert_eq!("-05:00", t.overtime(&Settings::default(), now).unwrap().to_string());
+        }
+
+        #[test]
+        fn should_prepend_within_the_local_day() {
+            // 00:30 on Monday in Tokyo is Sunday 15:30 in UTC, 20 minutes earlier is still Monday.
+            let mut t = timesheet(&[(Status::Connect, at(9, 2, 7, 0, 30))]);
+
+            assert!(t.prepend(20, "takeover").is_ok());
+            assert_eq!(at(9, 2, 7, 0, 10), t.data[0].time);
+        }
+
+        #[test]
+        fn should_not_prepend_into_the_previous_local_day() {
+            // 40 minutes earlier is Sunday 23:50 in Tokyo, although it is the same date in UTC.
+            let mut t = timesheet(&[(Status::Connect, at(9, 2, 7, 0, 30))]);
+            let before = t.data.len();
+
+            assert!(t.prepend(40, "takeover").is_err());
+            assert_eq!(before, t.data.len());
+        }
+
+        #[test]
+        fn should_not_take_over_into_the_previous_local_day() {
+            let mut t = timesheet(
+                &[
+                    (Status::Connect, at(9, 2, 7, 0, 30)),
+                    (Status::End, at(9, 2, 7, 8, 30)),
+                ]
+            );
+
+            assert!(t.takeover(60).is_ok());
+            assert_eq!(at(9, 2, 7, 7, 30), t.data[1].time);
+        }
+
+        #[test]
+        fn should_start_an_absence_at_eight_local_time_with_the_offset_of_that_day() {
+            // On the 7th of February the machine has the offset of its winter time, on the 8th of
+            // August the one of its summer time, whatever the offsets are.
+            for date in [
+                NaiveDate::from_ymd_opt(2022, 2, 7).unwrap(),
+                NaiveDate::from_ymd_opt(2022, 8, 8).unwrap(),
+            ] {
+                let mut t = Timesheet::default();
+                t.absence(date, "sick", at(0, 1, 1, 0, 0), &Settings::default()).unwrap();
+
+                let start = t.data[0].time;
+                assert_eq!(date, start.date_naive());
+                assert_eq!("08:00", start.format("%H:%M").to_string());
+                let local = Local
+                    .from_local_datetime(&date.and_hms_opt(8, 0, 0).unwrap())
+                    .earliest()
+                    .unwrap();
+                assert_eq!(local.fixed_offset(), start);
+            }
         }
     }
 }
