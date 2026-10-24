@@ -9,8 +9,8 @@ use usage::{
 };
 
 use crate::{
-    entry::Status, Settings, StatusDaily, StatusMonthly, StatusWeekly, Takeover, TimeData,
-    TimeDataMonthly, TimeDataWeekly, TrackerError,
+    entry::Status, Settings, StatusDaily, StatusMonthly, StatusWeekly, StatusYearly, Takeover,
+    TimeData, TimeDataMonthly, TimeDataWeekly, TimeDataYearly, TrackerError,
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -30,8 +30,9 @@ pub struct Cli {
 #[derive(Debug)]
 pub enum Commands {
     Status {
-        week: Option<i8>,
-        month: Option<i8>,
+        week: Option<i16>,
+        month: Option<i16>,
+        year: Option<i16>,
         table: Option<bool>,
     },
     Start {
@@ -107,6 +108,7 @@ impl Cli {
             "status" => Commands::Status {
                 week: string(&out, "w").map(|w| typed("week", w)).transpose()?,
                 month: string(&out, "m").map(|m| typed("month", m)).transpose()?,
+                year: string(&out, "y").map(|y| typed("year", y)).transpose()?,
                 table: opt_flag(&out, "table"),
             },
             "start" => Commands::Start {
@@ -207,7 +209,12 @@ impl CliExecute for Cli {
             Commands::Break { note } => self.invoke_break(note),
             Commands::End => self.invoke_end(),
             Commands::Absence { date, note } => self.invoke_absence(date, note),
-            Commands::Status { week, month, table } => self.invoke_status(week, month, table),
+            Commands::Status {
+                week,
+                month,
+                year,
+                table,
+            } => self.invoke_status(week, month, year, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Add { minutes } => self.invoke_add(minutes),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
@@ -308,7 +315,7 @@ impl Cli {
                 status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
-        self.invoke_status(&None, &None, &None)
+        self.invoke_status(&None, &None, &None, &None)
     }
 
     fn invoke_add(&self, minutes: &u16) -> TrackerResult {
@@ -342,12 +349,25 @@ impl Cli {
 
     fn invoke_status(
         &self,
-        week: &Option<i8>,
-        month: &Option<i8>,
+        week: &Option<i16>,
+        month: &Option<i16>,
+        year: &Option<i16>,
         table: &Option<bool>,
     ) -> TrackerResult {
         log::info!("status executed");
         let settings = Settings::new()?;
+
+        if let Some(y) = year {
+            let today = Local::now().date_naive();
+            let time_data = TimeDataYearly::load(settings.folder.to_owned().into(), *y, today)?;
+            let status = StatusYearly::new(time_data, &settings)?;
+            if table.unwrap_or(true) {
+                status.format_table();
+            } else {
+                println!("{}", status);
+            }
+            return Ok(());
+        }
 
         if let Some(m) = month {
             let today = Local::now().date_naive();
@@ -363,8 +383,14 @@ impl Cli {
 
         match week {
             Some(w) => {
-                let year = Local::now().year();
                 let cur_week: IsoWeek = Local::now().iso_week();
+                // Relative weeks count from the current week, which may belong to another year
+                // around new year, e.g. 1st of January 2027 is in week 53 of 2026.
+                let year = if *w > 0 {
+                    Local::now().year()
+                } else {
+                    cur_week.year()
+                };
                 let time_data = TimeDataWeekly::builder()
                     .folder(settings.folder.to_owned().into())
                     .year(year.try_into()?)
@@ -439,6 +465,6 @@ impl Cli {
             takeover.remove()?;
             return Err(e);
         }
-        self.invoke_status(&None, &None, &None)
+        self.invoke_status(&None, &None, &None, &None)
     }
 }
