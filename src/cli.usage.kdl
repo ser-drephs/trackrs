@@ -10,10 +10,14 @@ flag "-q --quiet" help="Decrease logging verbosity" global=#true count=#true con
 
 cmd "status" display_order=1 help="Get the status of current tracking" long_help="Get the status for either a day or a week. Not providing additional options will return status for today." {
     flag "-w <week>" help="Week to show the status for" long_help="Either enter the correct week of the year or a relative value eg. -1" allow_hyphen_values=#true
-    flag "-t --table" help="Format week status as table (default)." negate="--no-table" default=#true
+    flag "-t --table" help="Format status as table. Default for week status, which --no-table turns off." negate="--no-table"
 }
-cmd "start" display_order=2 help="Start tracking work" long_help="Starts tracking work for today. Run again to continue after a break."
-cmd "break" display_order=3 help="Take a break" long_help="Breaks current tracking."
+cmd "start" display_order=2 help="Start tracking work" long_help="Starts tracking work for today. Run again to continue after a break." {
+    flag "-n --note <note>" help="Note to save with the entry"
+}
+cmd "break" display_order=3 help="Take a break" long_help="Breaks current tracking." {
+    flag "-n --note <note>" help="Note to save with the entry"
+}
 cmd "end" display_order=4 help="End tracking work" long_help="End tracking work for today."
 cmd "takeover" display_order=5 help="Take over time to next day" long_help="Takes over defined minutes to next day, whenever next connect is executed." {
     arg "<minutes>" help="Minutes to take over to next day."

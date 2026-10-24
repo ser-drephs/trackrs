@@ -12,6 +12,9 @@ pub struct Entry {
     pub(crate) status: Status,
 
     pub(crate) time: DateTime<Utc>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) note: Option<String>,
 }
 
 impl Default for Entry {
@@ -20,6 +23,7 @@ impl Default for Entry {
             id: 0,
             status: Status::Connect,
             time: DateTime::default(),
+            note: None,
         }
     }
 }
@@ -73,6 +77,12 @@ impl EntryBuilder {
     /// Set status of entry.
     pub fn status(&mut self, status: Status) -> &mut Self {
         self.inner.status = status;
+        self
+    }
+
+    /// Set optional note of entry.
+    pub fn note(&mut self, note: Option<String>) -> &mut Self {
+        self.inner.note = note;
         self
     }
 
@@ -160,6 +170,30 @@ mod tests {
             assert_eq!(2, entry.id);
             assert_eq!(Status::Disconnect, entry.status);
             assert_eq!(expected, entry.time);
+            assert_eq!(None, entry.note);
+        }
+
+        #[test]
+        fn should_roundtrip_note() {
+            let entry = Entry::builder()
+                .time(chrono::DateTime::default())
+                .note(Some("lunch".to_owned()))
+                .build()
+                .unwrap();
+            let entry = Entry::from_str(&entry.to_string()).unwrap();
+
+            assert_eq!(Some("lunch".to_owned()), entry.note);
+        }
+
+        #[test]
+        fn should_not_serialize_empty_note() {
+            let entry_str = Entry::builder()
+                .time(chrono::DateTime::default())
+                .build()
+                .unwrap()
+                .to_string();
+
+            assert!(!entry_str.contains("note"));
         }
     }
 }
