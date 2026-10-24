@@ -432,3 +432,31 @@ fn later_start_keeps_takeover(ctx: &mut IntegrationContext) {
     assert!(!a.contains("takeover"));
     assert!(takeover_file(ctx).exists());
 }
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn start_keeps_hand_formatted_file_valid(ctx: &mut IntegrationContext) {
+    let folder = ctx.temp_dir.path().join("trackrs");
+    fs::create_dir_all(&folder).unwrap();
+    let file = folder.join(format!("{}.json", chrono::Utc::now().format("%Y%m%d")));
+    // Pretty printed, as when saved in an editor, longer than written compactly even with the
+    // entry `start` adds.
+    let at = |minutes: i64| chrono::Utc::now() - chrono::Duration::minutes(minutes);
+    let content = serde_json::json!({
+        "data": [
+            {"id": 1, "status": "Connect", "time": at(180)},
+            {"id": 2, "status": "Break", "time": at(120)},
+            {"id": 3, "status": "Connect", "time": at(90)}
+        ],
+        "version": 2
+    });
+    fs::write(&file, serde_json::to_string_pretty(&content).unwrap() + "\n").unwrap();
+
+    let s = Cli::parse_from(["trackrs", "start"].iter());
+    s.execute().unwrap();
+
+    let a: serde_json::Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(4, a["data"].as_array().unwrap().len());
+    assert_eq!(4, a["data"][3]["id"]);
+}
