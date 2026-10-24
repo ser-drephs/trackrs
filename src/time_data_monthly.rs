@@ -1,4 +1,4 @@
-use chrono::{ Datelike, NaiveDate, TimeZone, Utc };
+use chrono::{ Datelike, NaiveDate };
 
 use crate::{ Folder, TimeDataWeekly, TrackerError };
 
@@ -29,10 +29,7 @@ impl TimeDataMonthly {
         let mut weeks = Vec::new();
         for days in days.chunk_by(|a, b| a.iso_week() == b.iso_week()) {
             let week = days[0].iso_week().week().try_into()?;
-            let dates = days
-                .iter()
-                .map(|d| Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap()))
-                .collect();
+            let dates = days.to_vec();
             weeks.push(
                 TimeDataWeekly::builder().folder(folder.to_owned()).week_dates(week, dates).build()?
             );
@@ -84,7 +81,7 @@ mod tests {
         // March 2022 starts on a Tuesday and ends on a Thursday.
         let weeks: Vec<(i16, usize)> = m.weeks
             .iter()
-            .map(|w| (w.week, w.entries.len()))
+            .map(|w| (w.week, w.dates.len()))
             .collect();
         assert_eq!(vec![(9, 6), (10, 7), (11, 7), (12, 7), (13, 4)], weeks);
         assert_eq!((2022, 3), (m.year, m.month));

@@ -1,10 +1,12 @@
-use chrono::{ DateTime, Datelike, IsoWeek, NaiveDate, TimeZone, Utc, Weekday };
+use chrono::{ Datelike, IsoWeek, NaiveDate, Weekday };
 
-use crate::{ Folder, TimeData, TrackerError };
+use crate::{ Folder, TrackerError };
 
+/// The days of a week, or of its days within a month, with the folder to read them from.
 #[derive(Default, Clone)]
 pub struct TimeDataWeekly {
-    pub entries: Vec<TimeData>,
+    pub folder: Folder,
+    pub dates: Vec<NaiveDate>,
     pub week: i16,
 }
 
@@ -20,7 +22,7 @@ pub struct TimeDataWeeklyBuilder {
     folder: Option<Folder>,
     week: Option<i16>,
     year: Option<u16>,
-    dates: Option<Vec<DateTime<Utc>>>,
+    dates: Option<Vec<NaiveDate>>,
 }
 
 impl TimeDataWeeklyBuilder {
@@ -50,7 +52,7 @@ impl TimeDataWeeklyBuilder {
     }
 
     /// Use only these dates of `week`, e.g. the days of a week within a month.
-    pub fn week_dates(&mut self, week: i16, dates: Vec<DateTime<Utc>>) -> &mut Self {
+    pub fn week_dates(&mut self, week: i16, dates: Vec<NaiveDate>) -> &mut Self {
         self.week = Some(week);
         self.inner.week = week;
         self.dates = Some(dates);
@@ -78,7 +80,8 @@ impl TimeDataWeeklyBuilder {
         if !given_dates {
             self.assert_relative_week().set_dates()?;
         }
-        self.set_files()?;
+        self.inner.folder = self.folder.to_owned().unwrap();
+        self.inner.dates = self.dates.to_owned().unwrap();
         Ok(self.inner.clone())
     }
 
@@ -98,47 +101,21 @@ impl TimeDataWeeklyBuilder {
         self
     }
 
-    fn set_files(&mut self) -> Result<&mut Self, TrackerError> {
-        let dates = match self.dates.to_owned() {
-            Some(d) => d,
-            None => {
-                return Err(TrackerError::TimeDataError {
-                    message: "dates are not defined".to_owned(),
-                });
-            }
-        };
-
-        let mut entries: Vec<TimeData> = Default::default();
-
-        dates.iter().for_each(|d| {
-            let mut b = TimeData::builder();
-            let f = self.folder.as_ref().unwrap().to_owned();
-            let mut t = b.folder(f).date(d.to_owned()).build().unwrap();
-            t.read_from_file().unwrap();
-            let mut v = [t].to_vec();
-            entries.append(v.as_mut());
-        });
-        self.inner.entries = entries;
-        Ok(self)
-    }
-
     fn set_dates(&mut self) -> Result<&mut Self, TrackerError> {
         let current_year = self.year.unwrap().into();
 
         let week = self.week.unwrap().try_into()?;
 
         let mut weekday = Weekday::Mon;
-        let mut dates: Vec<DateTime<Utc>> = Default::default();
+        let mut dates: Vec<NaiveDate> = Default::default();
 
         loop {
             let dt = NaiveDate::from_isoywd_opt(current_year, week, weekday)
                 .ok_or_else(|| TrackerError::TimeDataError {
                     message: format!("week {week} doesn't exist in {current_year}"),
-                })?
-                .and_hms_opt(0, 0, 0)
-                .unwrap();
+                })?;
 
-            let d = Utc.from_utc_datetime(&dt);
+            let d = dt;
             log::debug!("add {:?} {:?} to dates", weekday, d);
             let mut v = [d].to_vec();
             dates.append(v.as_mut());
@@ -156,6 +133,8 @@ impl TimeDataWeeklyBuilder {
 
 #[cfg(test)]
 mod tests {
+    use chrono::{ TimeZone, Utc };
+
     use super::*;
 
     fn logger() {
@@ -307,47 +286,14 @@ mod tests {
         }
 
         #[test]
-        fn no_dates() {
-            let mut builder = TimeDataWeekly::builder();
-            let res = builder.folder(Folder::default()).set_files();
-            assert!(res.is_err());
-            assert_eq!("time data error: dates are not defined", res.err().unwrap().to_string());
-        }
-
-        #[test]
-        fn should_set_files() -> Result<(), TrackerError> {
-            logger();
-            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
-            let mut builder = TimeDataWeekly::builder();
-            builder
-                .folder(Folder::default())
-                .year(2022)
-                .week(&-2, d.iso_week())
-                .set_dates()?
-                .set_files()?;
-            assert_eq!(7, builder.inner.entries.len());
-
-            let first = builder.inner.entries.first().unwrap();
-            let last = builder.inner.entries.last().unwrap();
-
-            assert_eq!("20220117.json", first.file.to_str().unwrap());
-            assert_eq!("20220123.json", last.file.to_str().unwrap());
-            Ok(())
-        }
-
-        #[test]
         fn should_build() -> Result<(), TrackerError> {
             logger();
             let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
             let t = builder.folder(Folder::default()).year(2022).week(&-2, d.iso_week()).build()?;
-            assert_eq!(7, t.entries.len());
-
-            let first = t.entries.first().unwrap();
-            let last = t.entries.last().unwrap();
-
-            assert_eq!("20220117.json", first.file.to_str().unwrap());
-            assert_eq!("20220123.json", last.file.to_str().unwrap());
+            assert_eq!(7, t.dates.len());
+            assert_eq!(NaiveDate::from_ymd_opt(2022, 1, 17), t.dates.first().copied());
+            assert_eq!(NaiveDate::from_ymd_opt(2022, 1, 23), t.dates.last().copied());
             Ok(())
         }
     }

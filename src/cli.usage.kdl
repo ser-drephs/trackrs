@@ -9,6 +9,9 @@ flag "-v --verbose" help="Increase logging verbosity" global=#true count=#true
 flag "-q --quiet" help="Decrease logging verbosity" global=#true count=#true conflicts="verbose"
 
 cmd "status" display_order=1 help="Get the status of current tracking" long_help="Get the status for either a day, a week, a month or a year. Not providing additional options will return status for today." {
+    flag "-d <day>" help="Day to show the status for" long_help="Either enter a date like 2026-10-24, the day of the current month or a relative value eg. -1" allow_hyphen_values=#true {
+        conflicts "w" "m" "y"
+    }
     flag "-w <week>" help="Week to show the status for" long_help="Either enter the correct week of the year or a relative value eg. -1" allow_hyphen_values=#true
     flag "-m <month>" help="Month to show the status for" long_help="Either enter the month of the year or a relative value eg. -1" allow_hyphen_values=#true conflicts="w"
     flag "-y <year>" help="Year to show the status for" long_help="Either enter the year or a relative value eg. -1" allow_hyphen_values=#true {

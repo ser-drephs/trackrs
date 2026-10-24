@@ -4,7 +4,7 @@ use std::{
     path::{ Path, PathBuf },
 };
 
-use chrono::{ Datelike, Months, NaiveDate, TimeZone, Utc };
+use chrono::{ Datelike, Months, NaiveDate };
 use serde::{ Deserialize, Serialize };
 
 use crate::{ Folder, Settings, StatusTime, StatusWeekly, TimeDataWeekly, TrackerError };
@@ -157,7 +157,6 @@ impl Overtime {
         let dates: Vec<_> = from
             .iter_days()
             .take_while(|d| d < &start)
-            .map(|d| Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).unwrap()))
             .collect();
         if dates.is_empty() {
             return Ok(Some(cumulated));

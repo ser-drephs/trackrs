@@ -31,6 +31,7 @@ pub struct Cli {
 #[derive(Debug)]
 pub enum Commands {
     Status {
+        day: Option<Day>,
         week: Option<i16>,
         month: Option<i16>,
         year: Option<i16>,
@@ -111,6 +112,7 @@ impl Cli {
 
         let command = match out.cmd.name.as_str() {
             "status" => Commands::Status {
+                day: string(&out, "d").map(|d| typed("day", d)).transpose()?,
                 week: string(&out, "w").map(|w| typed("week", w)).transpose()?,
                 month: string(&out, "m").map(|m| typed("month", m)).transpose()?,
                 year: string(&out, "y").map(|y| typed("year", y)).transpose()?,
@@ -219,11 +221,12 @@ impl CliExecute for Cli {
             Commands::End => self.invoke_end(),
             Commands::Absence { date, note } => self.invoke_absence(date, note),
             Commands::Status {
+                day,
                 week,
                 month,
                 year,
                 table,
-            } => self.invoke_status(week, month, year, table),
+            } => self.invoke_status(day, week, month, year, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Add { minutes } => self.invoke_add(minutes),
             Commands::Overtime { month, force } => self.invoke_overtime(month, force),
@@ -325,7 +328,7 @@ impl Cli {
                 status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
-        self.invoke_status(&None, &None, &None, &None)
+        self.invoke_status(&None, &None, &None, &None, &None)
     }
 
     fn invoke_add(&self, minutes: &u16) -> TrackerResult {
@@ -359,6 +362,7 @@ impl Cli {
 
     fn invoke_status(
         &self,
+        day: &Option<Day>,
         week: &Option<i16>,
         month: &Option<i16>,
         year: &Option<i16>,
@@ -423,15 +427,13 @@ impl Cli {
                 }
             }
             None => {
-                let mut time_data = TimeData::builder()
-                    .folder(settings.folder.to_owned().into())
-                    .today()
-                    .build()?;
-                time_data.read_from_file()?;
-                let status = StatusDaily::builder()
-                    .data(time_data)
-                    .settings(settings)
-                    .build()?;
+                // Day files are named by their UTC date, like today's.
+                let date = status_date(day, Utc::now().date_naive())?;
+                let status =
+                    StatusDaily::load(&settings.folder.to_owned().into(), &settings, date)?
+                        .ok_or_else(|| TrackerError::TimeDataError {
+                            message: format!("no entries for {date}"),
+                        })?;
                 if table.unwrap_or(false) {
                     status.format_ranges_table();
                 } else {
@@ -520,6 +522,144 @@ impl Cli {
             takeover.remove()?;
             return Err(e);
         }
-        self.invoke_status(&None, &None, &None, &None)
+        self.invoke_status(&None, &None, &None, &None, &None)
+    }
+}
+
+/// A day as given on the command line: an ISO date, a day of the current month, or a day
+/// relative to today for 0 and less, e.g. -1 for yesterday.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Day {
+    Date(NaiveDate),
+    Number(i16),
+}
+
+impl FromStr for Day {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            return Ok(Day::Date(date));
+        }
+        s.parse().map(Day::Number).map_err(|_| {
+            "expected a date like 2026-10-24, a day of the month or a relative day like -1"
+                .to_owned()
+        })
+    }
+}
+
+impl Day {
+    pub fn resolve(&self, today: NaiveDate) -> Result<NaiveDate, TrackerError> {
+        let day = match *self {
+            Day::Date(date) => Some(date),
+            Day::Number(n) if n > 0 => today.with_day(n as u32),
+            Day::Number(n) => today.checked_add_signed(chrono::Duration::days(n.into())),
+        };
+        day.ok_or_else(|| TrackerError::TimeDataError {
+            message: match self {
+                Day::Number(n) if *n > 0 => {
+                    format!("day {n} doesn't exist in {}", today.format("%Y-%m"))
+                }
+                _ => format!("day {self:?} is out of range"),
+            },
+        })
+    }
+}
+
+/// The date to show the daily status for: `day`, or `today` without it.
+fn status_date(day: &Option<Day>, today: NaiveDate) -> Result<NaiveDate, TrackerError> {
+    match day {
+        Some(d) => d.resolve(today),
+        None => Ok(today),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::NaiveDate;
+
+    use super::{status_date, Cli, Commands, Day};
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn parse(args: &[&str]) -> Result<Commands, i32> {
+        let args: Vec<String> = ["trackrs"]
+            .iter()
+            .chain(args)
+            .map(|a| a.to_string())
+            .collect();
+        Cli::try_parse(&args)
+            .map(|c| c.command)
+            .map_err(|(_, code)| code)
+    }
+
+    /// The date `status` with these arguments shows, given `today`.
+    fn status_date_of(args: &[&str], today: NaiveDate) -> NaiveDate {
+        match parse(args) {
+            Ok(Commands::Status { day, .. }) => status_date(&day, today).unwrap(),
+            other => panic!("not a status command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_show_today_without_day() {
+        let today = date(2026, 3, 2);
+        assert_eq!(today, status_date_of(&["status"], today));
+        assert_eq!(today, status_date_of(&["status", "-t"], today));
+        assert_eq!(today, status_date_of(&["status", "-d", "0"], today));
+    }
+
+    #[test]
+    fn should_convert_day_to_iso_date() {
+        let today = date(2026, 3, 2);
+        assert_eq!(
+            date(2025, 12, 24),
+            status_date_of(&["status", "-d", "2025-12-24"], today)
+        );
+        assert_eq!(
+            date(2026, 3, 20),
+            status_date_of(&["status", "-d", "20"], today)
+        );
+        assert_eq!(
+            date(2026, 3, 1),
+            status_date_of(&["status", "-d", "-1"], today)
+        );
+        // Back into February and the year before.
+        assert_eq!(
+            date(2026, 2, 28),
+            status_date_of(&["status", "-d", "-2"], today)
+        );
+        assert_eq!(
+            date(2025, 12, 31),
+            status_date_of(&["status", "-d", "-61"], today)
+        );
+    }
+
+    #[test]
+    fn should_reject_day_not_in_month() {
+        let today = date(2026, 2, 10);
+        let day = Some("30".parse::<Day>().unwrap());
+        let err = status_date(&day, today).unwrap_err().to_string();
+        assert!(err.contains("day 30 doesn't exist in 2026-02"), "{err}");
+    }
+
+    #[test]
+    fn should_reject_invalid_days_on_parse() {
+        for d in ["2026-02-30", "2026-13-01", "yesterday", "1.5"] {
+            assert_eq!(Err(2), parse(&["status", "-d", d]).map(|_| ()), "{d}");
+        }
+    }
+
+    #[test]
+    fn should_reject_day_with_other_periods() {
+        for other in ["-w", "-m", "-y"] {
+            assert_eq!(
+                Err(2),
+                parse(&["status", "-d", "0", other, "0"]).map(|_| ()),
+                "{other}"
+            );
+        }
     }
 }

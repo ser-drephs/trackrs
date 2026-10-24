@@ -7,6 +7,7 @@ use crate::{ Entries, Entry, Settings, Status, TrackerError, Upgrade };
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
 
+
 #[derive(Default, Clone, Debug)]
 pub struct TimeData {
     pub entries: Entries,
