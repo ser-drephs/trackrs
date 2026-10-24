@@ -10,8 +10,8 @@ use crate::{ Settings, StatusTime, StatusWeekly, TimeDataMonthly, TrackerError }
 pub struct StatusMonthly {
     year: i32,
     month: u32,
-    total: StatusTime,
-    overtime: StatusTime,
+    pub(crate) total: StatusTime,
+    pub(crate) overtime: StatusTime,
     decimal: f64,
     weeks: Vec<StatusWeekly>,
 }
@@ -32,9 +32,12 @@ impl StatusMonthly {
         Ok(StatusMonthly { year: data.year, month: data.month, total, overtime, decimal, weeks })
     }
 
+    pub(crate) fn month_name(&self) -> &'static str {
+        Month::try_from(self.month as u8).map_or("", |m| m.name())
+    }
+
     fn name(&self) -> String {
-        let month = Month::try_from(self.month as u8).map_or("", |m| m.name());
-        format!("{} {}", month, self.year)
+        format!("{} {}", self.month_name(), self.year)
     }
 
     pub fn format_table(&self) {
@@ -97,7 +100,7 @@ mod tests {
         let temp_dir = tempfile::tempdir()?;
         let s = march(temp_dir.path())?;
 
-        let rows: Vec<(i8, String, String)> = s.weeks
+        let rows: Vec<(i16, String, String)> = s.weeks
             .iter()
             .map(|w| (w.week, w.total.to_string(), w.overtime.to_string()))
             .collect();

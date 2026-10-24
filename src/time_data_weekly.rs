@@ -5,7 +5,7 @@ use crate::{ Folder, TimeData, TrackerError };
 #[derive(Default, Clone)]
 pub struct TimeDataWeekly {
     pub entries: Vec<TimeData>,
-    pub week: i8,
+    pub week: i16,
 }
 
 impl TimeDataWeekly {
@@ -18,7 +18,7 @@ impl TimeDataWeekly {
 pub struct TimeDataWeeklyBuilder {
     inner: TimeDataWeekly,
     folder: Option<Folder>,
-    week: Option<i8>,
+    week: Option<i16>,
     year: Option<u16>,
     dates: Option<Vec<DateTime<Utc>>>,
 }
@@ -36,12 +36,12 @@ impl TimeDataWeeklyBuilder {
         self
     }
 
-    pub fn week(&mut self, week: &i8, current_week: IsoWeek) -> &mut Self {
+    pub fn week(&mut self, week: &i16, current_week: IsoWeek) -> &mut Self {
         log::debug!("set week to: {:?}", week);
         self.week = match week > &0 {
             true => Some(week.to_owned()),
             false => {
-                let cw: i8 = current_week.week().try_into().unwrap();
+                let cw: i16 = current_week.week().try_into().unwrap();
                 Some(cw + week)
             }
         };
@@ -50,7 +50,7 @@ impl TimeDataWeeklyBuilder {
     }
 
     /// Use only these dates of `week`, e.g. the days of a week within a month.
-    pub fn week_dates(&mut self, week: i8, dates: Vec<DateTime<Utc>>) -> &mut Self {
+    pub fn week_dates(&mut self, week: i16, dates: Vec<DateTime<Utc>>) -> &mut Self {
         self.week = Some(week);
         self.inner.week = week;
         self.dates = Some(dates);
@@ -82,17 +82,19 @@ impl TimeDataWeeklyBuilder {
         Ok(self.inner.clone())
     }
 
+    /// Move a week before the first one back into the previous years.
     fn assert_relative_week(&mut self) -> &mut Self {
-        let week = self.week.unwrap();
-        if week < 0 {
-            let new_year = self.year.unwrap() - 1;
-            self.week(
-                &week,
-                Utc.with_ymd_and_hms(new_year.into(), 12, 31, 0, 0, 0).unwrap().iso_week()
-            );
-            self.year(new_year);
-            self.assert_relative_week();
+        let mut week = self.week.unwrap();
+        let mut year = self.year.unwrap();
+        while week < 1 {
+            year -= 1;
+            // 28th of December is always in the last week of its year.
+            let weeks = NaiveDate::from_ymd_opt(year.into(), 12, 28).unwrap().iso_week().week();
+            week += weeks as i16;
         }
+        self.week = Some(week);
+        self.inner.week = week;
+        self.year(year);
         self
     }
 
@@ -130,7 +132,9 @@ impl TimeDataWeeklyBuilder {
 
         loop {
             let dt = NaiveDate::from_isoywd_opt(current_year, week, weekday)
-                .unwrap()
+                .ok_or_else(|| TrackerError::TimeDataError {
+                    message: format!("week {week} doesn't exist in {current_year}"),
+                })?
                 .and_hms_opt(0, 0, 0)
                 .unwrap();
 
@@ -197,7 +201,7 @@ mod tests {
         #[test]
         fn should_set_current_week() {
             let d = Utc::now(); // required for test
-            let w: i8 = d.iso_week().week().try_into().unwrap();
+            let w: i16 = d.iso_week().week().try_into().unwrap();
 
             let mut builder = TimeDataWeekly::builder();
             builder.year(d.year().try_into().unwrap()).week(&0, d.iso_week());
@@ -233,6 +237,48 @@ mod tests {
             assert_eq!(13, dates.last().unwrap().day());
             assert_eq!(12, dates.last().unwrap().month());
             assert_eq!(2020, dates.last().unwrap().year());
+            Ok(())
+        }
+
+        #[test]
+        fn should_reject_week_not_in_year() {
+            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
+            let mut builder = TimeDataWeekly::builder();
+            let res = builder.year(2022).week(&60, d.iso_week()).folder("/tmp".into()).build();
+            assert_eq!(
+                "time data error: week 60 doesn't exist in 2022",
+                res.err().unwrap().to_string()
+            );
+
+            // 2022 has 52 weeks, 2020 has 53.
+            let mut builder = TimeDataWeekly::builder();
+            assert!(builder.year(2022).week(&53, d.iso_week()).assert_relative_week().set_dates().is_err());
+            let mut builder = TimeDataWeekly::builder();
+            assert!(builder.year(2020).week(&53, d.iso_week()).assert_relative_week().set_dates().is_ok());
+        }
+
+        #[test]
+        fn should_resolve_relative_week_zero_to_last_week_of_previous_year() -> Result<(), TrackerError> {
+            // Week 1 of 2021, one week back is week 53 of 2020.
+            let d = Utc.with_ymd_and_hms(2021, 1, 6, 0, 0, 0).unwrap();
+            let mut builder = TimeDataWeekly::builder();
+            builder.year(2021).week(&-1, d.iso_week()).assert_relative_week().set_dates()?;
+
+            assert_eq!(Some(53), builder.week);
+            assert_eq!(Some(2020), builder.year);
+            Ok(())
+        }
+
+        #[test]
+        fn should_not_take_week_one_of_next_year_as_last_week() -> Result<(), TrackerError> {
+            // Week 2 of 2025, three weeks back is week 51 of 2024 with its 52 weeks, although
+            // 31st of December 2024 is in week 1 of 2025.
+            let d = Utc.with_ymd_and_hms(2025, 1, 8, 0, 0, 0).unwrap();
+            let mut builder = TimeDataWeekly::builder();
+            builder.year(2025).week(&-3, d.iso_week()).assert_relative_week().set_dates()?;
+
+            assert_eq!(Some(51), builder.week);
+            assert_eq!(Some(2024), builder.year);
             Ok(())
         }
 
