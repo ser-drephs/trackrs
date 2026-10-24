@@ -32,8 +32,6 @@ pub enum Commands {
     Start,
     Break,
     End,
-    Disconnect,
-    Continue,
     Takeover { minutes: u16 },
     Config { list: bool, edit: bool },
 }
@@ -91,8 +89,6 @@ impl Cli {
             "start" => Commands::Start,
             "break" => Commands::Break,
             "end" => Commands::End,
-            "disconnect" => Commands::Disconnect,
-            "continue" => Commands::Continue,
             "takeover" => Commands::Takeover {
                 minutes: typed("minutes", string(&out, "minutes").unwrap_or_default())?,
             },
@@ -154,12 +150,10 @@ impl CliExecute for Cli {
         match &self.command {
             Commands::Break => self.invoke_break(),
             Commands::End => self.invoke_end(),
-            Commands::Disconnect => self.invoke_disconnect(),
             Commands::Status { week, table } => self.invoke_status(week, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
             Commands::Start => self.invoke_start(),
-            _ => self.invoke_continue(), // default and Command::Start.
         }
     }
 
@@ -202,20 +196,6 @@ impl Cli {
             .write_to_file()
     }
 
-    fn invoke_continue(&self) -> TrackerResult {
-        log::info!("start executed");
-        let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
-            .today()
-            .build()?;
-        let now = Local::now();
-        time_data
-            .read_from_file()?
-            .append(Status::Connect, now.to_utc())?
-            .write_to_file()
-    }
-
     fn invoke_break(&self) -> TrackerResult {
         log::info!("break executed");
         let settings = Settings::new()?;
@@ -249,20 +229,6 @@ impl Cli {
             )?
             .write_to_file()?;
         self.invoke_status(&None, &false)
-    }
-
-    fn invoke_disconnect(&self) -> TrackerResult {
-        log::info!("disconnect executed");
-        let settings = Settings::new()?;
-        let mut time_data = TimeData::builder()
-            .folder(settings.folder.into())
-            .today()
-            .build()?;
-        let now = Local::now();
-        time_data
-            .read_from_file()?
-            .append(Status::Disconnect, now.to_utc())?
-            .write_to_file()
     }
 
     fn invoke_status(&self, week: &Option<i8>, table: &bool) -> TrackerResult {

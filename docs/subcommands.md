@@ -55,7 +55,7 @@ Example: `trackrs pause --reason <text>`.
    ```rust
    Commands::Pause { reason } => self.invoke_pause(reason),
    ```
-   Hint: If you miss this step, `execute` ends with a catch-all `_ => self.invoke_continue()`, so without its own arm the new command silently runs `continue`. The compiler does not warn about this either.
+   Hint: `execute` matches every `Commands` variant, so the compiler reports a missing arm.
 
 5. **Check**: `cargo build && target/debug/trackrs pause --help`, then run the command once.
 
