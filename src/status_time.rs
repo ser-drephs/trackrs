@@ -18,9 +18,13 @@ impl StatusTime {
         StatusTime::from(Local::now())
     }
 
-    /// Running sum of `times`, e.g. the overtime accumulated up to and including each day.
-    pub fn cumulated<'a>(times: impl IntoIterator<Item = &'a StatusTime>) -> Vec<StatusTime> {
-        let mut sum = StatusTime::default();
+    /// Running sum of `times` after `start`, e.g. the overtime accumulated up to and including
+    /// each day.
+    pub fn cumulated<'a>(
+        start: StatusTime,
+        times: impl IntoIterator<Item = &'a StatusTime>
+    ) -> Vec<StatusTime> {
+        let mut sum = start;
         times
             .into_iter()
             .map(|t| {
@@ -54,6 +58,27 @@ impl std::fmt::Display for StatusTime {
         } else {
             write!(f, "{:0>2}:{:0>2}", hours, minutes)
         }
+    }
+}
+
+/// Parses signed `HH:mm` as written by `Display`, e.g. `-02:15` or `157:00`.
+impl std::str::FromStr for StatusTime {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let err = || format!("'{s}' is not a time like 07:30 or -02:15");
+        let (negative, rest) = match s.trim().strip_prefix('-') {
+            Some(rest) => (true, rest),
+            None => (false, s.trim()),
+        };
+        let (hours, minutes) = rest.split_once(':').ok_or_else(err)?;
+        let hours: i64 = hours.parse().map_err(|_| err())?;
+        let minutes: i64 = minutes.parse().map_err(|_| err())?;
+        if minutes >= 60 || hours < 0 || minutes < 0 {
+            return Err(err());
+        }
+        let duration = Duration::minutes(hours * 60 + minutes);
+        Ok(StatusTime::from(if negative { -duration } else { duration }))
     }
 }
 
@@ -189,13 +214,30 @@ mod tests {
             .iter()
             .map(|m| StatusTime::from(Duration::minutes(*m)))
             .collect();
-        let sums: Vec<String> = StatusTime::cumulated(&times)
+        let sums: Vec<String> = StatusTime::cumulated(StatusTime::default(), &times)
             .iter()
             .map(|t| t.to_string())
             .collect();
-
         assert_eq!(vec!["00:30", "-01:00", "-01:00", "01:00"], sums);
-        assert!(StatusTime::cumulated(&[]).is_empty());
+
+        let start = StatusTime::from(Duration::hours(10));
+        let sums: Vec<String> = StatusTime::cumulated(start, &times)
+            .iter()
+            .map(|t| t.to_string())
+            .collect();
+        assert_eq!(vec!["10:30", "09:00", "09:00", "11:00"], sums);
+
+        assert!(StatusTime::cumulated(StatusTime::default(), &[]).is_empty());
+    }
+
+    #[test]
+    fn should_parse_what_it_displays() {
+        for s in ["00:00", "07:30", "-02:15", "157:00", "-00:30", "-2069:00"] {
+            assert_eq!(s, s.parse::<StatusTime>().unwrap().to_string());
+        }
+        for s in ["", "7", "07:60", "07:-1", "a:00", "--01:00", "01:00:00"] {
+            assert!(s.parse::<StatusTime>().is_err(), "{s}");
+        }
     }
 
     mod format {

@@ -41,7 +41,7 @@ impl TimeDataMonthly {
         Ok(TimeDataMonthly { year, month, weeks })
     }
 
-    fn resolve(month: i16, today: NaiveDate) -> Result<(i32, u32), TrackerError> {
+    pub(crate) fn resolve(month: i16, today: NaiveDate) -> Result<(i32, u32), TrackerError> {
         match month {
             1..=12 => Ok((today.year(), month as u32)),
             13.. => Err(TrackerError::TimeDataError {
