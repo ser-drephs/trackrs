@@ -6,7 +6,7 @@ use std::{
 
 use serial_test::serial;
 use chrono::TimeZone;
-use trackrs::{BreakLimit, Cli, CliExecute, Settings, StatusDaily, TimeData};
+use trackrs::{BreakLimit, Cli, CliExecute, Settings, StatusDaily, Timesheet};
 
 fn logger() {
     // env::set_var("RUST_LOG", "info");
@@ -209,7 +209,7 @@ fn sick_writes_full_day_with_break(ctx: &mut IntegrationContext) {
     ));
     assert!(a.contains("{\"status\":\"End\",\"time\":\"2022-02-07T14:30:00Z\"}"));
 
-    let mut time_data = TimeData::builder()
+    let mut time_data = Timesheet::builder()
         .folder(settings.folder.to_owned().into())
         .date(chrono::Utc.with_ymd_and_hms(2022, 2, 7, 6, 0, 0).unwrap())
         .build()
