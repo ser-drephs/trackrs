@@ -196,8 +196,8 @@ impl StatusWeeklyBuilder {
     }
 
     fn datetime_to_decimal(&self, total: &StatusTime) -> f64 {
-        let hours = total.hours as f64; //.try_into().unwrap();
-        let minutes = total.minutes as f64;
+        let hours = total.hours() as f64; //.try_into().unwrap();
+        let minutes = total.minutes() as f64;
         let md = minutes * (1.0 / 60.0);
         hours + md
     }

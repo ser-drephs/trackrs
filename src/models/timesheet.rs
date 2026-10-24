@@ -954,8 +954,8 @@ mod tests {
 
             assert!(data.end().is_none());
             let online = data.online(now).unwrap();
-            assert_eq!(1, online.hours);
-            assert_eq!(30, online.minutes);
+            assert_eq!(1, online.hours());
+            assert_eq!(30, online.minutes());
         }
 
         #[test]
@@ -990,8 +990,8 @@ mod tests {
             };
 
             let r#break = data.break_taken();
-            assert_eq!(0, r#break.hours);
-            assert_eq!(5, r#break.minutes);
+            assert_eq!(0, r#break.hours());
+            assert_eq!(5, r#break.minutes());
         }
 
         #[test]
@@ -1075,8 +1075,8 @@ mod tests {
             };
 
             let r#break = data.break_taken();
-            assert_eq!(0, r#break.hours);
-            assert_eq!(21, r#break.minutes);
+            assert_eq!(0, r#break.hours());
+            assert_eq!(21, r#break.minutes());
         }
 
         #[test]
@@ -1103,8 +1103,8 @@ mod tests {
 
             let online = data.online(now()).unwrap();
 
-            assert_eq!(7, online.hours);
-            assert_eq!(3, online.minutes);
+            assert_eq!(7, online.hours());
+            assert_eq!(3, online.minutes());
         }
 
         #[test]

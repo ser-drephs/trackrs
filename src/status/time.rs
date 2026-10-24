@@ -4,16 +4,22 @@ use chrono::{ DateTime, Duration, Local, Timelike, Utc };
 
 use crate::Entry;
 
-#[derive(Debug, Clone)]
-#[allow(unused)]
+#[derive(Debug, Clone, Default)]
 pub struct StatusTime {
-    inner: Option<Entry>,
     pub duration: Duration,
-    pub hours: i64,
-    pub minutes: i64,
 }
 
 impl StatusTime {
+    /// Whole hours of the duration, not wrapped at a day.
+    pub fn hours(&self) -> i64 {
+        self.duration.num_hours()
+    }
+
+    /// Minutes of the duration within its hour, negative for a negative duration.
+    pub fn minutes(&self) -> i64 {
+        self.duration.num_minutes() % 60
+    }
+
     pub fn now() -> StatusTime {
         StatusTime::from(Local::now())
     }
@@ -39,18 +45,18 @@ impl std::fmt::Display for StatusTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut negative = false;
 
-        let hours = if self.hours < 0 {
+        let hours = if self.hours() < 0 {
             negative = true;
-            -self.hours
+            -self.hours()
         } else {
-            self.hours
+            self.hours()
         };
 
-        let minutes = if self.minutes < 0 {
+        let minutes = if self.minutes() < 0 {
             negative = true;
-            -self.minutes
+            -self.minutes()
         } else {
-            self.minutes
+            self.minutes()
         };
 
         if negative {
@@ -84,66 +90,31 @@ impl std::str::FromStr for StatusTime {
 
 impl From<&Entry> for StatusTime {
     fn from(e: &Entry) -> Self {
-        let time = DateTime::<Local>::from(e.time);
-        let d = Duration::seconds(time.num_seconds_from_midnight().into());
-        StatusTime {
-            duration: d,
-            minutes: d.num_minutes() % 60,
-            hours: d.num_hours(),
-            inner: Some(e.clone()),
-        }
+        StatusTime::from(DateTime::<Local>::from(e.time))
     }
 }
 
 impl From<DateTime<Utc>> for StatusTime {
     fn from(time: DateTime<Utc>) -> Self {
-        let duration = Duration::seconds(time.num_seconds_from_midnight().into());
-        StatusTime {
-            duration,
-            minutes: duration.num_minutes() % 60,
-            hours: duration.num_hours(),
-            inner: None,
-        }
+        StatusTime { duration: Duration::seconds(time.num_seconds_from_midnight().into()) }
     }
 }
 
 impl From<DateTime<Local>> for StatusTime {
     fn from(time: DateTime<Local>) -> Self {
-        let duration = Duration::seconds(time.num_seconds_from_midnight().into());
-        StatusTime {
-            duration,
-            minutes: duration.num_minutes() % 60,
-            hours: duration.num_hours(),
-            inner: None,
-        }
+        StatusTime { duration: Duration::seconds(time.num_seconds_from_midnight().into()) }
     }
 }
 
 impl From<Duration> for StatusTime {
     fn from(duration: Duration) -> Self {
-        StatusTime {
-            duration,
-            minutes: duration.num_minutes() % 60,
-            hours: duration.num_hours(),
-            inner: None,
-        }
+        StatusTime { duration }
     }
 }
 
 impl From<StatusTime> for Duration {
     fn from(s: StatusTime) -> Self {
         s.duration
-    }
-}
-
-impl Default for StatusTime {
-    fn default() -> Self {
-        Self {
-            duration: Duration::seconds(0),
-            hours: Default::default(),
-            minutes: Default::default(),
-            inner: None,
-        }
     }
 }
 
@@ -253,6 +224,38 @@ mod tests {
             let status = StatusTime::from(&data);
             assert_eq!("08:03", format!("{}", status));
         }
+
+        #[test]
+        fn should_format_minutes_over_an_hour() {
+            assert_eq!("01:08", StatusTime::from(Duration::minutes(68)).to_string());
+        }
+
+        #[test]
+        fn should_ignore_seconds() {
+            let duration = Duration::minutes(1) + Duration::seconds(10);
+
+            assert_eq!("00:01", StatusTime::from(duration).to_string());
+        }
+
+        #[test]
+        fn should_truncate_seconds_instead_of_rounding() {
+            let duration = Duration::minutes(1) + Duration::seconds(58);
+
+            assert_eq!("00:01", StatusTime::from(duration).to_string());
+        }
+
+        #[test]
+        fn should_format_more_than_a_day() {
+            assert_eq!("25:15", StatusTime::from(Duration::minutes(25 * 60 + 15)).to_string());
+            assert_eq!("157:00", StatusTime::from(Duration::hours(157)).to_string());
+        }
+
+        #[test]
+        fn should_format_negative_time() {
+            assert_eq!("-01:30", StatusTime::from(Duration::minutes(-90)).to_string());
+            assert_eq!("-00:30", StatusTime::from(Duration::minutes(-30)).to_string());
+            assert_eq!("-26:05", StatusTime::from(Duration::minutes(-(26 * 60 + 5))).to_string());
+        }
     }
 
     mod from {
@@ -272,12 +275,8 @@ mod tests {
             let status = StatusTime::from(&entry);
 
             assert_eq!(Duration::seconds(8 * 3600 + 3 * 60 + 5), status.duration);
-            assert_eq!(8, status.hours);
-            assert_eq!(3, status.minutes);
-            let inner = status.inner.unwrap();
-            assert_eq!(Status::Disconnect, inner.status);
-            assert_eq!(time, inner.time);
-            assert_eq!(Some("lunch".to_owned()), inner.note);
+            assert_eq!(8, status.hours());
+            assert_eq!(3, status.minutes());
         }
 
         #[test]
@@ -285,9 +284,8 @@ mod tests {
             let status = StatusTime::from(Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 5).unwrap());
 
             assert_eq!(Duration::seconds(8 * 3600 + 3 * 60 + 5), status.duration);
-            assert_eq!(8, status.hours);
-            assert_eq!(3, status.minutes);
-            assert!(status.inner.is_none());
+            assert_eq!(8, status.hours());
+            assert_eq!(3, status.minutes());
         }
 
         #[test]
@@ -295,26 +293,25 @@ mod tests {
             let status = StatusTime::from(DateTime::<Utc>::default());
 
             assert_eq!(Duration::zero(), status.duration);
-            assert_eq!(0, status.hours);
-            assert_eq!(0, status.minutes);
+            assert_eq!(0, status.hours());
+            assert_eq!(0, status.minutes());
         }
 
         #[test]
-        fn duration() {
+        fn should_create_from_duration() {
             let status = StatusTime::from(Duration::minutes(10));
 
             assert_eq!(Duration::minutes(10), status.duration);
-            assert_eq!(0, status.hours);
-            assert_eq!(10, status.minutes);
-            assert!(status.inner.is_none());
+            assert_eq!(0, status.hours());
+            assert_eq!(10, status.minutes());
         }
 
         #[test]
         fn should_create_from_duration_over_a_day() {
             let status = StatusTime::from(Duration::hours(25) + Duration::minutes(15));
 
-            assert_eq!(25, status.hours);
-            assert_eq!(15, status.minutes);
+            assert_eq!(25, status.hours());
+            assert_eq!(15, status.minutes());
         }
 
         #[test]
@@ -322,8 +319,8 @@ mod tests {
             let status = StatusTime::from(Duration::minutes(-90));
 
             assert_eq!(Duration::minutes(-90), status.duration);
-            assert_eq!(-1, status.hours);
-            assert_eq!(-30, status.minutes);
+            assert_eq!(-1, status.hours());
+            assert_eq!(-30, status.minutes());
         }
 
         #[test]
@@ -332,9 +329,8 @@ mod tests {
             let status = StatusTime::from(time);
 
             assert_eq!(Duration::seconds(8 * 3600 + 3 * 60 + 5), status.duration);
-            assert_eq!(8, status.hours);
-            assert_eq!(3, status.minutes);
-            assert!(status.inner.is_none());
+            assert_eq!(8, status.hours());
+            assert_eq!(3, status.minutes());
         }
 
         #[test]
