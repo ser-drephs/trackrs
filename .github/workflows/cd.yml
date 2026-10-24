@@ -5,6 +5,10 @@ on:
     branches: [ main ]
     paths: [ src/** ]
 
+# Only checkout and cache use the automatic token; the release uses the SEMREL_TOKEN secret.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -17,6 +21,16 @@ jobs:
       uses: actions/checkout@v4
       with:
         persist-credentials: false
+
+    - name: prepare scripts
+      if: success()
+      run: chmod +x ${{ github.workspace }}/eng/set-version.sh && chmod +x ${{ github.workspace }}/eng/build-release.sh && chmod +x ${{ github.workspace }}/eng/update-flake.sh
+
+    # Fails fast if SEMREL_TOKEN can't push or publish releases, before building anything.
+    - name: check release permissions
+      run: bash eng/check-release-permissions.sh
+      env:
+        GITHUB_TOKEN: ${{ secrets.SEMREL_TOKEN }}
 
     - name: restore cargo cache
       uses: actions/cache@v4
@@ -47,10 +61,6 @@ jobs:
     - name: targets list
       run: rustup target list | grep installed
 
-    - name: prepare scripts
-      if: success()
-      run: chmod +x ${{ github.workspace }}/eng/set-version.sh && chmod +x ${{ github.workspace }}/eng/build-release.sh && chmod +x ${{ github.workspace }}/eng/update-flake.sh
-
     - name: build release linux
       id: build-linux-release
       if: success()
@@ -79,4 +89,4 @@ jobs:
           @semantic-release/exec@6
           conventional-changelog-conventionalcommits@4
       env:
-        GITHUB_TOKEN: ${{ secrets.SEMREL }}
+        GITHUB_TOKEN: ${{ secrets.SEMREL_TOKEN }}
