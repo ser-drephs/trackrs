@@ -44,7 +44,7 @@ impl test_context::TestContext for IntegrationContext {
 #[test_context::test_context(IntegrationContext)]
 #[test]
 #[serial]
-fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
+fn start_break_start_and_end_workflow(ctx: &mut IntegrationContext) {
     let folder = ctx.temp_dir.path().join("trackrs");
 
     let s = Cli::parse_from(["trackrs", "start"].iter());
@@ -60,7 +60,7 @@ fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
     let b = Cli::parse_from(["trackrs", "break"].iter());
     b.execute().unwrap();
 
-    let c = Cli::parse_from(["trackrs", "continue"].iter());
+    let c = Cli::parse_from(["trackrs", "start"].iter());
     c.execute().unwrap();
 
     let e = Cli::parse_from(["trackrs", "end"].iter());
@@ -83,7 +83,7 @@ fn start_break_continue_and_end_workflow(ctx: &mut IntegrationContext) {
 #[test_context::test_context(IntegrationContext)]
 #[test]
 #[serial]
-fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
+fn start_break_start_workflow(ctx: &mut IntegrationContext) {
     let folder = ctx.temp_dir.path().join("trackrs");
 
     let s = Cli::parse_from(["trackrs", "start"].iter());
@@ -99,7 +99,7 @@ fn start_break_continue_workflow(ctx: &mut IntegrationContext) {
     let b = Cli::parse_from(["trackrs", "break"].iter());
     b.execute().unwrap();
 
-    let c = Cli::parse_from(["trackrs", "continue"].iter());
+    let c = Cli::parse_from(["trackrs", "start"].iter());
     c.execute().unwrap();
 
     let file = files.first().unwrap();
@@ -135,7 +135,7 @@ fn takeover_subtracts_from_today(ctx: &mut IntegrationContext) {
     let b = Cli::parse_from(["trackrs", "break"].iter());
     b.execute().unwrap();
 
-    let c = Cli::parse_from(["trackrs", "continue"].iter());
+    let c = Cli::parse_from(["trackrs", "start"].iter());
     c.execute().unwrap();
 
     let file = files.first().unwrap();
