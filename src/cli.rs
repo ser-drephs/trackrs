@@ -10,7 +10,7 @@ use usage::{
 
 use crate::{
     Daily, JsonStorage, Overtime, Settings, StorageProvider, Status, StatusDisplay, StatusTime,
-    StatusYearly, Takeover, TimeDataMonthly, TimeDataWeekly, TimeDataYearly, Weekly, Monthly,
+    Yearly, Takeover, TimeDataMonthly, TimeDataWeekly, TimeDataYearly, Weekly, Monthly,
     TrackerError,
 };
 
@@ -355,10 +355,11 @@ impl Cli {
 
         if let Some(y) = year {
             let today = Local::now().date_naive();
-            let time_data = TimeDataYearly::load(&storage, *y, today)?;
-            let status = StatusYearly::new(time_data, &settings, Utc::now())?;
+            let time_data = TimeDataYearly::for_year(&storage, *y, today)?;
+            let status = Yearly::new(&time_data, &settings, Utc::now())?;
             if table.unwrap_or(true) {
-                status.format_table(self.carry(&storage, &settings, status.start())?);
+                let carry = self.carry(&storage, &settings, status.start())?;
+                print!("{}", status.with_carry(carry).table());
             } else {
                 println!("{}", status);
             }
