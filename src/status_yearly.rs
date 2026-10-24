@@ -33,13 +33,14 @@ impl StatusYearly {
     pub fn format_table(&self) {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_COLSEP);
-        table.set_titles(row!["Month", "Work time", "Overtime"]);
+        table.set_titles(row!["Month", "Work time", "Overtime", "Cumulated"]);
 
-        for month in &self.months {
-            table.add_row(row![month.month_name(), month.total, month.overtime]);
+        let cumulated = StatusTime::cumulated(self.months.iter().map(|m| &m.overtime));
+        for (month, cumulated) in self.months.iter().zip(cumulated) {
+            table.add_row(row![month.month_name(), month.total, month.overtime, cumulated]);
         }
         table.add_empty_row();
-        table.add_row(row![format!("Total {}", self.year), self.total, self.overtime]);
+        table.add_row(row![format!("Total {}", self.year), self.total, self.overtime, ""]);
 
         table.printstd();
     }
