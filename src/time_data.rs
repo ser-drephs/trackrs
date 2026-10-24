@@ -247,7 +247,8 @@ impl TimeData {
             .create(true)
             .write(true)
             .append(false)
-            .truncate(false)
+            // The file may be longer than the new content, e.g. after being reformatted by hand.
+            .truncate(true)
             .open(&self.file)?;
         Ok(serde_json::to_writer(w, &self.entries)?)
     }
@@ -597,6 +598,40 @@ mod tests {
         fn should_reject_end_on_previous_entry() {
             let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 8, 30)]);
             assert!(t.takeover(30).is_err());
+        }
+    }
+
+    mod write {
+        use chrono::Utc;
+
+        use super::*;
+
+        #[test]
+        fn should_replace_longer_file() -> Result<(), TrackerError> {
+            let temp_dir = tempfile::tempdir()?;
+            let file = temp_dir.path().join("20220207.json");
+            // Pretty printed, as after saving it in an editor, longer than written compactly.
+            fs::write(
+                &file,
+                "{\n    \"data\": [\n        {\n            \"id\": 1,\n            \"status\": \"Connect\",\n            \"time\": \"2022-02-07T06:00:00Z\"\n        }\n    ],\n    \"version\": 2\n}\n"
+            )?;
+            let before = fs::metadata(&file)?.len();
+
+            let mut t = TimeData::builder()
+                .folder(temp_dir.path().to_path_buf().into())
+                .date(Utc.with_ymd_and_hms(2022, 2, 7, 0, 0, 0).unwrap())
+                .build()?;
+            t.read_from_file()?.write_to_file()?;
+
+            let content = fs::read_to_string(&file)?;
+            assert!((content.len() as u64) < before, "{content}");
+            assert_eq!(
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-07T06:00:00Z\"}],\"version\":2}",
+                content
+            );
+            t.read_from_file()?;
+            assert_eq!(1, t.entries.data.len());
+            Ok(())
         }
     }
 
