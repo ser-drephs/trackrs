@@ -4,7 +4,6 @@ use std::{
     io,
 };
 
-use clap::Parser;
 use serial_test::serial;
 use trackrs::{Cli, CliExecute, Settings};
 
