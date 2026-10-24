@@ -28,8 +28,8 @@ cmd "vacation" display_order=6 help="Track vacation for the rest of a day" long_
 cmd "add" display_order=7 help="Add minutes to today" long_help="Adds minutes of work to today, before the first start. Requires a start today, also works after end." {
     arg "<minutes>" help="Minutes to add to today."
 }
-cmd "takeover" display_order=8 help="Take over time to next day" long_help="Takes over defined minutes to next day, whenever next connect is executed." {
-    arg "<minutes>" help="Minutes to take over to next day."
+cmd "takeover" display_order=8 help="Take over time to next day" long_help="Moves the end of today back by the given minutes and adds them before the next first start of a day. Today must be ended." {
+    arg "<minutes>" help="Minutes to take over to the next day."
 }
 cmd "config" display_order=9 help="Configuration" long_help="List or edit configuration" {
     flag "-l --list" help="List configuration" conflicts="edit"
