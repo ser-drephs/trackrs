@@ -282,7 +282,7 @@ fn sick_extends_running_day(ctx: &mut IntegrationContext) {
 
 fn read_today(ctx: &IntegrationContext) -> String {
     let folder = ctx.temp_dir.path().join("trackrs");
-    let file = fs::read_dir(&folder).unwrap().next().unwrap().unwrap().path();
+    let file = folder.join(format!("{}.json", chrono::Utc::now().format("%Y%m%d")));
     fs::read_to_string(file).unwrap()
 }
 
@@ -329,4 +329,106 @@ fn add_rejects_without_start(ctx: &mut IntegrationContext) {
 
     let folder = ctx.temp_dir.path().join("trackrs");
     assert_eq!(0, fs::read_dir(&folder).unwrap().count());
+}
+
+fn takeover_file(ctx: &IntegrationContext) -> std::path::PathBuf {
+    ctx.temp_dir.path().join("trackrs").join(".trackrs-takeover")
+}
+
+/// Today's file with a connect two hours ago and an end one hour ago.
+fn ended_today(ctx: &IntegrationContext) -> std::path::PathBuf {
+    let now = chrono::Utc::now();
+    let folder = ctx.temp_dir.path().join("trackrs");
+    fs::create_dir_all(&folder).unwrap();
+    let file = folder.join(format!("{}.json", now.format("%Y%m%d")));
+    let content = serde_json::json!({
+        "data": [
+            {"id": 1, "status": "Connect", "time": now - chrono::Duration::hours(2)},
+            {"id": 2, "status": "End", "time": now - chrono::Duration::hours(1)}
+        ],
+        "version": 2
+    });
+    fs::write(&file, content.to_string()).unwrap();
+    file
+}
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn takeover_moves_end_and_stores_minutes(ctx: &mut IntegrationContext) {
+    let file = ended_today(ctx);
+    let end_before = fs::read_to_string(&file).unwrap();
+
+    let t = Cli::parse_from(["trackrs", "takeover", "30"].iter());
+    t.execute().unwrap();
+
+    let a = fs::read_to_string(&file).unwrap();
+    assert_ne!(end_before, a);
+    assert!(a.contains("\"id\":2,\"status\":\"End\""));
+    assert!(a.contains("\"id\":3,\"status\":\"Takeover\""));
+    assert!(a.contains("\"note\":\"takeover\""));
+    assert_eq!("{\"minutes\":30}", fs::read_to_string(takeover_file(ctx)).unwrap());
+}
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn takeover_rejects_running_day(ctx: &mut IntegrationContext) {
+    let s = Cli::parse_from(["trackrs", "start"].iter());
+    s.execute().unwrap();
+    let before = read_today(ctx);
+
+    let t = Cli::parse_from(["trackrs", "takeover", "30"].iter());
+    assert!(t.execute().is_err());
+    assert_eq!(before, read_today(ctx));
+    assert!(!takeover_file(ctx).exists());
+}
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn takeover_rejects_when_one_is_pending(ctx: &mut IntegrationContext) {
+    let file = ended_today(ctx);
+    let before = fs::read_to_string(&file).unwrap();
+    fs::write(takeover_file(ctx), "{\"minutes\":15}").unwrap();
+
+    let t = Cli::parse_from(["trackrs", "takeover", "30"].iter());
+    assert!(t.execute().is_err());
+    assert_eq!(before, fs::read_to_string(&file).unwrap());
+    assert_eq!("{\"minutes\":15}", fs::read_to_string(takeover_file(ctx)).unwrap());
+}
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn first_start_adds_takeover_and_removes_file(ctx: &mut IntegrationContext) {
+    // 1 minute keeps the takeover on today's date unless run in the first minute after 00:00 UTC.
+    fs::create_dir_all(ctx.temp_dir.path().join("trackrs")).unwrap();
+    fs::write(takeover_file(ctx), "{\"minutes\":1}").unwrap();
+
+    let s = Cli::parse_from(["trackrs", "start"].iter());
+    s.execute().unwrap();
+
+    let a = read_today(ctx);
+    assert!(a.contains("\"id\":1,\"status\":\"Connect\""));
+    assert!(a.contains("\"note\":\"takeover\"}"));
+    assert!(a.find("takeover") < a.find("\"id\":2,\"status\":\"Connect\""));
+    assert!(!takeover_file(ctx).exists());
+}
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn later_start_keeps_takeover(ctx: &mut IntegrationContext) {
+    let s = Cli::parse_from(["trackrs", "start"].iter());
+    s.execute().unwrap();
+    fs::write(takeover_file(ctx), "{\"minutes\":1}").unwrap();
+
+    let c = Cli::parse_from(["trackrs", "start"].iter());
+    c.execute().unwrap();
+
+    let a = read_today(ctx);
+    assert!(a.contains("\"id\":2,\"status\":\"Connect\""));
+    assert!(!a.contains("takeover"));
+    assert!(takeover_file(ctx).exists());
 }

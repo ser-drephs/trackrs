@@ -1,8 +1,8 @@
-use std::{ fs::{ self, File, OpenOptions }, io::BufReader, ops::Sub, path::PathBuf, str::FromStr };
+use std::{ fs::{ self, File, OpenOptions }, io::BufReader, path::PathBuf, str::FromStr };
 
 use chrono::{ DateTime, Duration, Utc };
 
-use crate::{ Entries, Entry, Settings, Status, Takeover, TrackerError, Upgrade };
+use crate::{ Entries, Entry, Settings, Status, TrackerError, Upgrade };
 
 pub type TimeDataResult = Result<TimeData, TrackerError>;
 pub type TimeDataWriteResult = Result<(), TrackerError>;
@@ -13,7 +13,6 @@ pub struct TimeData {
     pub(super) file: PathBuf,
     pub(super) build: bool,
     pub date: Option<DateTime<Utc>>,
-    pub takeover: Option<Takeover>,
 }
 
 impl TimeData {
@@ -25,51 +24,63 @@ impl TimeData {
         }
     }
 
+    /// Fill the break missing to the expected break `e_break`, as a break with a note:
+    /// - after the first break and connect pair, so that break looks extended,
+    /// - or one second after the start, if no break was taken yet. Starts in front of it, like a
+    ///   takeover or an addition, are skipped, so the filled break starts after the real start.
+    ///
+    /// The filled break is skipped if it would overlap the following entry.
     pub fn assert_break(
         &mut self,
         e_break: Duration,
         a_break: Duration
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
-        if e_break > a_break {
-            let last_id = match self.entries.data.last() {
-                Some(last) => last.id,
-                None => 0,
-            };
-            let now = self.entries.data.last().unwrap().time;
-
-            // calculate time for break assertion start
-            let diff_b = e_break - a_break + Duration::minutes(1);
-            let time_b = now - diff_b;
-
-            // overwrite end entry
-            let last_index = last_id - 1;
-            self.entries.data[last_index as usize].status = Status::Break;
-            self.entries.data[last_index as usize].time = time_b;
-
-            // calculate time for connect entry afterwards
-            let local_c = Duration::minutes(1);
-            let time_c = now - local_c;
-            let entry_c = Entry::builder()
-                .id(last_id)
-                .status(Status::Connect)
-                .time(time_c)
-                .build()?;
-
-            let entry_e = Entry::builder()
-                .id(last_id + 1)
-                .status(Status::End)
-                .time(now)
-                .build()?;
-            log::debug!(
-                "fill break with {:?} and {:?}",
-                self.entries.data[last_index as usize],
-                entry_c
-            );
-
-            self.entries.data.append(&mut [entry_c, entry_e].to_vec());
+        if e_break <= a_break {
+            return Ok(self);
         }
+        let data = &self.entries.data;
+        let after_break = data
+            .windows(2)
+            .position(|w| w[0].status == Status::Break && w[1].status == Status::Connect)
+            .map(|i| i + 1);
+        let anchor = after_break.or_else(|| {
+            let first = data.iter().position(|e| e.status == Status::Connect)?;
+            let starts = data[first..].iter().take_while(|e| e.status == Status::Connect).count();
+            Some(first + starts - 1)
+        });
+        let Some(anchor) = anchor else {
+            return Ok(self);
+        };
+
+        let start = data[anchor].time + Duration::seconds(1);
+        let end = start + (e_break - a_break);
+        if let Some(next) = data.get(anchor + 1).filter(|n| n.time <= end) {
+            eprintln!(
+                "not filling the mandatory remaining break of {} minutes, it would overlap the {:?} entry",
+                (e_break - a_break).num_minutes(),
+                next.status
+            );
+            return Ok(self);
+        }
+
+        let r#break = Entry::builder()
+            .status(Status::Break)
+            .time(start)
+            .note(Some("filled mandatory remaining break".to_owned()))
+            .build()?;
+        let connect = Entry::builder().status(Status::Connect).time(end).build()?;
+        log::debug!("fill break with {:?} and {:?}", r#break, connect);
+        self.entries.data.splice(anchor + 1..anchor + 1, [r#break, connect]);
+        self.renumber();
         Ok(self)
+    }
+
+    /// ids are positions, so keep them in order after inserting entries.
+    fn renumber(&mut self) {
+        for (i, e) in self.entries.data.iter_mut().enumerate() {
+            e.id = (i + 1) as u8;
+        }
     }
 
     pub fn append(
@@ -170,47 +181,48 @@ impl TimeData {
             .build()?;
         log::debug!("prepend time data: {:?}", entry);
         self.entries.data.insert(0, entry);
-        // ids are positions, e.g. for `assert_break`, so keep them in order.
-        for (i, e) in self.entries.data.iter_mut().enumerate() {
-            e.id = (i + 1) as u8;
-        }
+        self.renumber();
         Ok(self)
     }
 
-    pub fn assert_takeover(&mut self, time: DateTime<Utc>) -> Result<&mut Self, TrackerError> {
+    /// Take over `minutes` of an ended day to the next start: move its end back by `minutes` and
+    /// mark it with a takeover entry one second later.
+    pub fn takeover(&mut self, minutes: u16) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
-        if self.takeover.is_some() {
-            let m = self.takeover.as_ref().unwrap();
-            let time = time.sub(Duration::minutes(m.minutes.unwrap().try_into()?));
-            let t_entry = Entry::builder()
-                .id(0)
-                .status(Status::Connect)
-                .time(time.to_utc())
-                .build()?;
-            self.entries.data.append(&mut [t_entry].to_vec());
+        let data = &mut self.entries.data;
+        match data.last().map(|e| &e.status) {
+            Some(Status::End) => {}
+            Some(Status::Takeover) => {
+                return Err(TrackerError::TimeDataError {
+                    message: "today was already taken over".to_owned(),
+                });
+            }
+            _ => {
+                return Err(TrackerError::TimeDataError {
+                    message: "end today first to take over".to_owned(),
+                });
+            }
         }
-        Ok(self)
-    }
-
-    pub fn takeover(&mut self, takeover: Duration) -> Result<&mut Self, TrackerError> {
-        self.assert_build()?;
-        let end = self.entries.data.iter().find(|&x| x.status == Status::End);
-        if end.is_none() {
-            log::warn!("End first to takeover time!");
-        } else {
-            let last_id = self.entries.data.last().unwrap().id;
-            let old_time = Option::unwrap(end).time;
-            self.entries.data[(last_id - 1) as usize].time = old_time.sub(takeover);
-
-            let entry = Entry::builder()
-                .id(last_id)
-                .status(Status::Takeover)
-                .time(old_time)
-                .build()?;
-            log::debug!("append takeover: {:?}", entry);
-            self.entries.data.append(&mut [entry].to_vec());
+        if minutes == 0 {
+            return Err(TrackerError::TimeDataError {
+                message: "takeover needs at least 1 minute".to_owned(),
+            });
         }
-        Ok(self)
+
+        let n = data.len();
+        let end = data[n - 1].time - Duration::minutes(minutes.into());
+        if n < 2 || end <= data[n - 2].time {
+            return Err(TrackerError::TimeDataError {
+                message: format!(
+                    "taking over {minutes} minutes would move the end to {} and collide with existing entries",
+                    DateTime::<chrono::Local>::from(end).format("%H:%M")
+                ),
+            });
+        }
+
+        data[n - 1].time = end;
+        log::debug!("moved end back to {}", end);
+        self.append(Status::Takeover, end + Duration::seconds(1), Some("takeover".to_owned()))
     }
 
     pub fn read_from_file(&mut self) -> Result<&mut Self, TrackerError> {
@@ -222,12 +234,6 @@ impl TimeData {
             self.entries.data.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
         } else {
             log::info!("file not yet created: {:?}", &self.file);
-            // invoke takeover
-            let mut b = Takeover::builder();
-            let t = b.file().get()?;
-            if t.minutes.is_some() {
-                self.takeover = Some(t);
-            }
         }
 
         Ok(self)
@@ -332,13 +338,11 @@ impl TimeDataBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::{ env, fs::{ self, File }, io::Write, ops::Add };
+    use std::{ fs::{ self, File }, io::Write, ops::Add };
 
     use chrono::{ Duration, TimeZone, Timelike };
 
     use crate::{ Entry, Status, TimeData, TrackerError };
-
-    use serial_test::serial;
 
     fn logger() {
         // std::env::set_var("RUST_LOG", "debug");
@@ -360,6 +364,238 @@ mod tests {
             logger();
             let time_data = TimeData::builder().folder("".into()).build();
             assert!(time_data.is_err());
+        }
+    }
+
+    mod fill_break {
+        use chrono::{ DateTime, Utc };
+
+        use crate::Entries;
+
+        use super::*;
+
+        fn at(hour: u32, minute: u32) -> DateTime<Utc> {
+            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
+        }
+
+        fn day(entries: &[(Status, u32, u32)]) -> TimeData {
+            let data = entries
+                .iter()
+                .enumerate()
+                .map(|(i, (status, h, m))| Entry {
+                    id: (i + 1) as u8,
+                    status: status.to_owned(),
+                    time: at(*h, *m),
+                    note: None,
+                })
+                .collect();
+            TimeData {
+                entries: Entries { data, version: 2 },
+                build: true,
+                ..Default::default()
+            }
+        }
+
+        fn summary(t: &TimeData) -> Vec<(u8, Status, DateTime<Utc>, Option<String>)> {
+            t.entries.data
+                .iter()
+                .map(|e| (e.id, e.status.to_owned(), e.time, e.note.to_owned()))
+                .collect()
+        }
+
+        fn filled() -> Option<String> {
+            Some("filled mandatory remaining break".to_owned())
+        }
+
+        fn sec(t: DateTime<Utc>) -> DateTime<Utc> {
+            t + Duration::seconds(1)
+        }
+
+        #[test]
+        fn should_fill_after_start_without_break() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 16, 30)]);
+            t.assert_break(Duration::minutes(30), Duration::zero())?;
+
+            assert_eq!(
+                vec![
+                    (1, Status::Connect, at(8, 0), None),
+                    (2, Status::Break, sec(at(8, 0)), filled()),
+                    (3, Status::Connect, sec(at(8, 30)), None),
+                    (4, Status::End, at(16, 30), None)
+                ],
+                summary(&t)
+            );
+
+            let settings = crate::Settings {
+                limits: vec![crate::BreakLimit { start: 6 * 60, minutes: 30 }],
+                ..Default::default()
+            };
+            let status = crate::StatusDaily::builder().data(t).settings(settings).build()?;
+            assert_eq!("00:30", status.r#break.unwrap().to_string());
+            assert_eq!("08:00", status.worktime.to_string());
+            Ok(())
+        }
+
+        #[test]
+        fn should_fill_after_real_start_behind_takeover() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 7, 30), (Status::Connect, 8, 0), (Status::End, 16, 30)]);
+            t.assert_break(Duration::minutes(30), Duration::zero())?;
+
+            assert_eq!((3, Status::Break, sec(at(8, 0)), filled()), summary(&t)[2]);
+            assert_eq!((4, Status::Connect, sec(at(8, 30)), None), summary(&t)[3]);
+            assert_eq!((5, Status::End, at(16, 30), None), summary(&t)[4]);
+            Ok(())
+        }
+
+        #[test]
+        fn should_extend_first_break() -> Result<(), TrackerError> {
+            let mut t = day(
+                &[
+                    (Status::Connect, 8, 0),
+                    (Status::Break, 12, 0),
+                    (Status::Connect, 12, 15),
+                    (Status::Break, 14, 0),
+                    (Status::Connect, 14, 5),
+                    (Status::End, 16, 30),
+                ]
+            );
+            t.assert_break(Duration::minutes(30), Duration::minutes(20))?;
+
+            assert_eq!(
+                vec![
+                    (1, Status::Connect, at(8, 0), None),
+                    (2, Status::Break, at(12, 0), None),
+                    (3, Status::Connect, at(12, 15), None),
+                    (4, Status::Break, sec(at(12, 15)), filled()),
+                    (5, Status::Connect, sec(at(12, 25)), None),
+                    (6, Status::Break, at(14, 0), None),
+                    (7, Status::Connect, at(14, 5), None),
+                    (8, Status::End, at(16, 30), None)
+                ],
+                summary(&t)
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn should_skip_fill_overlapping_next_entry() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 8, 20)]);
+            let before = summary(&t);
+            t.assert_break(Duration::minutes(30), Duration::zero())?;
+
+            assert_eq!(before, summary(&t));
+            Ok(())
+        }
+
+        #[test]
+        fn should_leave_end_for_takeover() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 17, 0)]);
+            t.assert_break(Duration::minutes(30), Duration::zero())?.takeover(30)?;
+
+            assert_eq!((4, Status::End, at(16, 30), None), summary(&t)[3]);
+            Ok(())
+        }
+    }
+
+    mod takeover {
+        use chrono::{ DateTime, Utc };
+
+        use crate::Entries;
+
+        use super::*;
+
+        fn at(hour: u32, minute: u32) -> DateTime<Utc> {
+            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
+        }
+
+        fn day(entries: &[(Status, u32, u32)]) -> TimeData {
+            let data = entries
+                .iter()
+                .enumerate()
+                .map(|(i, (status, h, m))| Entry {
+                    id: (i + 1) as u8,
+                    status: status.to_owned(),
+                    time: at(*h, *m),
+                    note: None,
+                })
+                .collect();
+            TimeData {
+                entries: Entries { data, version: 2 },
+                build: true,
+                ..Default::default()
+            }
+        }
+
+        fn summary(t: &TimeData) -> Vec<(u8, Status, DateTime<Utc>, Option<String>)> {
+            t.entries.data
+                .iter()
+                .map(|e| (e.id, e.status.to_owned(), e.time, e.note.to_owned()))
+                .collect()
+        }
+
+        #[test]
+        fn should_move_end_back_and_mark_takeover() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 17, 0)]);
+            t.takeover(30)?;
+
+            assert_eq!(
+                vec![
+                    (1, Status::Connect, at(8, 0), None),
+                    (2, Status::End, at(16, 30), None),
+                    (3, Status::Takeover, at(16, 30) + Duration::seconds(1), Some("takeover".to_owned()))
+                ],
+                summary(&t)
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn should_reject_running_day() {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::Break, 12, 0)]);
+            let before = summary(&t);
+            assert!(t.takeover(30).is_err());
+            assert_eq!(before, summary(&t));
+        }
+
+        #[test]
+        fn should_reject_empty_day() {
+            let mut t = day(&[]);
+            assert!(t.takeover(30).is_err());
+            assert!(t.entries.data.is_empty());
+        }
+
+        #[test]
+        fn should_reject_second_takeover() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 17, 0)]);
+            t.takeover(30)?;
+            let before = summary(&t);
+            assert!(t.takeover(10).is_err());
+            assert_eq!(before, summary(&t));
+            Ok(())
+        }
+
+        #[test]
+        fn should_reject_collision_with_previous_entry() {
+            // As left by `end` filling a missing break: connect one minute before the end.
+            let mut t = day(
+                &[
+                    (Status::Connect, 8, 0),
+                    (Status::Break, 16, 29),
+                    (Status::Connect, 16, 59),
+                    (Status::End, 17, 0),
+                ]
+            );
+            let before = summary(&t);
+
+            let err = t.takeover(30).unwrap_err().to_string();
+            assert!(err.contains("collide with existing entries"), "{err}");
+            assert_eq!(before, summary(&t));
+        }
+
+        #[test]
+        fn should_reject_end_on_previous_entry() {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::End, 8, 30)]);
+            assert!(t.takeover(30).is_err());
         }
     }
 
@@ -785,127 +1021,6 @@ mod tests {
         }
 
         #[test]
-        fn should_assert_break() -> Result<(), TrackerError> {
-            logger();
-            let file_content =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-02-02T08:00:53.523332900Z\"}],\"version\":1}";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            wait();
-
-            let mut time_data = TimeData::builder()
-                .folder(temp_dir.into_path().into())
-                .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
-                .build()?;
-
-            time_data.read_from_file()?.assert_break(Duration::minutes(45), Duration::minutes(15))?;
-            assert_eq!(4, time_data.entries.data.len());
-            assert_eq!(4, time_data.entries.data.last().unwrap().id);
-
-            let r#break = match time_data.entries.data.iter().find(|x| x.status == Status::Break) {
-                Some(c) => c.into(),
-                None => None,
-            };
-
-            let connects = time_data.entries.data
-                .iter()
-                .filter(|x| x.status == Status::Connect)
-                .cloned()
-                .collect::<Vec<Entry>>();
-            let connect = connects.last();
-
-            assert!(r#break.is_some());
-            assert!(connect.is_some());
-
-            assert_eq!(r#break.unwrap().id + 1, connect.unwrap().id);
-
-            let duration_b = r#break.unwrap().time.num_seconds_from_midnight();
-            let duration_c = connect.unwrap().time.num_seconds_from_midnight();
-            assert_eq!(1800, duration_c - duration_b);
-            Ok(())
-        }
-
-        #[test]
-        fn should_assert_break_with_order() -> Result<(), TrackerError> {
-            logger();
-            let file_content =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T08:00:53.523332900Z\"}],\"version\":1}";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220202.json");
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            wait();
-
-            let mut time_data = TimeData::builder()
-                .folder(temp_dir.into_path().into())
-                .date(Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap())
-                .build()?;
-
-            time_data
-                .read_from_file()?
-                .assert_break(Duration::minutes(45), Duration::minutes(15))?
-                .write_to_file()?;
-            assert_eq!(4, time_data.entries.data.len());
-            assert_eq!(4, time_data.entries.data.last().unwrap().id);
-
-            // assert order of elements
-            let fill_connect = time_data.entries.data[1].to_owned();
-            let fill_break = time_data.entries.data[2].to_owned();
-            let end = time_data.entries.data[3].to_owned();
-            assert_eq!(
-                (2, Status::Break),
-                (fill_connect.id, fill_connect.status.to_owned()),
-                "expected filler connect entry to be 2 and status Break but got {} {:?}",
-                fill_connect.id,
-                fill_connect.status
-            );
-            assert_eq!(
-                (3, Status::Connect),
-                (fill_break.id, fill_break.status.to_owned()),
-                "expected filler break entry to be 3 and status Connect but got {} {:?}",
-                fill_break.id,
-                fill_break.status
-            );
-            assert_eq!(
-                (4, Status::End),
-                (end.id, end.status.to_owned()),
-                "expected end entry to be 4 and status End but got {} {:?}",
-                end.id,
-                end.status
-            );
-
-            // assert file content
-            let exp_break = "{\"id\":2,\"status\":\"Break\",\"time\":\"2022-08-04T07:29";
-
-            let exp_connect = "{\"id\":3,\"status\":\"Connect\",\"time\":\"2022-08-04T07:59";
-
-            let exp_end = "{\"id\":4,\"status\":\"End\",\"time\":\"2022-08-04T08:00";
-
-            let act_content = fs::read_to_string(time_file)?;
-
-            assert!(
-                act_content.contains(exp_break),
-                "expected content to contain Break with ID 2 and time 07:29, but got {}",
-                act_content
-            );
-            assert!(
-                act_content.contains(exp_connect),
-                "expected content to contain Connect with ID 3 and time 07:59, but got {}",
-                act_content
-            );
-            assert!(
-                act_content.contains(exp_end),
-                "expected content to contain End with ID 4 and time 08:00, but got {}",
-                act_content
-            );
-            Ok(())
-        }
-
-        #[test]
         fn should_assert_long_break_do_nothing() -> Result<(), TrackerError> {
             logger();
             let file_content =
@@ -1019,231 +1134,6 @@ mod tests {
             assert_eq!(2, time_data.entries.data.len());
             assert_eq!(2, time_data.entries.data.last().unwrap().id);
             Ok(())
-        }
-
-        #[test]
-        fn should_create_takeover_entry() -> Result<(), TrackerError> {
-            logger();
-            let file_content =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T04:00:53.523332900Z\"}],\"version\":1}";
-            let temp_dir = tempfile::tempdir()?;
-            let time_file = temp_dir.path().join("20220804.json");
-            let mut file = File::create(&time_file)?;
-            file.write_all(file_content.as_bytes())?;
-
-            wait();
-
-            let mut time_data = TimeData::builder()
-                .folder(temp_dir.into_path().into())
-                .date(Utc.with_ymd_and_hms(2022, 8, 4, 0, 0, 0).unwrap())
-                .build()?;
-
-            time_data.read_from_file()?.takeover(Duration::minutes(20))?;
-            assert_eq!(3, time_data.entries.data.len());
-
-            let end = time_data.entries.data[1].to_owned();
-            assert_eq!(2, end.id);
-            assert_eq!(Status::End, end.status);
-            assert_eq!((3, 40, 53), (end.time.hour(), end.time.minute(), end.time.second()));
-
-            let last = time_data.entries.data.last().unwrap();
-            assert_eq!(3, last.id);
-            assert_eq!(Status::Takeover, last.status);
-            assert_eq!((4, 0, 53), (last.time.hour(), last.time.minute(), last.time.second()));
-            Ok(())
-        }
-
-        mod takeover {
-            use chrono::{ DateTime, Utc };
-
-            use super::*;
-
-            struct TakeoverContext {
-                temp_dir: tempfile::TempDir,
-            }
-
-            impl test_context::TestContext for TakeoverContext {
-                fn setup() -> TakeoverContext {
-                    logger();
-                    env::set_var("RUST_TEST", "true");
-                    let temp_dir = tempfile::tempdir().unwrap();
-                    env::set_current_dir(&temp_dir).unwrap();
-                    TakeoverContext { temp_dir }
-                }
-
-                fn teardown(self) {
-                    self.temp_dir.close().unwrap();
-                }
-            }
-
-            #[test_context::test_context(TakeoverContext)]
-            #[test]
-            #[serial]
-            fn should_takeover_time(ctx: &mut TakeoverContext) -> Result<(), TrackerError> {
-                let time_file = ctx.temp_dir.path().join("20220202.json");
-                let day = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
-
-                let file_content = "{\"minutes\":15}";
-                let takeover_file = ctx.temp_dir.path().join(".trackrs-takeover");
-                let mut file = File::create(&takeover_file)?;
-                file.write_all(file_content.as_bytes())?;
-
-                wait();
-
-                let mut time_data = TimeData::builder()
-                    .folder(ctx.temp_dir.as_ref().to_owned().into())
-                    .date(day)
-                    .build()?;
-                time_data
-                    .read_from_file()?
-                    .assert_takeover(
-                        day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap()).unwrap()
-                    )?
-                    .append(
-                        Status::Connect,
-                        day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap()).unwrap(),
-                        None
-                    )?
-                    .append(
-                        Status::End,
-                        day.with_time(NaiveTime::from_hms_opt(5, 0, 0).unwrap()).unwrap(),
-                        None
-                    )?
-                    .write_to_file()?;
-                assert!(&time_file.exists(), "time file should exist");
-
-                let takeover_time = time_data.entries.data[0].to_owned();
-                let first_connect = time_data.entries.data[1].to_owned();
-                let diff = first_connect.time - takeover_time.time;
-
-                assert_eq!(
-                    Duration::minutes(15).num_seconds(),
-                    diff.num_seconds(),
-                    "expected 15 minutes diff, but got {}",
-                    diff
-                );
-                assert_eq!(
-                    day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap()).unwrap(),
-                    takeover_time.time,
-                    "takeover time doesnt match"
-                );
-                Ok(())
-            }
-
-            #[test_context::test_context(TakeoverContext)]
-            #[test]
-            #[serial]
-            fn should_takeover_time_check_file(
-                ctx: &mut TakeoverContext
-            ) -> Result<(), TrackerError> {
-                let time_file = ctx.temp_dir.path().join("20220202.json");
-                let day = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
-
-                let file_content = "{\"minutes\":15}";
-                let takeover_file = ctx.temp_dir.path().join(".trackrs-takeover");
-                let mut file = File::create(&takeover_file)?;
-                file.write_all(file_content.as_bytes())?;
-
-                wait();
-
-                let mut time_data = TimeData::builder()
-                    .folder(ctx.temp_dir.as_ref().to_owned().into())
-                    .date(DateTime::from(day))
-                    .build()?;
-                time_data
-                    .read_from_file()?
-                    .assert_takeover(
-                        DateTime::from(
-                            day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
-                        )
-                    )?
-                    .append(
-                        Status::Connect,
-                        DateTime::from(
-                            day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
-                        ),
-                        None
-                    )?
-                    .append(
-                        Status::End,
-                        DateTime::from(
-                            day.with_time(NaiveTime::from_hms_opt(2, 45, 0).unwrap()).unwrap()
-                        ),
-                        None
-                    )?
-                    .write_to_file()?;
-                assert!(&time_file.exists());
-
-                // assert file content
-                let exp_takeover = "{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T02:00";
-                let exp_connect = "{\"id\":2,\"status\":\"Connect\",\"time\":\"2022-02-02T02:15";
-
-                let act_content = fs::read_to_string(time_file)?;
-
-                assert!(
-                    act_content.contains(exp_takeover),
-                    "expected content to contain Takeover Connect with ID 1, but got {}",
-                    act_content
-                );
-                assert!(
-                    act_content.contains(exp_connect),
-                    "expected content to contain Connect with ID 2, but got {}",
-                    act_content
-                );
-
-                Ok(())
-            }
-
-            #[test_context::test_context(TakeoverContext)]
-            #[test]
-            #[serial]
-            fn should_takeover_time_over_an_hour(
-                ctx: &mut TakeoverContext
-            ) -> Result<(), TrackerError> {
-                let time_file = ctx.temp_dir.path().join("20220202.json");
-                let day = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
-
-                let file_content = "{\"minutes\":95}";
-                let takeover_file = ctx.temp_dir.path().join(".trackrs-takeover");
-                let mut file = File::create(&takeover_file)?;
-                file.write_all(file_content.as_bytes())?;
-
-                wait();
-
-                let mut time_data = TimeData::builder()
-                    .folder(ctx.temp_dir.as_ref().to_owned().into())
-                    .date(day)
-                    .build()?;
-                time_data
-                    .read_from_file()?
-                    .assert_takeover(
-                        day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
-                    )?
-                    .append(
-                        Status::Connect,
-                        day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap(),
-                        None
-                    )?
-                    .append(
-                        Status::End,
-                        day.with_time(NaiveTime::from_hms_opt(4, 14, 0).unwrap()).unwrap(),
-                        None
-                    )?
-                    .write_to_file()?;
-                assert!(&time_file.exists());
-
-                let takeover_time = time_data.entries.data[0].to_owned();
-                let first_connect = time_data.entries.data[1].to_owned();
-                let diff = first_connect.time - takeover_time.time;
-
-                assert_eq!(
-                    Duration::minutes(95).num_seconds(),
-                    diff.num_seconds(),
-                    "expected 1:35 minutes diff, but got {}",
-                    diff
-                );
-                Ok(())
-            }
         }
     }
 }

@@ -35,6 +35,8 @@ Don't forget to continue after your break by executing `trackrs start` again.
 ### End tracking
 
 Execute `trackrs end` to add an end entry and show the status for this day.
+If you took less break than required, the missing break is filled with the note `filled mandatory remaining break`.
+It extends your first break, or starts one second after your start if you took no break.
 
 ### Sick and vacation days
 
@@ -49,6 +51,13 @@ Add a date as `YYYY-MM-DD` to do this for another day.
 
 Execute `trackrs add <minutes>` to add work you forgot to track today, e.g. `trackrs add 30`.
 The minutes are added before today's first start, so today needs a start. This also works after `trackrs end`.
+
+### Take over time
+
+Execute `trackrs takeover <minutes>` after `trackrs end` to move minutes of today to the next day, e.g. `trackrs takeover 30`.
+Today's end moves back by these minutes, and the next first start of a day adds them before its start.
+The minutes wait in `.trackrs-takeover` in the configured folder until then.
+Takeover is refused if the moved end would collide with earlier entries, or if a takeover is still waiting.
 
 ### Status
 
