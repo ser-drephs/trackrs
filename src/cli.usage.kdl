@@ -10,7 +10,7 @@ flag "-q --quiet" help="Decrease logging verbosity" global=#true count=#true con
 
 cmd "status" display_order=1 help="Get the status of current tracking" long_help="Get the status for either a day or a week. Not providing additional options will return status for today." {
     flag "-w <week>" help="Week to show the status for" long_help="Either enter the correct week of the year or a relative value eg. -1" allow_hyphen_values=#true
-    flag "-t --table" help="Format week status as table."
+    flag "-t --table" help="Format week status as table (default)." negate="--no-table" default=#true
 }
 cmd "start" display_order=2 help="Start tracking work" long_help="Starts tracking work for today."
 cmd "break" display_order=3 help="Take a break" long_help="Breaks current tracking."
