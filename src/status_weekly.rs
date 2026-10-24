@@ -342,25 +342,21 @@ mod tests {
             Entries {
                 data: [
                     Entry {
-                        id: 1,
                         status: Status::Connect,
                         time: Utc.with_ymd_and_hms(2022, 3, day.into(), 0, 0, 0).unwrap(),
                         note: None,
                     },
                     Entry {
-                        id: 2,
                         status: Status::Break,
                         time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 0, 0).unwrap(),
                         note: None,
                     },
                     Entry {
-                        id: 3,
                         status: Status::Connect,
                         time: Utc.with_ymd_and_hms(2022, 3, day.into(), 4, 30, 0).unwrap(),
                         note: None,
                     },
                     Entry {
-                        id: 4,
                         status: Status::End,
                         time: Utc.with_ymd_and_hms(
                             2022,

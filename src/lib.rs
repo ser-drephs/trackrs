@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate prettytable;
 mod cli;
-mod entry;
 mod errors;
 mod settings;
 mod status_daily;
@@ -17,7 +16,6 @@ mod status_monthly;
 mod status_yearly;
 
 pub use cli::*;
-pub use entry::*;
 pub use errors::*;
 pub use settings::*;
 pub use status_daily::*;
@@ -36,4 +34,4 @@ mod entries;
 pub(crate) use entries::*;
 
 mod models;
-pub(crate) use models::*;
+pub use models::*;

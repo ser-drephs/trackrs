@@ -246,7 +246,6 @@ mod tests {
         #[test]
         fn should_format_status_time() {
             let data = Entry {
-                id: 1,
                 status: Status::Connect,
                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
                 note: None,
@@ -270,7 +269,6 @@ mod tests {
                     .into()
             );
             let entry = Entry {
-                id: 2,
                 status: Status::Disconnect,
                 time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
                 note: None,
@@ -290,7 +288,7 @@ mod tests {
                 &d.num_minutes()
             );
             assert!(status.inner.is_some());
-            assert_eq!(2, status.inner.unwrap().id);
+            assert_eq!(Status::Disconnect, status.inner.unwrap().status);
         }
 
         #[test]

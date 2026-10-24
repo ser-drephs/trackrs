@@ -480,9 +480,8 @@ mod tests {
 
         use super::*;
 
-        fn entry(id: u8, status: Status, hour: u32, note: Option<&str>) -> Entry {
+        fn entry(status: Status, hour: u32, note: Option<&str>) -> Entry {
             Entry {
-                id,
                 status,
                 time: Local.with_ymd_and_hms(2022, 2, 2, hour, 0, 0).unwrap().to_utc(),
                 note: note.map(str::to_owned),
@@ -504,23 +503,23 @@ mod tests {
         fn should_pair_ranges_with_notes() {
             let s = status(
                 vec![
-                    entry(1, Status::Connect, 8, Some("standup")),
-                    entry(2, Status::Break, 12, Some("lunch")),
-                    entry(3, Status::Connect, 13, None),
-                    entry(4, Status::End, 17, None)
+                    entry(Status::Connect, 8, Some("standup")),
+                    entry(Status::Break, 12, Some("lunch")),
+                    entry(Status::Connect, 13, None),
+                    entry(Status::End, 17, None)
                 ]
             );
             let ranges: Vec<_> = s
                 .ranges()
                 .iter()
-                .map(|(start, end)| (start.id, end.map(|e| e.id), start.note.clone()))
+                .map(|(start, end)| (start.status.clone(), end.map(|e| e.status.clone()), start.note.clone()))
                 .collect();
 
             assert_eq!(
                 vec![
-                    (1, Some(2), Some("standup".to_owned())),
-                    (2, Some(3), Some("lunch".to_owned())),
-                    (3, Some(4), None)
+                    (Status::Connect, Some(Status::Break), Some("standup".to_owned())),
+                    (Status::Break, Some(Status::Connect), Some("lunch".to_owned())),
+                    (Status::Connect, Some(Status::End), None)
                 ],
                 ranges
             );
@@ -529,7 +528,7 @@ mod tests {
         #[test]
         fn should_leave_running_range_open() {
             let s = status(
-                vec![entry(1, Status::Connect, 8, None), entry(2, Status::Break, 12, Some("lunch"))]
+                vec![entry(Status::Connect, 8, None), entry(Status::Break, 12, Some("lunch"))]
             );
             let ranges = s.ranges();
 
@@ -554,13 +553,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
                                     .unwrap()
@@ -568,7 +565,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 23, 0)
                                     .unwrap()
@@ -576,7 +572,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 14, 45, 0)
                                     .unwrap()
@@ -639,11 +634,11 @@ mod tests {
             let data = TimeData {
                 entries: Entries {
                     data: vec![
-                        Entry { id: 1, status: Status::Connect, time: at(8, 0), note: Some("standup".to_owned()) },
-                        Entry { id: 2, status: Status::Break, time: at(12, 0), note: Some("lunch".to_owned()) },
-                        Entry { id: 3, status: Status::Connect, time: at(12, 30), note: None },
-                        Entry { id: 4, status: Status::Connect, time: at(13, 0), note: Some("review".to_owned()) },
-                        Entry { id: 5, status: Status::End, time: at(16, 30), note: None }
+                        Entry { status: Status::Connect, time: at(8, 0), note: Some("standup".to_owned()) },
+                        Entry { status: Status::Break, time: at(12, 0), note: Some("lunch".to_owned()) },
+                        Entry { status: Status::Connect, time: at(12, 30), note: None },
+                        Entry { status: Status::Connect, time: at(13, 0), note: Some("review".to_owned()) },
+                        Entry { status: Status::End, time: at(16, 30), note: None }
                     ],
                     ..Default::default()
                 },
@@ -669,10 +664,10 @@ mod tests {
             let data = TimeData {
                 entries: Entries {
                     data: vec![
-                        Entry { id: 1, status: Status::Connect, time: at(8, 0), note: None },
-                        Entry { id: 2, status: Status::Break, time: at(12, 0), note: None },
-                        Entry { id: 3, status: Status::Connect, time: at(12, 30), note: None },
-                        Entry { id: 4, status: Status::End, time: at(16, 30), note: None }
+                        Entry { status: Status::Connect, time: at(8, 0), note: None },
+                        Entry { status: Status::Break, time: at(12, 0), note: None },
+                        Entry { status: Status::Connect, time: at(12, 30), note: None },
+                        Entry { status: Status::End, time: at(16, 30), note: None }
                     ],
                     ..Default::default()
                 },
@@ -698,13 +693,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
                                     .unwrap()
@@ -712,7 +705,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 43, 0)
                                     .unwrap()
@@ -720,7 +712,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 17, 45, 0)
                                     .unwrap()
@@ -783,13 +774,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
                                     .unwrap()
@@ -797,7 +786,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 33, 0)
                                     .unwrap()
@@ -805,7 +793,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 16, 33, 0)
                                     .unwrap()
@@ -873,7 +860,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: local.to_utc(),
                                 note: None,
@@ -948,7 +934,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
                                     .unwrap()
@@ -956,7 +941,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
                                     .unwrap()
@@ -1023,7 +1007,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
                                     .unwrap()
@@ -1031,7 +1014,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
                                     .unwrap()
@@ -1039,7 +1021,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 4,
                                 status: Status::Takeover,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 46, 0)
                                     .unwrap()
@@ -1113,13 +1094,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
                                     .unwrap()
@@ -1148,7 +1127,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
                                 note: None,
@@ -1170,7 +1148,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
@@ -1178,7 +1155,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
@@ -1186,7 +1162,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 10, 0)
                                     .unwrap()
@@ -1217,7 +1192,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 2,
                                 status: Status::Connect,
                                 time: DateTime::default(),
                                 note: None,
@@ -1247,7 +1221,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
@@ -1255,7 +1228,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
                                     .unwrap()
@@ -1263,7 +1235,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
                                     .unwrap()
@@ -1295,7 +1266,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
@@ -1303,7 +1273,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
                                     .unwrap()
@@ -1311,7 +1280,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 5)
                                     .unwrap()
@@ -1319,7 +1287,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 4,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
                                     .unwrap()
@@ -1327,7 +1294,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 5,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 0)
                                     .unwrap()
@@ -1335,7 +1301,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 6,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 55)
                                     .unwrap()
@@ -1343,7 +1308,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 7,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 9, 55, 0)
                                     .unwrap()
@@ -1351,7 +1315,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 8,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 55)
                                     .unwrap()
@@ -1359,7 +1322,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 9,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 56)
                                     .unwrap()
@@ -1367,7 +1329,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 10,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 1, 56)
                                     .unwrap()
@@ -1399,13 +1360,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
                                     .unwrap()
@@ -1433,25 +1392,21 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 4,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 45, 0)
                                     .unwrap()
@@ -1459,7 +1414,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 5,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
                                     .unwrap()
@@ -1506,7 +1460,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
                                     .unwrap()
@@ -1514,19 +1467,16 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 4,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0)
                                     .unwrap()
@@ -1534,7 +1484,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 5,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
                                     .unwrap()
@@ -1583,7 +1532,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
                                     .unwrap()
@@ -1591,25 +1539,21 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 4,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 5,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
                                     .unwrap()
@@ -1657,7 +1601,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
                                     .unwrap()
@@ -1665,7 +1608,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
                                     .unwrap()
@@ -1673,7 +1615,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 4,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 15, 0)
                                     .unwrap()
@@ -1681,7 +1622,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 5,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
                                     .unwrap()
@@ -1731,7 +1671,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
                                     .unwrap()
@@ -1739,7 +1678,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
                                     .unwrap()
@@ -1747,7 +1685,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 4,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
                                     .unwrap()
@@ -1755,7 +1692,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 5,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
                                     .unwrap()
@@ -1805,7 +1741,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
                                     .unwrap()
@@ -1813,7 +1748,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
                                     .unwrap()
@@ -1821,7 +1755,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 4,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
                                     .unwrap()
@@ -1829,7 +1762,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 5,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
                                     .unwrap()
@@ -1879,7 +1811,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
                                     .unwrap()
@@ -1887,7 +1818,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
                                     .unwrap()
@@ -1947,7 +1877,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46)
                                     .unwrap()
@@ -1955,7 +1884,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 8, 56, 15)
                                     .unwrap()
@@ -1963,7 +1891,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 25, 57)
                                     .unwrap()
@@ -1971,7 +1898,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 4,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 26, 46)
                                     .unwrap()
@@ -1979,7 +1905,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 5,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 28, 7)
                                     .unwrap()
@@ -1987,7 +1912,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 6,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 58, 7)
                                     .unwrap()
@@ -1995,7 +1919,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 7,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 17, 0, 7)
                                     .unwrap()
@@ -2003,7 +1926,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 8,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 17, 15, 7)
                                     .unwrap()
@@ -2011,7 +1933,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 18, 27, 40)
                                     .unwrap()
@@ -2059,7 +1980,6 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11)
                                     .unwrap()
@@ -2067,7 +1987,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 16, 32)
                                     .unwrap()
@@ -2119,13 +2038,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
                                     .unwrap()
@@ -2133,7 +2050,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 30, 0)
                                     .unwrap()
@@ -2141,7 +2057,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 17, 0, 0)
                                     .unwrap()
@@ -2198,13 +2113,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
                                     .unwrap()
@@ -2212,7 +2125,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
                                     .unwrap()
@@ -2220,7 +2132,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 21, 0, 0)
                                     .unwrap()
@@ -2277,13 +2188,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
                                     .unwrap()
@@ -2291,7 +2200,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
                                     .unwrap()
@@ -2299,7 +2207,6 @@ mod tests {
                                 note: None,
                             },
                             Entry {
-                                id: 3,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 23, 0, 0)
                                     .unwrap()
@@ -2356,13 +2263,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 4, 14, 0, 0)
                                     .unwrap()
@@ -2424,13 +2329,11 @@ mod tests {
                     Entries {
                         data: [
                             Entry {
-                                id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
                                 note: None,
                             },
                             Entry {
-                                id: 2,
                                 status: Status::End,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 14, 0, 0)
                                     .unwrap()
