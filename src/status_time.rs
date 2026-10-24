@@ -17,6 +17,18 @@ impl StatusTime {
     pub fn now() -> StatusTime {
         StatusTime::from(Local::now())
     }
+
+    /// Running sum of `times`, e.g. the overtime accumulated up to and including each day.
+    pub fn cumulated<'a>(times: impl IntoIterator<Item = &'a StatusTime>) -> Vec<StatusTime> {
+        let mut sum = StatusTime::default();
+        times
+            .into_iter()
+            .map(|t| {
+                sum += t.to_owned();
+                sum.to_owned()
+            })
+            .collect()
+    }
 }
 
 impl std::fmt::Display for StatusTime {
@@ -170,6 +182,21 @@ mod tests {
     use crate::Status;
 
     use super::*;
+
+    #[test]
+    fn should_cumulate() {
+        let times: Vec<StatusTime> = [30, -90, 0, 120]
+            .iter()
+            .map(|m| StatusTime::from(Duration::minutes(*m)))
+            .collect();
+        let sums: Vec<String> = StatusTime::cumulated(&times)
+            .iter()
+            .map(|t| t.to_string())
+            .collect();
+
+        assert_eq!(vec!["00:30", "-01:00", "-01:00", "01:00"], sums);
+        assert!(StatusTime::cumulated(&[]).is_empty());
+    }
 
     mod format {
         use super::*;

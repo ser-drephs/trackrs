@@ -43,13 +43,14 @@ impl StatusMonthly {
     pub fn format_table(&self) {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_COLSEP);
-        table.set_titles(row!["Week", "Work time", "Overtime"]);
+        table.set_titles(row!["Week", "Work time", "Overtime", "Cumulated"]);
 
-        for week in &self.weeks {
-            table.add_row(row![week.week, week.total, week.overtime]);
+        let cumulated = StatusTime::cumulated(self.weeks.iter().map(|w| &w.overtime));
+        for (week, cumulated) in self.weeks.iter().zip(cumulated) {
+            table.add_row(row![week.week, week.total, week.overtime, cumulated]);
         }
         table.add_empty_row();
-        table.add_row(row![format!("Total {}", self.name()), self.total, self.overtime]);
+        table.add_row(row![format!("Total {}", self.name()), self.total, self.overtime, ""]);
 
         table.printstd();
     }
