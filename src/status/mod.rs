@@ -19,6 +19,12 @@ pub use weekly::*;
 mod weekly_data;
 pub use weekly_data::*;
 
+mod yearly;
+pub use yearly::*;
+
+mod yearly_data;
+pub use yearly_data::*;
+
 /// A status that can be shown in different formats. `Display` is the plain text, the other
 /// formats have their own method.
 pub trait StatusDisplay: std::fmt::Display {

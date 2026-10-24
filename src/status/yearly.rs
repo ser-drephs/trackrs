@@ -3,21 +3,24 @@ use std::fmt::Display;
 use chrono::{ DateTime, NaiveDate, Utc };
 use prettytable::{ format, Table };
 
-use crate::{ Monthly, Settings, StatusTime, TimeDataYearly, TrackerError };
+use crate::{ Monthly, Settings, StatusDisplay, StatusTime, TimeDataYearly, TrackerError };
 
 /// Status of a year, made of the monthly status of each of its months.
 #[derive(Clone, Debug)]
-pub struct StatusYearly {
+pub struct Yearly {
     year: i32,
     total: StatusTime,
     overtime: StatusTime,
     decimal: f64,
     months: Vec<Monthly>,
+    /// Overtime accumulated before the year.
+    carry: Option<StatusTime>,
 }
 
-impl StatusYearly {
+impl Yearly {
+    /// Status of `data` at `now`, which ends a day that is still running.
     pub fn new(
-        data: TimeDataYearly,
+        data: &TimeDataYearly,
         settings: &Settings,
         now: DateTime<Utc>
     ) -> Result<Self, TrackerError> {
@@ -32,24 +35,31 @@ impl StatusYearly {
         }
         let decimal = (total.duration.num_minutes() as f64) / 60.0;
 
-        Ok(StatusYearly { year: data.year, total, overtime, decimal, months })
+        Ok(Yearly { year: data.year, total, overtime, decimal, months, carry: None })
+    }
+
+    /// Show the overtime accumulated before the year in the table.
+    pub fn with_carry(mut self, carry: Option<StatusTime>) -> Self {
+        self.carry = carry;
+        self
     }
 
     pub fn start(&self) -> NaiveDate {
         NaiveDate::from_ymd_opt(self.year, 1, 1).unwrap()
     }
+}
 
-    /// Print the table; `carry` is the overtime accumulated before the year.
-    pub fn format_table(&self, carry: Option<StatusTime>) {
+impl StatusDisplay for Yearly {
+    fn table(&self) -> String {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_COLSEP);
         table.set_titles(row!["Month", "Work time", "Overtime", "Cumulated"]);
 
-        if let Some(carry) = &carry {
+        if let Some(carry) = &self.carry {
             table.add_row(row!["Carried over", "", "", carry]);
         }
         let cumulated = StatusTime::cumulated(
-            carry.unwrap_or_default(),
+            self.carry.to_owned().unwrap_or_default(),
             self.months.iter().map(|m| &m.overtime)
         );
         for (month, cumulated) in self.months.iter().zip(cumulated) {
@@ -58,11 +68,11 @@ impl StatusYearly {
         table.add_empty_row();
         table.add_row(row![format!("Total {}", self.year), self.total, self.overtime, ""]);
 
-        table.printstd();
+        table.to_string()
     }
 }
 
-impl Display for StatusYearly {
+impl Display for Yearly {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let width = 10;
         writeln!(f, " {:width$} | {:>width$} | {:>width$} | {:>width$}", "Year", "Work time", "Overtime", "Decimal")?;
@@ -80,13 +90,22 @@ impl Display for StatusYearly {
 
 #[cfg(test)]
 mod tests {
-
     use chrono::NaiveDate;
 
-    use crate::{ MemoryStorage, Settings, Status, StatusYearly, TimeDataYearly, TrackerError };
+    use crate::{
+        MemoryStorage,
+        Settings,
+        Status,
+        StatusDisplay,
+        StatusTime,
+        TimeDataYearly,
+        TrackerError,
+    };
+
+    use super::*;
 
     /// 2022 with 9 hours on each workday of week 10 (7th to 11th March) and nothing else.
-    fn year() -> Result<StatusYearly, TrackerError> {
+    fn year() -> Result<Yearly, TrackerError> {
         let storage = (7..=11).fold(MemoryStorage::default(), |storage, day| {
             storage.day(
                 NaiveDate::from_ymd_opt(2022, 3, day).unwrap(),
@@ -94,9 +113,9 @@ mod tests {
             )
         });
         let today = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
-        let data = TimeDataYearly::load(&storage, 2022, today)?;
+        let data = TimeDataYearly::for_year(&storage, 2022, today)?;
         // All days are ended or missing, so the clock doesn't matter.
-        StatusYearly::new(data, &Settings::default(), chrono::DateTime::default())
+        Yearly::new(&data, &Settings::default(), DateTime::default())
     }
 
     #[test]
@@ -129,5 +148,63 @@ mod tests {
         assert!(last.contains("-2035:00"), "{out}");
         assert!(last.contains("45.00"), "{out}");
         Ok(())
+    }
+
+    #[test]
+    fn should_start_on_the_first_of_january() -> Result<(), TrackerError> {
+        assert_eq!(NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(), year()?.start());
+        Ok(())
+    }
+
+    mod table {
+        use super::*;
+
+        #[test]
+        fn should_show_a_row_for_each_month_and_the_total() -> Result<(), TrackerError> {
+            let table = year()?.table();
+
+            for month in [
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
+            ] {
+                assert!(table.contains(month), "{month} in {table}");
+            }
+            assert!(table.contains("Total 2022"), "{table}");
+            assert!(table.contains("-2035:00"), "{table}");
+            assert!(!table.contains("Carried over"), "{table}");
+            Ok(())
+        }
+
+        #[test]
+        fn should_add_the_carry_to_the_table_and_the_cumulated_overtime() -> Result<(), TrackerError> {
+            let carry = StatusTime::from(chrono::Duration::hours(10));
+            let table = year()?.with_carry(Some(carry)).table();
+
+            let carried = table.lines().find(|l| l.contains("Carried over")).unwrap();
+            assert!(carried.contains("10:00"), "{carried}");
+            // January misses 168 hours, so the cumulated overtime is 10 - 168.
+            let january = table.lines().find(|l| l.contains("January")).unwrap();
+            assert!(january.trim_end().ends_with("-158:00"), "{january}");
+            Ok(())
+        }
+
+        #[test]
+        fn should_remove_the_carry() -> Result<(), TrackerError> {
+            let carry = Some(StatusTime::from(chrono::Duration::hours(10)));
+            let s = year()?.with_carry(carry).with_carry(None);
+
+            assert!(!s.table().contains("Carried over"));
+            Ok(())
+        }
     }
 }
