@@ -99,10 +99,10 @@ impl std::fmt::Display for Daily<'_> {
         } else if StatusTime::from(self.now.with_timezone(&Local)) >= self.estimated_end {
             format!("{}", StatusTime::from(self.now.with_timezone(&Local))).bright_green()
         } else {
-            let hours = self.estimated_end.hours % 24;
+            let hours = self.estimated_end.hours() % 24;
             // This hack is required because in the relative time is know in the current context.
             // A time format like 25:15 doesn't make sense here, whereas 01:15 is understandable in this context.
-            format!("{:0>2}:{:0>2} (est.)", hours, self.estimated_end.minutes).bright_yellow()
+            format!("{:0>2}:{:0>2} (est.)", hours, self.estimated_end.minutes()).bright_yellow()
         };
 
         let line1 = format!("{:width$}{} ({})", "Work time:", self.worktime, rm_fmt, width = 13);
