@@ -10,6 +10,8 @@ mod status_weekly;
 mod takeover;
 mod time_data;
 mod time_data_weekly;
+mod time_data_monthly;
+mod status_monthly;
 
 pub use cli::*;
 pub use entry::*;
@@ -21,6 +23,8 @@ pub use status_weekly::*;
 pub use takeover::*;
 pub use time_data::*;
 pub use time_data_weekly::*;
+pub use time_data_monthly::*;
+pub use status_monthly::*;
 
 mod entries;
 pub(crate) use entries::*;

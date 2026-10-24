@@ -8,9 +8,9 @@ use crate::{ Settings, StatusDaily, StatusTime, TimeData, TimeDataWeekly, Tracke
 
 #[derive(Clone, Default, Debug)]
 pub struct StatusWeekly {
-    week: i8,
-    total: StatusTime,
-    overtime: StatusTime,
+    pub(crate) week: i8,
+    pub(crate) total: StatusTime,
+    pub(crate) overtime: StatusTime,
     decimal: f64,
     entries: Vec<(DateTime<Utc>, StatusDaily)>,
 }

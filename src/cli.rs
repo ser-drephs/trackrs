@@ -9,7 +9,8 @@ use usage::{
 };
 
 use crate::{
-    entry::Status, Settings, StatusDaily, StatusWeekly, Takeover, TimeData, TimeDataWeekly, TrackerError,
+    entry::Status, Settings, StatusDaily, StatusMonthly, StatusWeekly, Takeover, TimeData,
+    TimeDataMonthly, TimeDataWeekly, TrackerError,
 };
 
 type TrackerResult = Result<(), TrackerError>;
@@ -28,15 +29,33 @@ pub struct Cli {
 
 #[derive(Debug)]
 pub enum Commands {
-    Status { week: Option<i8>, table: Option<bool> },
-    Start { note: Option<String> },
-    Break { note: Option<String> },
+    Status {
+        week: Option<i8>,
+        month: Option<i8>,
+        table: Option<bool>,
+    },
+    Start {
+        note: Option<String>,
+    },
+    Break {
+        note: Option<String>,
+    },
     End,
     /// Full day of `sick` or `vacation`, named by the note.
-    Absence { date: NaiveDate, note: String },
-    Add { minutes: u16 },
-    Takeover { minutes: u16 },
-    Config { list: bool, edit: bool },
+    Absence {
+        date: NaiveDate,
+        note: String,
+    },
+    Add {
+        minutes: u16,
+    },
+    Takeover {
+        minutes: u16,
+    },
+    Config {
+        list: bool,
+        edit: bool,
+    },
 }
 
 /// Message to print and exit code to terminate with, when parsing does not yield a command.
@@ -87,10 +106,15 @@ impl Cli {
         let command = match out.cmd.name.as_str() {
             "status" => Commands::Status {
                 week: string(&out, "w").map(|w| typed("week", w)).transpose()?,
+                month: string(&out, "m").map(|m| typed("month", m)).transpose()?,
                 table: opt_flag(&out, "table"),
             },
-            "start" => Commands::Start { note: string(&out, "note").map(str::to_owned) },
-            "break" => Commands::Break { note: string(&out, "note").map(str::to_owned) },
+            "start" => Commands::Start {
+                note: string(&out, "note").map(str::to_owned),
+            },
+            "break" => Commands::Break {
+                note: string(&out, "note").map(str::to_owned),
+            },
             "end" => Commands::End,
             name @ ("sick" | "vacation") => Commands::Absence {
                 date: match string(&out, "date") {
@@ -114,17 +138,24 @@ impl Cli {
 
         // Same mapping as clap-verbosity-flag: errors by default, -v/-q step up/down.
         let level = (1 + count(&out, "verbose")).saturating_sub(count(&out, "quiet"));
-        let verbosity = LevelFilter::iter()
-            .nth(level)
-            .unwrap_or(LevelFilter::Trace);
+        let verbosity = LevelFilter::iter().nth(level).unwrap_or(LevelFilter::Trace);
 
         Ok(Cli { command, verbosity })
     }
 }
 
 fn value<'a>(out: &'a ParseOutput, name: &str) -> Option<&'a ParseValue> {
-    let flag = out.flags.iter().find(|(f, _)| f.name == name).map(|(_, v)| v);
-    flag.or_else(|| out.args.iter().find(|(a, _)| a.name == name).map(|(_, v)| v))
+    let flag = out
+        .flags
+        .iter()
+        .find(|(f, _)| f.name == name)
+        .map(|(_, v)| v);
+    flag.or_else(|| {
+        out.args
+            .iter()
+            .find(|(a, _)| a.name == name)
+            .map(|(_, v)| v)
+    })
 }
 
 fn flag(out: &ParseOutput, name: &str) -> bool {
@@ -158,8 +189,12 @@ where
     T: FromStr,
     T::Err: Display,
 {
-    raw.parse()
-        .map_err(|e| (format!("error: invalid value '{raw}' for '<{name}>': {e}"), 2))
+    raw.parse().map_err(|e| {
+        (
+            format!("error: invalid value '{raw}' for '<{name}>': {e}"),
+            2,
+        )
+    })
 }
 pub trait CliExecute {
     fn execute(&self) -> TrackerResult;
@@ -172,7 +207,7 @@ impl CliExecute for Cli {
             Commands::Break { note } => self.invoke_break(note),
             Commands::End => self.invoke_end(),
             Commands::Absence { date, note } => self.invoke_absence(date, note),
-            Commands::Status { week, table } => self.invoke_status(week, table),
+            Commands::Status { week, month, table } => self.invoke_status(week, month, table),
             Commands::Config { list: _, edit } => self.invoke_config(edit),
             Commands::Add { minutes } => self.invoke_add(minutes),
             Commands::Takeover { minutes } => self.invoke_takeover(minutes),
@@ -213,7 +248,11 @@ impl Cli {
             .build()?;
         let now = Local::now();
         time_data.read_from_file()?;
-        let first = !time_data.entries.data.iter().any(|e| e.status == Status::Connect);
+        let first = !time_data
+            .entries
+            .data
+            .iter()
+            .any(|e| e.status == Status::Connect);
         time_data.append(Status::Connect, now.to_utc(), note.clone())?;
 
         // A takeover is added before the first start of a day only, and kept if it doesn't fit.
@@ -223,7 +262,9 @@ impl Cli {
             if let Some(minutes) = takeover.get()? {
                 match time_data.prepend(minutes, "takeover") {
                     Ok(_) => taken = Some(minutes),
-                    Err(e) => eprintln!("keeping takeover of {minutes} minutes for the next start: {e}"),
+                    Err(e) => {
+                        eprintln!("keeping takeover of {minutes} minutes for the next start: {e}")
+                    }
                 }
             }
         }
@@ -267,7 +308,7 @@ impl Cli {
                 status.r#break.unwrap().duration,
             )?
             .write_to_file()?;
-        self.invoke_status(&None, &None)
+        self.invoke_status(&None, &None, &None)
     }
 
     fn invoke_add(&self, minutes: &u16) -> TrackerResult {
@@ -299,9 +340,26 @@ impl Cli {
             .write_to_file()
     }
 
-    fn invoke_status(&self, week: &Option<i8>, table: &Option<bool>) -> TrackerResult {
+    fn invoke_status(
+        &self,
+        week: &Option<i8>,
+        month: &Option<i8>,
+        table: &Option<bool>,
+    ) -> TrackerResult {
         log::info!("status executed");
         let settings = Settings::new()?;
+
+        if let Some(m) = month {
+            let today = Local::now().date_naive();
+            let time_data = TimeDataMonthly::load(settings.folder.to_owned().into(), *m, today)?;
+            let status = StatusMonthly::new(time_data, &settings)?;
+            if table.unwrap_or(true) {
+                status.format_table();
+            } else {
+                println!("{}", status);
+            }
+            return Ok(());
+        }
 
         match week {
             Some(w) => {
@@ -363,7 +421,9 @@ impl Cli {
         let takeover = Takeover::new(Path::new(&settings.folder));
         if let Some(pending) = takeover.get()? {
             return Err(TrackerError::TakeoverSetError {
-                message: format!("a takeover of {pending} minutes is still pending for the next start"),
+                message: format!(
+                    "a takeover of {pending} minutes is still pending for the next start"
+                ),
             });
         }
 
@@ -379,6 +439,6 @@ impl Cli {
             takeover.remove()?;
             return Err(e);
         }
-        self.invoke_status(&None, &None)
+        self.invoke_status(&None, &None, &None)
     }
 }
