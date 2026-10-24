@@ -7,7 +7,7 @@ use std::{
 use chrono::{ Datelike, Months, NaiveDate };
 use serde::{ Deserialize, Serialize };
 
-use crate::{ Folder, Settings, StatusTime, StatusWeekly, TimeDataWeekly, TrackerError };
+use crate::{ Settings, StatusTime, StatusWeekly, StorageProvider, TimeDataWeekly, TrackerError };
 
 /// Overtime of a month and the overtime accumulated up to and including it, as `HH:mm`.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -142,7 +142,7 @@ impl Overtime {
     /// a stored month before `start`.
     pub fn carry(
         &self,
-        folder: Folder,
+        storage: &impl StorageProvider,
         settings: &Settings,
         start: NaiveDate
     ) -> Result<Option<StatusTime>, TrackerError> {
@@ -161,8 +161,8 @@ impl Overtime {
         if dates.is_empty() {
             return Ok(Some(cumulated));
         }
-        let data = TimeDataWeekly::builder().folder(folder).week_dates(0, dates).build()?;
-        let between = StatusWeekly::builder().data(data).settings(settings.to_owned()).build()?;
+        let data = TimeDataWeekly::builder().week_dates(0, dates).build()?;
+        let between = StatusWeekly::builder().data(data).settings(settings.to_owned()).build(storage)?;
         Ok(Some(cumulated + between.overtime))
     }
 }
@@ -172,7 +172,7 @@ mod tests {
     use chrono::{ Duration, NaiveDate };
 
     use super::{ Entries, MonthOvertime, Overtime };
-    use crate::{ Settings, StatusTime, TrackerError };
+    use crate::{ MemoryStorage, Settings, StatusTime, TrackerError };
 
     fn time(s: &str) -> StatusTime {
         s.parse().unwrap()
@@ -293,23 +293,23 @@ mod tests {
     fn should_carry_stored_and_days_between() -> Result<(), TrackerError> {
         let temp_dir = tempfile::tempdir()?;
         let o = Overtime::new(temp_dir.path());
-        let folder = || temp_dir.path().to_path_buf().into();
+        let storage = MemoryStorage::default();
         let settings = Settings::default();
         let date = |m, d| NaiveDate::from_ymd_opt(2022, m, d).unwrap();
 
         // Nothing stored before.
-        assert_eq!(None, o.carry(folder(), &settings, date(3, 1))?);
+        assert_eq!(None, o.carry(&storage, &settings, date(3, 1))?);
 
         o.store(2022, 1, time("10:00"), false)?;
         // Right after the stored month.
-        assert_eq!(Some(time("10:00")), o.carry(folder(), &settings, date(2, 1))?);
+        assert_eq!(Some(time("10:00")), o.carry(&storage, &settings, date(2, 1))?);
         // Mid February: the 1st to 4th (Tuesday to Friday) are missing 8 hours each.
         assert_eq!(
             Some(StatusTime::from(Duration::hours(10 - 32))),
-            o.carry(folder(), &settings, date(2, 5))?
+            o.carry(&storage, &settings, date(2, 5))?
         );
         // Not counting the stored month itself or later ones.
-        assert_eq!(None, o.carry(folder(), &settings, date(1, 15))?);
+        assert_eq!(None, o.carry(&storage, &settings, date(1, 15))?);
         Ok(())
     }
 }

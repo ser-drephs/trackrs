@@ -5,6 +5,11 @@ use crate::{ Timesheet, TrackerError };
 mod json;
 pub use json::*;
 
+#[cfg(test)]
+mod memory;
+#[cfg(test)]
+pub(crate) use memory::*;
+
 /// Where timesheets are kept, one per day.
 pub trait StorageProvider {
     /// The timesheet of `date`, an empty one if none was stored yet.

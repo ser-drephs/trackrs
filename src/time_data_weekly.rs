@@ -1,11 +1,10 @@
 use chrono::{ Datelike, IsoWeek, NaiveDate, Weekday };
 
-use crate::{ Folder, TrackerError };
+use crate::TrackerError;
 
-/// The days of a week, or of its days within a month, with the folder to read them from.
+/// The days of a week, or of its days within a month.
 #[derive(Default, Clone)]
 pub struct TimeDataWeekly {
-    pub folder: Folder,
     pub dates: Vec<NaiveDate>,
     pub week: i16,
 }
@@ -19,19 +18,12 @@ impl TimeDataWeekly {
 #[derive(Default)]
 pub struct TimeDataWeeklyBuilder {
     inner: TimeDataWeekly,
-    folder: Option<Folder>,
     week: Option<i16>,
     year: Option<u16>,
     dates: Option<Vec<NaiveDate>>,
 }
 
 impl TimeDataWeeklyBuilder {
-    pub fn folder(&mut self, folder: Folder) -> &mut Self {
-        log::debug!("set time data folder to: {:?}", &folder);
-        self.folder = Some(folder);
-        self
-    }
-
     pub fn year(&mut self, year: u16) -> &mut Self {
         log::debug!("set year to: {:?}", year);
         self.year = Some(year);
@@ -71,16 +63,10 @@ impl TimeDataWeeklyBuilder {
                 message: "week not defined".to_owned(),
             });
         }
-        if self.folder.is_none() {
-            return Err(TrackerError::TimeDataError {
-                message: "folder is not defined".to_owned(),
-            });
-        }
 
         if !given_dates {
             self.assert_relative_week().set_dates()?;
         }
-        self.inner.folder = self.folder.to_owned().unwrap();
         self.inner.dates = self.dates.to_owned().unwrap();
         Ok(self.inner.clone())
     }
@@ -223,7 +209,7 @@ mod tests {
         fn should_reject_week_not_in_year() {
             let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
-            let res = builder.year(2022).week(&60, d.iso_week()).folder("/tmp".into()).build();
+            let res = builder.year(2022).week(&60, d.iso_week()).build();
             assert_eq!(
                 "time data error: week 60 doesn't exist in 2022",
                 res.err().unwrap().to_string()
@@ -277,20 +263,11 @@ mod tests {
         }
 
         #[test]
-        fn no_folder() {
-            let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
-            let mut builder = TimeDataWeekly::builder();
-            let res = builder.year(2012).week(&-2, d.iso_week()).build();
-            assert!(res.is_err());
-            assert_eq!("time data error: folder is not defined", res.err().unwrap().to_string());
-        }
-
-        #[test]
         fn should_build() -> Result<(), TrackerError> {
             logger();
             let d = Utc.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap();
             let mut builder = TimeDataWeekly::builder();
-            let t = builder.folder(Folder::default()).year(2022).week(&-2, d.iso_week()).build()?;
+            let t = builder.year(2022).week(&-2, d.iso_week()).build()?;
             assert_eq!(7, t.dates.len());
             assert_eq!(NaiveDate::from_ymd_opt(2022, 1, 17), t.dates.first().copied());
             assert_eq!(NaiveDate::from_ymd_opt(2022, 1, 23), t.dates.last().copied());

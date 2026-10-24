@@ -1,6 +1,6 @@
 use chrono::{ Datelike, NaiveDate };
 
-use crate::{ Folder, TimeDataMonthly, TrackerError };
+use crate::{ TimeDataMonthly, TrackerError };
 
 /// Time data of a year, split into its months.
 #[derive(Default, Clone)]
@@ -11,10 +11,10 @@ pub struct TimeDataYearly {
 
 impl TimeDataYearly {
     /// Load `year`, or a year relative to the one of `today` for 0 and less, e.g. -1.
-    pub fn load(folder: Folder, year: i16, today: NaiveDate) -> Result<Self, TrackerError> {
+    pub fn load(year: i16, today: NaiveDate) -> Result<Self, TrackerError> {
         let year = Self::resolve(year, today);
         let months = (1..=12)
-            .map(|month| TimeDataMonthly::load_month(folder.to_owned(), year, month))
+            .map(|month| TimeDataMonthly::load_month(year, month))
             .collect::<Result<_, _>>()?;
         Ok(TimeDataYearly { year, months })
     }
@@ -41,9 +41,8 @@ mod tests {
 
     #[test]
     fn should_load_all_months() -> Result<(), TrackerError> {
-        let temp_dir = tempfile::tempdir()?;
         let today = NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
-        let y = TimeDataYearly::load(temp_dir.path().to_path_buf().into(), 2022, today)?;
+        let y = TimeDataYearly::load(2022, today)?;
 
         let months: Vec<u32> = y.months.iter().map(|m| m.month).collect();
         assert_eq!((1..=12).collect::<Vec<u32>>(), months);
