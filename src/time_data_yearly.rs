@@ -18,7 +18,7 @@ impl TimeDataYearly {
     ) -> Result<Self, TrackerError> {
         let year = Self::resolve(year, today);
         let months = (1..=12)
-            .map(|month| TimeDataMonthly::load_month(storage, year, month))
+            .map(|month| TimeDataMonthly::for_year_month(storage, year, month))
             .collect::<Result<_, _>>()?;
         Ok(TimeDataYearly { year, months })
     }
