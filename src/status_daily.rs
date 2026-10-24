@@ -2,8 +2,9 @@ use std::ops::{ Add, Mul };
 
 use chrono::{ DateTime, Duration, Local, Utc };
 use colored::Colorize;
+use prettytable::{ format, Table };
 
-use crate::{ Settings, Status, StatusTime, TimeData, TrackerError };
+use crate::{ Entry, Settings, Status, StatusTime, TimeData, TrackerError };
 
 #[derive(Default, Clone, Debug)]
 pub struct StatusDaily {
@@ -225,6 +226,43 @@ impl StatusDaily {
     }
 }
 
+impl StatusDaily {
+    /// Work and break ranges of the day, each starting at a connect or break entry and ending
+    /// at the next entry. The last range has no end while it is still running.
+    fn ranges(&self) -> Vec<(&Entry, Option<&Entry>)> {
+        let entries = &self.data.as_ref().unwrap().entries.data;
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| matches!(e.status, Status::Connect | Status::Break))
+            .map(|(i, e)| (e, entries.get(i + 1)))
+            .collect()
+    }
+
+    pub fn format_ranges_table(&self) {
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_COLSEP);
+        table.set_titles(row!["Start", "End", "Duration", "Type", "Note"]);
+
+        let local = |t: DateTime<Utc>| DateTime::<Local>::from(t);
+        for (start, end) in self.ranges() {
+            let end_time = end.map_or_else(Local::now, |e| local(e.time));
+            let kind = if start.status == Status::Break { "Break" } else { "Work" };
+            table.add_row(
+                row![
+                    local(start.time).format("%H:%M"),
+                    end.map_or("now".to_owned(), |e| local(e.time).format("%H:%M").to_string()),
+                    StatusTime::from(end_time - local(start.time)),
+                    kind,
+                    start.note.as_deref().unwrap_or_default()
+                ]
+            );
+        }
+
+        table.printstd();
+    }
+}
+
 pub struct StatusDailyBuilder {
     inner: StatusDaily,
 }
@@ -341,7 +379,16 @@ impl std::fmt::Display for StatusDaily {
             self.online.as_ref().unwrap(),
             width = 13
         );
-        let line3 = format!("{:width$}{} ({})", "Break:", r#break, bk_fmt, width = 13);
+        let notes: Vec<&str> = self.data
+            .as_ref()
+            .map(|d| d.entries.data.iter().filter_map(|e| e.note.as_deref()).collect())
+            .unwrap_or_default();
+        let activities = if notes.is_empty() {
+            "".to_owned()
+        } else {
+            format!("\n{:width$}{}", "Activities:", notes.join(", "), width = 13)
+        };
+        let line3 = format!("{:width$}{} ({}){}", "Break:", r#break, bk_fmt, activities, width = 13);
         let line4 = fmt_break_report;
         let line5 = format!("{:width$}{}", "Started:", start, width = 13);
         let line6 = format!("{:width$}{}", "End:", end_fmt, width = 13);
@@ -377,6 +424,72 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
+    mod ranges {
+        use chrono::Local;
+
+        use crate::Entries;
+
+        use super::*;
+
+        fn entry(id: u8, status: Status, hour: u32, note: Option<&str>) -> Entry {
+            Entry {
+                id,
+                status,
+                time: Local.with_ymd_and_hms(2022, 2, 2, hour, 0, 0).unwrap().to_utc(),
+                note: note.map(str::to_owned),
+            }
+        }
+
+        fn status(data: Vec<Entry>) -> StatusDaily {
+            StatusDaily::builder()
+                .data(TimeData {
+                    entries: Entries { data, version: 2 },
+                    ..Default::default()
+                })
+                .settings(Settings::default())
+                .build()
+                .unwrap()
+        }
+
+        #[test]
+        fn should_pair_ranges_with_notes() {
+            let s = status(
+                vec![
+                    entry(1, Status::Connect, 8, Some("standup")),
+                    entry(2, Status::Break, 12, Some("lunch")),
+                    entry(3, Status::Connect, 13, None),
+                    entry(4, Status::End, 17, None)
+                ]
+            );
+            let ranges: Vec<_> = s
+                .ranges()
+                .iter()
+                .map(|(start, end)| (start.id, end.map(|e| e.id), start.note.clone()))
+                .collect();
+
+            assert_eq!(
+                vec![
+                    (1, Some(2), Some("standup".to_owned())),
+                    (2, Some(3), Some("lunch".to_owned())),
+                    (3, Some(4), None)
+                ],
+                ranges
+            );
+        }
+
+        #[test]
+        fn should_leave_running_range_open() {
+            let s = status(
+                vec![entry(1, Status::Connect, 8, None), entry(2, Status::Break, 12, Some("lunch"))]
+            );
+            let ranges = s.ranges();
+
+            assert_eq!(2, ranges.len());
+            assert_eq!(Status::Break, ranges[1].0.status);
+            assert!(ranges[1].1.is_none());
+        }
+    }
+
     mod display {
         use chrono::Local;
 
@@ -395,6 +508,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -402,6 +516,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -409,6 +524,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 23, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -416,6 +532,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 14, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -467,6 +584,64 @@ mod tests {
         }
 
         #[test]
+        fn status_daily_with_activities() {
+            logger();
+            let at = |hour, minute| Local.with_ymd_and_hms(2022, 2, 2, hour, minute, 0).unwrap().to_utc();
+            let data = TimeData {
+                entries: Entries {
+                    data: vec![
+                        Entry { id: 1, status: Status::Connect, time: at(8, 0), note: Some("standup".to_owned()) },
+                        Entry { id: 2, status: Status::Break, time: at(12, 0), note: Some("lunch".to_owned()) },
+                        Entry { id: 3, status: Status::Connect, time: at(12, 30), note: None },
+                        Entry { id: 4, status: Status::Connect, time: at(13, 0), note: Some("review".to_owned()) },
+                        Entry { id: 5, status: Status::End, time: at(16, 30), note: None }
+                    ],
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let status = StatusDaily::builder()
+                .data(data)
+                .settings(Settings::default())
+                .build()
+                .unwrap();
+            let out = format!("{}", status);
+
+            let lines: Vec<&str> = out.lines().collect();
+            assert!(lines[2].starts_with("Break:"));
+            assert_eq!("Activities:  standup, lunch, review", lines[3]);
+        }
+
+        #[test]
+        fn status_daily_without_notes_has_no_activities() {
+            logger();
+            let at = |hour, minute| Local.with_ymd_and_hms(2022, 2, 2, hour, minute, 0).unwrap().to_utc();
+            let data = TimeData {
+                entries: Entries {
+                    data: vec![
+                        Entry { id: 1, status: Status::Connect, time: at(8, 0), note: None },
+                        Entry { id: 2, status: Status::Break, time: at(12, 0), note: None },
+                        Entry { id: 3, status: Status::Connect, time: at(12, 30), note: None },
+                        Entry { id: 4, status: Status::End, time: at(16, 30), note: None }
+                    ],
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let status = StatusDaily::builder()
+                .data(data)
+                .settings(Settings::default())
+                .build()
+                .unwrap();
+            let out = format!("{}", status);
+
+            assert!(!out.contains("Activities"));
+            assert!(out.lines().nth(3).unwrap().is_empty());
+        }
+
+        #[test]
         fn status_daily_with_overtime_and_more_break() {
             logger();
             let data = TimeData {
@@ -477,6 +652,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -484,6 +660,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -491,6 +668,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 43, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -498,6 +676,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 17, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -558,6 +737,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -565,6 +745,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 3, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -572,6 +753,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 33, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -579,6 +761,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 16, 33, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -644,6 +827,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: local.to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -720,6 +904,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -727,6 +912,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -793,6 +979,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -800,6 +987,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 4,
@@ -807,6 +995,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 46, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -878,6 +1067,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -885,6 +1075,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -911,6 +1102,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -934,6 +1126,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -941,6 +1134,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -948,6 +1142,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 10, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -976,6 +1171,7 @@ mod tests {
                                 id: 2,
                                 status: Status::Connect,
                                 time: DateTime::default(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1007,6 +1203,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -1014,6 +1211,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1021,6 +1219,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1052,6 +1251,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 10, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -1059,6 +1259,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1066,6 +1267,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 40, 5)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 4,
@@ -1073,6 +1275,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 5,
@@ -1080,6 +1283,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 6,
@@ -1087,6 +1291,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 9, 40, 55)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 7,
@@ -1094,6 +1299,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 9, 55, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 8,
@@ -1101,6 +1307,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 55)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 9,
@@ -1108,6 +1315,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 56)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 10,
@@ -1115,6 +1323,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 1, 56)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1144,6 +1353,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -1151,6 +1361,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 6, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1176,16 +1387,19 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 0, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 4,
@@ -1193,6 +1407,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 5,
@@ -1200,6 +1415,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1246,16 +1462,19 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 4,
@@ -1263,6 +1482,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 15, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 5,
@@ -1270,6 +1490,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1318,21 +1539,25 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 0, 00, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
                                 status: Status::Break,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
                                 status: Status::Disconnect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 3, 0, 1).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 4,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 4, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 5,
@@ -1340,6 +1565,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 5, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1387,6 +1613,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1394,6 +1621,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 4,
@@ -1401,6 +1629,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 15, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 5,
@@ -1408,6 +1637,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1457,6 +1687,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1464,6 +1695,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 4,
@@ -1471,6 +1703,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 5,
@@ -1478,6 +1711,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1527,6 +1761,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 10, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1534,6 +1769,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 0, 1)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 4,
@@ -1541,6 +1777,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 13, 20, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 5,
@@ -1548,6 +1785,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 15, 45, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1597,6 +1835,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 22, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1604,6 +1843,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 16, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1663,6 +1903,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 8, 55, 46)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -1670,6 +1911,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 8, 56, 15)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1677,6 +1919,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 25, 57)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 4,
@@ -1684,6 +1927,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 26, 46)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 5,
@@ -1691,6 +1935,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 28, 7)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 6,
@@ -1698,6 +1943,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 58, 7)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 7,
@@ -1705,6 +1951,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 17, 0, 7)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 8,
@@ -1712,6 +1959,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 17, 15, 7)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1719,6 +1967,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 18, 27, 40)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1766,6 +2015,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 8, 22, 11)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -1773,6 +2023,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 7, 12, 16, 32)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1822,6 +2073,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -1829,6 +2081,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1836,6 +2089,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 30, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1843,6 +2097,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 17, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1897,6 +2152,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -1904,6 +2160,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1911,6 +2168,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1918,6 +2176,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 21, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -1972,6 +2231,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -1979,6 +2239,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 12, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1986,6 +2247,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 16, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 3,
@@ -1993,6 +2255,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 23, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -2047,6 +2310,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 4, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -2054,6 +2318,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 4, 14, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()
@@ -2113,6 +2378,7 @@ mod tests {
                                 id: 1,
                                 status: Status::Connect,
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 0, 0).unwrap().to_utc(),
+                                note: None,
                             },
                             Entry {
                                 id: 2,
@@ -2120,6 +2386,7 @@ mod tests {
                                 time: Local.with_ymd_and_hms(2022, 2, 2, 14, 0, 0)
                                     .unwrap()
                                     .to_utc(),
+                                note: None,
                             },
                         ].to_vec(),
                         ..Default::default()

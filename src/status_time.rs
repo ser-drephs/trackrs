@@ -180,6 +180,7 @@ mod tests {
                 id: 1,
                 status: Status::Connect,
                 time: Local.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap().to_utc(),
+                note: None,
             };
             let status = StatusTime::from(&data);
             assert_eq!("08:03", format!("{}", status));
@@ -203,6 +204,7 @@ mod tests {
                 id: 2,
                 status: Status::Disconnect,
                 time: Utc.with_ymd_and_hms(2022, 2, 2, 8, 3, 0).unwrap(),
+                note: None,
             };
             let status = StatusTime::from(&entry);
             assert!(

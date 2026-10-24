@@ -75,7 +75,8 @@ impl TimeData {
     pub fn append(
         &mut self,
         status: Status,
-        time: DateTime<Utc>
+        time: DateTime<Utc>,
+        note: Option<String>
     ) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         let last_id = match self.entries.data.last() {
@@ -83,7 +84,12 @@ impl TimeData {
             None => 0,
         };
 
-        let entry = Entry::builder().id(last_id).status(status).time(time.to_utc()).build()?;
+        let entry = Entry::builder()
+            .id(last_id)
+            .status(status)
+            .time(time.to_utc())
+            .note(note)
+            .build()?;
         log::debug!("append time data: {:?}", entry);
         self.entries.data.append(&mut [entry].to_vec());
         Ok(self)
@@ -129,15 +135,7 @@ impl TimeData {
         self.assert_build()?;
         if self.file.exists() {
             let f = File::open(&self.file)?;
-            match Upgrade::to_v1(BufReader::new(f))? {
-                Some(res) => {
-                    self.entries = res;
-                }
-                None => {
-                    let f = File::open(&self.file)?;
-                    self.entries = serde_json::from_reader(BufReader::new(f))?;
-                }
-            }
+            self.entries = Upgrade::upgrade(BufReader::new(f))?;
 
             self.entries.data.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
         } else {
@@ -309,11 +307,13 @@ mod tests {
                 .read_from_file()?
                 .append(
                     Status::Connect,
-                    day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap()).unwrap()
+                    day.with_time(NaiveTime::from_hms_opt(2, 1, 0).unwrap()).unwrap(),
+                    None
                 )?
                 .append(
                     Status::End,
-                    day.with_time(NaiveTime::from_hms_opt(4, 1, 0).unwrap()).unwrap()
+                    day.with_time(NaiveTime::from_hms_opt(4, 1, 0).unwrap()).unwrap(),
+                    None
                 )?
                 .write_to_file()?;
 
@@ -373,7 +373,8 @@ mod tests {
 
             time_data.append(
                 Status::End,
-                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
+                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap(),
+                None
             )?;
             assert_eq!(3, time_data.entries.data.len());
             assert_eq!(3, time_data.entries.data.last().unwrap().id);
@@ -409,7 +410,8 @@ mod tests {
 
             time_data.append(
                 Status::End,
-                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap()
+                day.with_time(NaiveTime::from_hms_opt(23, 3, 0).unwrap()).unwrap(),
+                None
             )?;
             assert_eq!(3, time_data.entries.data.len());
             assert_eq!(3, time_data.entries.data.last().unwrap().id);
@@ -418,7 +420,7 @@ mod tests {
             assert!(fs::metadata(&time_file)?.len() > initial_size);
 
             let file_content_update =
-                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"id\":3,\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":1}";
+                "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-08-04T23:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-08-04T23:00:53.523332900Z\"},{\"id\":3,\"status\":\"End\",\"time\":\"2022-08-04T23:03:00Z\"}],\"version\":2}";
             let mut update_file = File::open(&time_file).unwrap();
             let mut data = vec![];
             update_file.read_to_end(&mut data)?;
@@ -745,11 +747,13 @@ mod tests {
                     )?
                     .append(
                         Status::Connect,
-                        day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(2, 16, 0).unwrap()).unwrap(),
+                        None
                     )?
                     .append(
                         Status::End,
-                        day.with_time(NaiveTime::from_hms_opt(5, 0, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(5, 0, 0).unwrap()).unwrap(),
+                        None
                     )?
                     .write_to_file()?;
                 assert!(&time_file.exists(), "time file should exist");
@@ -803,13 +807,15 @@ mod tests {
                         Status::Connect,
                         DateTime::from(
                             day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
-                        )
+                        ),
+                        None
                     )?
                     .append(
                         Status::End,
                         DateTime::from(
                             day.with_time(NaiveTime::from_hms_opt(2, 45, 0).unwrap()).unwrap()
-                        )
+                        ),
+                        None
                     )?
                     .write_to_file()?;
                 assert!(&time_file.exists());
@@ -861,11 +867,13 @@ mod tests {
                     )?
                     .append(
                         Status::Connect,
-                        day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(2, 15, 0).unwrap()).unwrap(),
+                        None
                     )?
                     .append(
                         Status::End,
-                        day.with_time(NaiveTime::from_hms_opt(4, 14, 0).unwrap()).unwrap()
+                        day.with_time(NaiveTime::from_hms_opt(4, 14, 0).unwrap()).unwrap(),
+                        None
                     )?
                     .write_to_file()?;
                 assert!(&time_file.exists());

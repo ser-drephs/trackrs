@@ -151,3 +151,29 @@ fn takeover_subtracts_from_today(ctx: &mut IntegrationContext) {
     assert!(a.contains("\"id\":3,\"status\":\"Connect\""));
     assert!(!a.contains("\"status\":\"End\""));
 }
+
+#[test_context::test_context(IntegrationContext)]
+#[test]
+#[serial]
+fn start_and_break_save_note(ctx: &mut IntegrationContext) {
+    let folder = ctx.temp_dir.path().join("trackrs");
+
+    let s = Cli::parse_from(["trackrs", "start", "-n", "standup"].iter());
+    s.execute().unwrap();
+
+    let b = Cli::parse_from(["trackrs", "break", "--note", "lunch"].iter());
+    b.execute().unwrap();
+
+    let c = Cli::parse_from(["trackrs", "start"].iter());
+    c.execute().unwrap();
+
+    let file = fs::read_dir(&folder).unwrap().next().unwrap().unwrap().path();
+    let a = fs::read_to_string(file).unwrap();
+
+    assert!(a.contains("\"id\":1,\"status\":\"Connect\""));
+    assert!(a.contains("\"note\":\"standup\""));
+    assert!(a.contains("\"id\":2,\"status\":\"Break\""));
+    assert!(a.contains("\"note\":\"lunch\""));
+    assert_eq!(2, a.matches("\"note\"").count());
+    assert!(a.contains("\"version\":2"));
+}
