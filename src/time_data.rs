@@ -147,6 +147,36 @@ impl TimeData {
         self.append(Status::Connect, from, Some(note.to_owned()))?.append(Status::End, end, None)
     }
 
+    /// Prepend a connect entry `minutes` before the first connect of the day.
+    pub fn prepend(&mut self, minutes: u16, note: &str) -> Result<&mut Self, TrackerError> {
+        self.assert_build()?;
+        let first = self.entries.data
+            .iter()
+            .find(|e| e.status == Status::Connect)
+            .ok_or_else(|| TrackerError::TimeDataError {
+                message: "no start found for the day, start first".to_owned(),
+            })?;
+        let time = first.time - Duration::minutes(minutes.into());
+        if time.date_naive() != first.time.date_naive() {
+            return Err(TrackerError::TimeDataError {
+                message: format!("adding {minutes} minutes would start before the day"),
+            });
+        }
+
+        let entry = Entry::builder()
+            .status(Status::Connect)
+            .time(time)
+            .note(Some(note.to_owned()))
+            .build()?;
+        log::debug!("prepend time data: {:?}", entry);
+        self.entries.data.insert(0, entry);
+        // ids are positions, e.g. for `assert_break`, so keep them in order.
+        for (i, e) in self.entries.data.iter_mut().enumerate() {
+            e.id = (i + 1) as u8;
+        }
+        Ok(self)
+    }
+
     pub fn assert_takeover(&mut self, time: DateTime<Utc>) -> Result<&mut Self, TrackerError> {
         self.assert_build()?;
         if self.takeover.is_some() {
@@ -330,6 +360,114 @@ mod tests {
             logger();
             let time_data = TimeData::builder().folder("".into()).build();
             assert!(time_data.is_err());
+        }
+    }
+
+    mod prepend {
+        use chrono::{ DateTime, Utc };
+
+        use crate::Entries;
+
+        use super::*;
+
+        fn at(hour: u32, minute: u32) -> DateTime<Utc> {
+            Utc.with_ymd_and_hms(2022, 2, 7, hour, minute, 0).unwrap()
+        }
+
+        fn day(entries: &[(Status, u32, u32)]) -> TimeData {
+            let data = entries
+                .iter()
+                .enumerate()
+                .map(|(i, (status, h, m))| Entry {
+                    id: (i + 1) as u8,
+                    status: status.to_owned(),
+                    time: at(*h, *m),
+                    note: None,
+                })
+                .collect();
+            TimeData {
+                entries: Entries { data, version: 2 },
+                build: true,
+                ..Default::default()
+            }
+        }
+
+        fn summary(t: &TimeData) -> Vec<(u8, Status, DateTime<Utc>, Option<String>)> {
+            t.entries.data
+                .iter()
+                .map(|e| (e.id, e.status.to_owned(), e.time, e.note.to_owned()))
+                .collect()
+        }
+
+        fn added() -> Option<String> {
+            Some("manually added".to_owned())
+        }
+
+        #[test]
+        fn should_prepend_before_first_start() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0), (Status::Break, 12, 0)]);
+            t.prepend(30, "manually added")?;
+
+            assert_eq!(
+                vec![
+                    (1, Status::Connect, at(7, 30), added()),
+                    (2, Status::Connect, at(8, 0), None),
+                    (3, Status::Break, at(12, 0), None)
+                ],
+                summary(&t)
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn should_prepend_to_ended_day_without_touching_breaks() -> Result<(), TrackerError> {
+            let mut t = day(
+                &[
+                    (Status::Connect, 8, 0),
+                    (Status::Break, 12, 0),
+                    (Status::Connect, 12, 30),
+                    (Status::End, 16, 30),
+                ]
+            );
+            t.prepend(45, "manually added")?;
+
+            assert_eq!(
+                vec![
+                    (1, Status::Connect, at(7, 15), added()),
+                    (2, Status::Connect, at(8, 0), None),
+                    (3, Status::Break, at(12, 0), None),
+                    (4, Status::Connect, at(12, 30), None),
+                    (5, Status::End, at(16, 30), None)
+                ],
+                summary(&t)
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn should_prepend_before_earlier_addition() -> Result<(), TrackerError> {
+            let mut t = day(&[(Status::Connect, 8, 0)]);
+            t.prepend(30, "manually added")?.prepend(15, "manually added")?;
+
+            assert_eq!((1, Status::Connect, at(7, 15), added()), summary(&t)[0]);
+            assert_eq!((2, Status::Connect, at(7, 30), added()), summary(&t)[1]);
+            Ok(())
+        }
+
+        #[test]
+        fn should_reject_without_start() {
+            let mut t = day(&[]);
+            assert!(t.prepend(30, "manually added").is_err());
+            assert!(t.entries.data.is_empty());
+        }
+
+        #[test]
+        fn should_reject_start_before_the_day() {
+            let mut t = day(&[(Status::Connect, 1, 0)]);
+            let before = summary(&t);
+
+            assert!(t.prepend(61, "manually added").is_err());
+            assert_eq!(before, summary(&t));
         }
     }
 
