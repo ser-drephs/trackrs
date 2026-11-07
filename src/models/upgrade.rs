@@ -37,6 +37,12 @@ impl Upgrade {
         Ok(timesheet)
     }
 
+    /// Whether `content` of a file is already written in the current version.
+    pub fn is_current(content: &str) -> Result<bool, UpgradeError> {
+        let value: Value = serde_json::from_str(content)?;
+        Ok(value.get("version") == Some(&Value::from(CURRENT_VERSION)))
+    }
+
     /// Versionless: a plain array of entries.
     fn to_v1(value: Value) -> Result<Timesheet, UpgradeError> {
         let data: Vec<Entry> = serde_json::from_value(value)?;
@@ -86,6 +92,14 @@ mod tests {
         "{\"data\":[{\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53Z\"},{\"status\":\"End\",\"time\":\"2022-07-02T08:00:53Z\"}],\"version\":3}";
     const V1: &str =
         "{\"data\":[{\"id\":1,\"status\":\"Connect\",\"time\":\"2022-02-02T00:00:53.523319900Z\"},{\"id\":2,\"status\":\"End\",\"time\":\"2022-02-02T08:00:53.523332900Z\"}],\"version\":1}";
+
+    #[test]
+    fn should_tell_current_files() {
+        assert!(Upgrade::is_current(&V3.replace("\"version\":3", "\"version\":4")).unwrap());
+        assert!(!Upgrade::is_current(V3).unwrap());
+        assert!(!Upgrade::is_current(VERSIONLESS).unwrap());
+        assert!(Upgrade::is_current("nope").is_err());
+    }
 
     #[test]
     fn should_upgrade_versionless_to_v1() {

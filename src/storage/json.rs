@@ -1,4 +1,4 @@
-use std::{ fs::{ self, File, OpenOptions }, io::BufReader, path::PathBuf };
+use std::{ fs::{ self, OpenOptions }, path::PathBuf };
 
 use chrono::{ Local, NaiveDate, TimeZone };
 
@@ -39,8 +39,15 @@ impl<Tz: TimeZone> StorageProvider for JsonStorage<Tz> {
             log::info!("file not yet created: {:?}", file);
             return Ok(Timesheet::default());
         }
-        let mut timesheet = Upgrade::upgrade(BufReader::new(File::open(file)?), &self.zone)?;
+        let content = fs::read_to_string(&file)?;
+        let mut timesheet = Upgrade::upgrade(content.as_bytes(), &self.zone)?;
         timesheet.data.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+        if !Upgrade::is_current(&content)? {
+            // The file is only rewritten to be in the current version, the day can be used without.
+            if let Err(e) = self.save(date, &timesheet) {
+                log::warn!("could not upgrade {:?}: {}", file, e);
+            }
+        }
         Ok(timesheet)
     }
 
@@ -232,6 +239,27 @@ mod tests {
         let instant = Utc.with_ymd_and_hms(2022, 8, 4, 8, 0, 0).unwrap();
         assert_eq!(instant, entry.time);
         assert_eq!(Local.offset_from_utc_datetime(&instant.naive_utc()), *entry.time.offset());
+        Ok(())
+    }
+
+    #[test]
+    fn should_write_old_file_in_the_latest_version_when_loading() -> Result<(), TrackerError> {
+        let (_dir, storage, file) = storage(Some(V1));
+
+        storage.load(day())?;
+
+        assert!(fs::read_to_string(&file)?.ends_with("\"version\":4}"));
+        Ok(())
+    }
+
+    #[test]
+    fn should_not_rewrite_current_file_when_loading() -> Result<(), TrackerError> {
+        let content = "{\n  \"data\": [],\n  \"version\": 4\n}";
+        let (_dir, storage, file) = storage(Some(content));
+
+        storage.load(day())?;
+
+        assert_eq!(content, fs::read_to_string(&file)?);
         Ok(())
     }
 
