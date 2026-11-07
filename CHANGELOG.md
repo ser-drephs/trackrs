@@ -1,3 +1,17 @@
+## [4.0.0](https://github.com/ser-drephs/trackrs/compare/v3.0.0...v4.0.0) (2026-11-07)
+
+### ⚠ BREAKING CHANGES
+
+* entry times are stored as local time with their offset from UTC and a day is the local date.
+
+### Features
+
+* move entry and status to models, drop entry id ([da638b2](https://github.com/ser-drephs/trackrs/commit/da638b2cda1d8d90661e2040a0501c0ddb05cb73))
+
+### Code Refactoring
+
+* store entry times in local time with their offset and follow the local day ([3d67180](https://github.com/ser-drephs/trackrs/commit/3d67180fb963fa9efd3d8c7a2261f543380e9f99))
+
 ## [3.0.0](https://github.com/ser-drephs/trackrs/compare/v2.0.0...v3.0.0) (2026-10-24)
 
 ### ⚠ BREAKING CHANGES

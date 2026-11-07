@@ -8,8 +8,8 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       # Updated by eng/update-flake.sh on release.
-      version = "3.0.0";
-      hash = "sha256-OnBJaX2HYf12e9uLWs0BwXPb142H0Mev8sQKbLD5oNA=";
+      version = "4.0.0";
+      hash = "sha256-WsCexw4PyHWeYP/M4TZZjrjAIxsjNjQazhhgBWmUAUI=";
     in
     {
       packages.${system} = rec {
